@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Nav } from "@/components/nav";
 import { Badge } from "@/components/ui/badge";
+import { signOut } from "@/lib/auth/actions";
 
 type AppShellUser = {
   name: string;
@@ -85,6 +86,14 @@ export function AppShell({
             >
               {initials(user.name)}
             </span>
+            <form action={signOut}>
+              <button
+                type="submit"
+                className="rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-muted transition-colors hover:bg-panel-muted hover:text-foreground"
+              >
+                Sign out
+              </button>
+            </form>
           </div>
         </header>
 

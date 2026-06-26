@@ -1,8 +1,8 @@
 import { Badge } from "@/components/ui/badge";
 
 /**
- * Dashboard landing page. Renders inside the Ops App shell (mounted in
- * app/layout.tsx). Server component, no data fetching yet.
+ * Dashboard landing page. Renders inside the Ops App shell (mounted in the
+ * protected `(app)` layout). Server component, no data fetching yet.
  */
 export default function DashboardPage() {
   return (

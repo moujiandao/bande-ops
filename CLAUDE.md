@@ -15,6 +15,7 @@ scattering of one-off legacy tools (`listing-editor`, `supplier-reorder`).
 - **Stack:** Next.js 16 (App Router) + TypeScript + Supabase (Postgres + Auth) + Tailwind v4, on Vercel.
 - **Spine:** shared foundation every Module reuses — auth (2 users, `role` column, RLS), DB migrations, a server-side Amazon API client (`lib/amazon`), and a UI shell.
 - **Modules:** one route segment each (`app/(modules)/<name>/…`), per-module service files. Modules interact via the DB and the shared client, never each other's internals.
+- **Auth & routing:** protected app routes live in the `app/(app)/` group, whose layout gates on `getUser()` (via `lib/auth/session.ts`) and redirects to the public `/login` (`app/login/`) when unauthenticated, then renders `AppShell` with the user's email + role. Auth logic is spine: `lib/auth/` (`session.ts`, `actions.ts` sign-in/out, `types.ts`). Root `app/layout.tsx` is only the html/body shell.
 - **Source-of-truth boundary:** Amazon is source of truth for catalog/inventory/ads → local Postgres holds a **synced mirror** (re-fetchable, `synced_at`). Local DB is authoritative only for the **operational layer** Amazon doesn't store (replenishment settings, reorder recs, notes). See ADR-0001.
 
 ## Key Conventions
