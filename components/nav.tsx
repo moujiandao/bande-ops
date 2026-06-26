@@ -17,6 +17,7 @@ const overview: NavItem[] = [{ label: "Dashboard", href: "/", active: true }];
 // built; the rest are not yet available.
 const modules: NavItem[] = [
   { label: "Catalog & Inventory", href: "/catalog" },
+  { label: "Reorder", href: "/reorder" },
   { label: "Ads", soon: true },
   { label: "Launch", soon: true },
   { label: "Research", soon: true },
