@@ -23,16 +23,40 @@ create policy "profiles_select_own"
   for select
   using (auth.uid() = id);
 
--- A user can update their own profile row.
--- Note: this intentionally does NOT let a user change their own role to
--- 'owner' safely on its own — role escalation should be governed by a stricter
--- policy or admin-only path when that requirement lands. For two trusted users
--- this is acceptable; revisit before adding more users.
+-- A user can update their own profile row. RLS is row-level, not column-level,
+-- so this alone would let a user set their own role to 'owner'. The
+-- enforce_role_immutable trigger below pins `role` for any non-service-role
+-- caller, so self-service updates to other columns stay open while role
+-- changes are restricted to the server-side service role.
 create policy "profiles_update_own"
   on public.profiles
   for update
   using (auth.uid() = id)
   with check (auth.uid() = id);
+
+-- Prevent privilege escalation: end users cannot change their own `role`.
+-- Only the service role (server-side admin path) may mutate it. Without this,
+-- profiles_update_own permits `update profiles set role='owner' where id=auth.uid()`.
+create or replace function public.enforce_role_immutable()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.role is distinct from old.role
+     and auth.role() is distinct from 'service_role' then
+    new.role := old.role;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists profiles_role_immutable on public.profiles;
+create trigger profiles_role_immutable
+  before update on public.profiles
+  for each row
+  execute function public.enforce_role_immutable();
 
 -- Auto-provision a profile row whenever a new auth user is created.
 -- Runs as SECURITY DEFINER so it can insert into public.profiles regardless of
