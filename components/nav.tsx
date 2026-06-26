@@ -22,6 +22,10 @@ const modules: NavItem[] = [
   { label: "Research", soon: true },
 ];
 
+// Cross-Module workspace config (e.g. replenishment settings — the operational
+// inputs to the reorder math, not a Module of their own).
+const workspace: NavItem[] = [{ label: "Settings", href: "/settings" }];
+
 function NavRow({ item }: { item: NavItem }) {
   const base =
     "group flex items-center justify-between gap-2 rounded-md px-3 py-2 text-sm transition-colors";
@@ -83,6 +87,13 @@ export function Nav() {
       <div className="flex flex-col gap-0.5">
         <SectionLabel>Modules</SectionLabel>
         {modules.map((item) => (
+          <NavRow key={item.label} item={item} />
+        ))}
+      </div>
+
+      <div className="flex flex-col gap-0.5">
+        <SectionLabel>Workspace</SectionLabel>
+        {workspace.map((item) => (
           <NavRow key={item.label} item={item} />
         ))}
       </div>
