@@ -1,0 +1,227 @@
+import { createClient } from '@/lib/supabase/server';
+import { Badge } from '@/components/ui/badge';
+import { saveDefaultsAction, saveSkuOverrideAction } from '@/lib/settings/settings-actions';
+
+/**
+ * Replenishment settings — the operational layer behind the reorder math.
+ *
+ * Server component. Reads `replenishment_settings` through the authenticated
+ * Supabase server client (RLS grants authenticated SELECT/INSERT/UPDATE — these
+ * rows are ours, user-authored, not a synced mirror). Renders a form to edit the
+ * single global default (the row where `sku IS NULL`) and a section to set or
+ * edit per-SKU overrides, which win over the default for that SKU.
+ */
+
+type SettingRow = {
+  id: string;
+  marketplace_id: string;
+  sku: string | null;
+  lead_time_days: number;
+  safety_stock: number;
+  updated_at: string;
+};
+
+function formatTimestamp(iso: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(iso));
+}
+
+const fieldClass =
+  'w-full rounded-md border border-border bg-panel px-3 py-1.5 text-sm text-foreground tabular-nums focus:border-accent focus:outline-none';
+const labelClass = 'text-xs font-medium text-muted';
+const primaryButtonClass =
+  'rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground transition-colors hover:opacity-90';
+
+export default async function SettingsPage() {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from('replenishment_settings')
+    .select('id, marketplace_id, sku, lead_time_days, safety_stock, updated_at')
+    .order('sku', { ascending: true, nullsFirst: true });
+
+  const rows = (data ?? []) as SettingRow[];
+  const defaultRow = rows.find((r) => r.sku === null) ?? null;
+  const overrides = rows.filter((r) => r.sku !== null);
+
+  return (
+    <div className="flex flex-col gap-8">
+      <header className="flex flex-col gap-1">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+          Replenishment settings
+        </h1>
+        <p className="max-w-prose text-sm text-muted">
+          The inputs to the reorder math. The global default applies to every
+          SKU; a per-SKU override wins for that SKU. Decision-support only —
+          nothing here writes back to Amazon.
+        </p>
+      </header>
+
+      {error ? (
+        <div className="rounded-panel border border-border bg-panel-muted p-3 text-xs text-foreground">
+          ⚠ Couldn&apos;t load settings ({error.message}). The forms below still
+          submit, but current values may be missing.
+        </div>
+      ) : null}
+
+      {/* Global default */}
+      <section className="flex flex-col gap-3">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="text-sm font-semibold text-foreground">Global default</h2>
+          {defaultRow ? (
+            <span className="text-[11px] text-faint">
+              Updated {formatTimestamp(defaultRow.updated_at)}
+            </span>
+          ) : (
+            <span className="text-[11px] text-faint">Not set yet</span>
+          )}
+        </div>
+
+        <form
+          action={saveDefaultsAction}
+          className="flex flex-col gap-4 rounded-panel border border-border bg-panel p-5"
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="flex flex-col gap-1.5">
+              <span className={labelClass}>Lead time (days)</span>
+              <input
+                type="number"
+                name="leadTimeDays"
+                min={0}
+                step={1}
+                required
+                defaultValue={defaultRow?.lead_time_days ?? 14}
+                className={fieldClass}
+              />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className={labelClass}>Safety stock (units)</span>
+              <input
+                type="number"
+                name="safetyStock"
+                min={0}
+                step={1}
+                required
+                defaultValue={defaultRow?.safety_stock ?? 0}
+                className={fieldClass}
+              />
+            </label>
+          </div>
+          <div className="flex justify-end">
+            <button type="submit" className={primaryButtonClass}>
+              Save default
+            </button>
+          </div>
+        </form>
+      </section>
+
+      {/* Per-SKU overrides */}
+      <section className="flex flex-col gap-3">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="text-sm font-semibold text-foreground">Per-SKU overrides</h2>
+          <Badge className="border-border bg-panel-muted text-muted">
+            {overrides.length} override{overrides.length === 1 ? '' : 's'}
+          </Badge>
+        </div>
+
+        {overrides.length > 0 ? (
+          <ul className="flex flex-col gap-3">
+            {overrides.map((row) => (
+              <li key={row.id}>
+                <form
+                  action={saveSkuOverrideAction}
+                  className="grid items-end gap-3 rounded-panel border border-border bg-panel p-4 sm:grid-cols-[minmax(0,1fr)_7rem_7rem_auto]"
+                >
+                  <input type="hidden" name="sku" value={row.sku ?? ''} />
+                  <div className="flex flex-col gap-1.5">
+                    <span className={labelClass}>SKU</span>
+                    <span className="truncate font-mono text-xs text-foreground">
+                      {row.sku}
+                    </span>
+                  </div>
+                  <label className="flex flex-col gap-1.5">
+                    <span className={labelClass}>Lead time</span>
+                    <input
+                      type="number"
+                      name="leadTimeDays"
+                      min={0}
+                      step={1}
+                      required
+                      defaultValue={row.lead_time_days}
+                      className={fieldClass}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className={labelClass}>Safety stock</span>
+                    <input
+                      type="number"
+                      name="safetyStock"
+                      min={0}
+                      step={1}
+                      required
+                      defaultValue={row.safety_stock}
+                      className={fieldClass}
+                    />
+                  </label>
+                  <button type="submit" className={primaryButtonClass}>
+                    Save
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="rounded-panel border border-dashed border-border bg-panel p-4 text-xs text-muted">
+            No per-SKU overrides yet. Every SKU uses the global default above.
+          </p>
+        )}
+
+        {/* Add a new override */}
+        <form
+          action={saveSkuOverrideAction}
+          className="grid items-end gap-3 rounded-panel border border-dashed border-border bg-panel p-4 sm:grid-cols-[minmax(0,1fr)_7rem_7rem_auto]"
+        >
+          <label className="flex flex-col gap-1.5">
+            <span className={labelClass}>New override — SKU</span>
+            <input
+              type="text"
+              name="sku"
+              required
+              placeholder="e.g. DRUM-STICK-5A"
+              className={`${fieldClass} font-mono`}
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className={labelClass}>Lead time</span>
+            <input
+              type="number"
+              name="leadTimeDays"
+              min={0}
+              step={1}
+              required
+              defaultValue={defaultRow?.lead_time_days ?? 14}
+              className={fieldClass}
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className={labelClass}>Safety stock</span>
+            <input
+              type="number"
+              name="safetyStock"
+              min={0}
+              step={1}
+              required
+              defaultValue={defaultRow?.safety_stock ?? 0}
+              className={fieldClass}
+            />
+          </label>
+          <button type="submit" className={primaryButtonClass}>
+            Add
+          </button>
+        </form>
+      </section>
+    </div>
+  );
+}
