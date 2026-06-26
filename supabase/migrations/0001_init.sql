@@ -44,8 +44,11 @@ security definer
 set search_path = public
 as $$
 begin
+  -- Pin role only for end users (an 'authenticated' JWT via PostgREST). The
+  -- service role and direct/admin SQL (no 'authenticated' claim, e.g. the
+  -- Supabase SQL editor) may legitimately change roles.
   if new.role is distinct from old.role
-     and auth.role() is distinct from 'service_role' then
+     and auth.role() = 'authenticated' then
     new.role := old.role;
   end if;
   return new;
