@@ -3,6 +3,10 @@
 ## [2026-06-26]
 
 ### Added
+- Add `lib/reorder/` reorder recommender (Module 1, decision-support only): `recommend.ts` (PURE `recommend()` — `reorderPoint = dailyDemand*leadTimeDays + safetyStock`, discriminated-union `ok | needs-review`; UNKNOWN/null on-hand or demand and invalid inputs surface as `needs-review`, never a number), `demand.ts` (DemandProvider seam barrel + `getDemandProvider()` factory), `fake-demand.ts` (`FakeDemandProvider`, node-safe), `spapi-demand.ts` (`SpApiDemandProvider` server-only skeleton — FBA Inventory Ledger via SP-API Reports, live fetch TODO gated on creds), and `service.ts` (`assembleRecommendations`, dependency-injected supabase + provider).
+- Add `/reorder` route (`app/(app)/reorder/page.tsx`) listing SKUs to reorder with quantity + reasoning (on-hand, demand, lead time, safety stock, reorder point), plus distinct "Needs review" and "Well stocked" sections; recompute is per-request server read.
+- Add vitest coverage for the reorder module: table-driven `recommend.test.ts` (clear reorder / well-stocked / at-reorder-point / zero demand / zero safety stock / UNKNOWN on-hand + demand, asserting null is never treated as 0 and never a number) and `service.test.ts` (assembly over a mocked supabase + FakeDemandProvider).
+- Add "Reorder" link under Modules in `components/nav.tsx`.
 - Add `supabase/migrations/0003_inventory_levels.sql`: `public.inventory_levels` synced mirror keyed on `(marketplace_id, sku)` with nullable `total_quantity` (NULL = UNKNOWN, column-commented), nullable `fn_sku`, `synced_at`, RLS enabled, authenticated SELECT only (writes via service role).
 - Add `lib/inventory/` Module 1 inventory path: `mapping.ts` (pure `InventorySummary -> row`, preserves null), `sync.ts` (`syncInventory`, dependency-injected upsert orchestration, idempotent on conflict), and `format.ts` (`formatInventoryLevel` UI helper mapping null -> "Unknown", 0 -> "0", n -> n).
 - Add vitest coverage for the inventory mapping, sync orchestration, and display formatting, explicitly asserting UNKNOWN (null) is never coerced to 0.
