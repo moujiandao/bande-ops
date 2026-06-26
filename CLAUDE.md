@@ -23,6 +23,8 @@ scattering of one-off legacy tools (`listing-editor`, `supplier-reorder`).
 - All Amazon API access goes through `lib/amazon` (server-side only). Credentials live in env, never reach the browser.
 - Every persisted row is either a "synced mirror" (rebuildable from Amazon) or "ours" (authoritative) — never both.
 - Schema carries `marketplace_id` from day one (default US), even though only US is exercised now.
+- Server Actions re-check auth via `requireUser()` (`lib/auth/guard.ts`) — they are public endpoints; the `app/(app)/` layout gate does not protect them.
+- Mirror tables are written only by sync via the service-role admin client (`lib/supabase/admin.ts`); RLS gives authenticated users read-only access.
 - Use the glossary in `CONTEXT.md`; don't drift to avoided synonyms.
 
 ## Non-Obvious Decisions
