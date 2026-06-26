@@ -1,0 +1,240 @@
+import 'server-only';
+
+import { getAmazonConfig } from './config';
+import { getAccessToken } from './lwa';
+import {
+  DEFAULT_MARKETPLACE,
+  type CatalogItem,
+  type InventorySummary,
+  type Marketplace,
+  type MarketplaceId,
+} from './types';
+
+/**
+ * The single test seam for the whole app.
+ *
+ * AmazonClient is a deep module: a tiny, well-typed interface that hides all
+ * SP-API surface, LWA auth, host routing, and retry/backoff. Modules depend on
+ * this interface; tests inject FakeAmazonClient.
+ */
+export interface AmazonClient {
+  listCatalogItems(opts?: ListCatalogItemsOptions): Promise<CatalogItem[]>;
+  getInventorySummaries(
+    opts?: GetInventorySummariesOptions,
+  ): Promise<InventorySummary[]>;
+}
+
+export interface ListCatalogItemsOptions {
+  marketplace?: Marketplace;
+  /** Optional identifier filter (e.g. SKUs) passed to Catalog Items API. */
+  sellerSkus?: string[];
+}
+
+export interface GetInventorySummariesOptions {
+  marketplace?: Marketplace;
+  sellerSkus?: string[];
+}
+
+/** Retry tuning for transient SP-API failures (429 / 5xx). */
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 500;
+const MAX_DELAY_MS = 8_000;
+
+interface RequestOptions {
+  method?: string;
+  /** Path beginning with '/', appended to the marketplace host. */
+  path: string;
+  query?: Record<string, string | string[] | undefined>;
+  marketplace: Marketplace;
+}
+
+function buildUrl(host: string, path: string, query?: RequestOptions['query']): string {
+  const url = new URL(`https://${host}${path}`);
+  if (query) {
+    for (const [key, value] of Object.entries(query)) {
+      if (value === undefined) continue;
+      url.searchParams.set(key, Array.isArray(value) ? value.join(',') : value);
+    }
+  }
+  return url.toString();
+}
+
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Exponential backoff with full jitter, capped. */
+function backoffDelay(attempt: number): number {
+  const exp = Math.min(MAX_DELAY_MS, BASE_DELAY_MS * 2 ** attempt);
+  return Math.floor(Math.random() * exp);
+}
+
+function isRetryable(status: number): boolean {
+  return status === 429 || (status >= 500 && status <= 599);
+}
+
+/**
+ * Coerce a possibly-non-numeric Amazon quantity into number | null.
+ * UNKNOWN (non-numeric/unavailable) maps to null, never 0.
+ */
+function toQuantity(raw: unknown): number | null {
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+  return null;
+}
+
+export class SpApiClient implements AmazonClient {
+  /**
+   * Signed, retrying request against the marketplace's SP-API host.
+   * Adds Authorization: Bearer + x-amz-access-token (both carry the LWA token).
+   */
+  private async request<T>(opts: RequestOptions): Promise<T> {
+    const config = getAmazonConfig(opts.marketplace);
+    const url = buildUrl(config.host, opts.path, opts.query);
+
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      // Refresh token each attempt in case a long backoff outlived the token.
+      const accessToken = await getAccessToken();
+
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          method: opts.method ?? 'GET',
+          headers: {
+            authorization: `Bearer ${accessToken}`,
+            'x-amz-access-token': accessToken,
+            accept: 'application/json',
+          },
+          cache: 'no-store',
+        });
+      } catch (err) {
+        // Network/transport error: retry while attempts remain.
+        lastError = err;
+        if (attempt < MAX_RETRIES) {
+          await sleep(backoffDelay(attempt));
+          continue;
+        }
+        throw err;
+      }
+
+      if (res.ok) {
+        return (await res.json()) as T;
+      }
+
+      // Transient HTTP failure: back off and retry.
+      if (isRetryable(res.status) && attempt < MAX_RETRIES) {
+        await sleep(backoffDelay(attempt));
+        continue;
+      }
+
+      // Non-retryable (4xx) or out of retries: fail without re-looping.
+      const detail = await res.text().catch(() => '');
+      throw new Error(
+        `SP-API ${opts.method ?? 'GET'} ${opts.path} failed: ${res.status} ${
+          res.statusText
+        }${detail ? ` — ${detail}` : ''}`,
+      );
+    }
+
+    throw lastError instanceof Error
+      ? lastError
+      : new Error('SP-API request failed after retries.');
+  }
+
+  async listCatalogItems(
+    opts: ListCatalogItemsOptions = {},
+  ): Promise<CatalogItem[]> {
+    const marketplace = opts.marketplace ?? DEFAULT_MARKETPLACE;
+    // Catalog Items API (2022-04-01). TODO: verify against sandbox.
+    const data = await this.request<CatalogItemsResponse>({
+      path: '/catalog/2022-04-01/items',
+      marketplace,
+      query: {
+        marketplaceIds: marketplace.id,
+        includedData: 'identifiers,summaries,images',
+        identifiers: opts.sellerSkus,
+        identifiersType: opts.sellerSkus ? 'SKU' : undefined,
+      },
+    });
+
+    return (data.items ?? []).map(mapCatalogItem);
+  }
+
+  async getInventorySummaries(
+    opts: GetInventorySummariesOptions = {},
+  ): Promise<InventorySummary[]> {
+    const marketplace = opts.marketplace ?? DEFAULT_MARKETPLACE;
+    // FBA Inventory API (v1). TODO: verify against sandbox.
+    const data = await this.request<InventorySummariesResponse>({
+      path: '/fba/inventory/v1/summaries',
+      marketplace,
+      query: {
+        granularityType: 'Marketplace',
+        granularityId: marketplace.id,
+        marketplaceIds: marketplace.id,
+        sellerSkus: opts.sellerSkus,
+      },
+    });
+
+    const summaries = data.payload?.inventorySummaries ?? [];
+    return summaries.map((s) => mapInventorySummary(s, marketplace.id));
+  }
+}
+
+// --- SP-API raw response shapes (partial; only what we map) ---
+
+interface CatalogItemsResponse {
+  items?: RawCatalogItem[];
+}
+
+interface RawCatalogItem {
+  asin?: string;
+  summaries?: Array<{ itemName?: string; marketplaceId?: string }>;
+  identifiers?: Array<{
+    marketplaceId?: string;
+    identifiers?: Array<{ identifierType?: string; identifier?: string }>;
+  }>;
+  images?: Array<{
+    marketplaceId?: string;
+    images?: Array<{ link?: string }>;
+  }>;
+}
+
+interface InventorySummariesResponse {
+  payload?: {
+    inventorySummaries?: RawInventorySummary[];
+  };
+}
+
+interface RawInventorySummary {
+  sellerSku?: string;
+  fnSku?: string;
+  totalQuantity?: unknown;
+}
+
+function mapCatalogItem(raw: RawCatalogItem): CatalogItem {
+  const asin = raw.asin ?? '';
+  const title = raw.summaries?.[0]?.itemName ?? '';
+  const skuId = raw.identifiers
+    ?.flatMap((g) => g.identifiers ?? [])
+    .find((i) => i.identifierType === 'SKU')?.identifier;
+  const imageUrl = raw.images?.[0]?.images?.[0]?.link;
+
+  return {
+    sku: skuId ?? '',
+    asin,
+    title,
+    ...(imageUrl ? { imageUrl } : {}),
+  };
+}
+
+function mapInventorySummary(
+  raw: RawInventorySummary,
+  marketplaceId: MarketplaceId,
+): InventorySummary {
+  return {
+    sku: raw.sellerSku ?? '',
+    marketplaceId,
+    totalQuantity: toQuantity(raw.totalQuantity),
+    ...(raw.fnSku ? { fnSku: raw.fnSku } : {}),
+  };
+}
