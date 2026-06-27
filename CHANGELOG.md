@@ -23,6 +23,14 @@
 - Extend `/ads` (`app/(app)/ads/page.tsx`) with Spend, Sales, ACOS, ROAS columns joined from `ads_campaign_metrics` on `(marketplace_id, campaign_id)`; ACOS/ROAS are computed at render via `lib/ads/metrics.ts`. A null metric, absent metrics row, or computed-UNKNOWN ratio renders a distinct muted "Unknown" badge, never as 0/$0/0%. ACOS formatted as a percentage.
 - Wire `syncAdsAction` (`app/(app)/ads/actions.ts`) to run `syncCampaigns` then `syncCampaignMetrics` after `requireUser()`.
 
+### Infrastructure & docs
+- Add GitHub Actions CI (`.github/workflows/ci.yml`): `tsc` + `eslint` + `vitest` on push(`main`)/PR.
+- Rename `middleware.ts` → `proxy.ts` (Next 16 deprecation; same matcher).
+- Migrate the Ads client off deprecated Sponsored Products **v2 → v3** (`lib/ads/v3.ts` pure parsers; `POST /sp/campaigns/list`, vendored media type, UPPERCASE→normalized state, nested DAILY-only budget, pagination).
+- Add Ads slice A3 (`lib/cron/sync-all.ts` `runFullSync` — the Vercel Cron route now syncs catalog + inventory + ads) and A4 (`0008_ads_rules` ACOS target; `lib/ads/classify.ts` wasted-spend flags; `lib/ads/view.ts` search/sort; editable ACOS target on `/ads`).
+- Add `docs/go-live-readiness.md` — multi-agent audit of the real SP-API + Advertising API vs the fake-backed code — and `[go-live]` issues (#25, #27, #28, #33).
+- eslint: ignore `_`-prefixed unused args/vars. Daily Vercel Cron schedule (Hobby plan).
+
 ## [2026-06-26]
 
 ### Added
