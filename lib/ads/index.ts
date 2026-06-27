@@ -11,6 +11,8 @@ export {
   type CampaignState,
   type Campaign,
   type AdsCampaignRow,
+  type CampaignMetrics,
+  type AdsCampaignMetricsRow,
   MARKETPLACES,
   DEFAULT_MARKETPLACE,
 } from './types';

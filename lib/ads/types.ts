@@ -53,3 +53,45 @@ export interface AdsCampaignRow {
   daily_budget: number | null;
   synced_at: string;
 }
+
+/**
+ * Performance metrics for a single campaign over a reporting window (Ads slice
+ * A2). Pulled from the Advertising API v3 async reporting flow (spCampaigns).
+ *
+ * UNKNOWN convention (mirrors UNKNOWN-budget / UNKNOWN-stock): every metric is
+ * `number | null` where `null` means "Amazon did not report a value" (UNKNOWN),
+ * NEVER 0. A true 0 (e.g. zero clicks) is distinct from UNKNOWN and folded into
+ * math; a null is not.
+ *
+ * Note: ACOS and ROAS are NOT stored here — they are COMPUTED on demand from
+ * cost/sales via `lib/ads/metrics.ts`, so the divide-by-zero -> UNKNOWN rule
+ * lives in exactly one tested place.
+ */
+export interface CampaignMetrics {
+  campaignId: string;
+  marketplaceId: string;
+  /** null = UNKNOWN (Amazon reported no value); never 0. */
+  impressions: number | null;
+  /** null = UNKNOWN; never 0. */
+  clicks: number | null;
+  /** Ad spend. null = UNKNOWN; never 0. */
+  cost: number | null;
+  /** Attribution-windowed sales. null = UNKNOWN; never 0. */
+  sales: number | null;
+}
+
+/**
+ * A row of the `public.ads_campaign_metrics` synced mirror, exactly as written
+ * to Postgres. snake_case columns; every metric is nullable (NULL = UNKNOWN,
+ * never 0); `synced_at` is an ISO-8601 string. ACOS/ROAS are intentionally
+ * absent (computed at render time), so the mirror only stores raw inputs.
+ */
+export interface AdsCampaignMetricsRow {
+  marketplace_id: string;
+  campaign_id: string;
+  impressions: number | null;
+  clicks: number | null;
+  cost: number | null;
+  sales: number | null;
+  synced_at: string;
+}

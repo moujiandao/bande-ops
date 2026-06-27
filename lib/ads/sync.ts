@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AdsClient } from './client';
 import { mapCampaignsToRows } from './mapping';
+import { mapMetricsToRows } from './metrics-mapping';
 import { DEFAULT_MARKETPLACE, type Marketplace } from './types';
 
 /**
@@ -65,6 +66,59 @@ export async function syncCampaigns(
 
   if (error) {
     throw new Error(`syncCampaigns: mirror upsert failed: ${error.message}`);
+  }
+
+  return {
+    count: rows.length,
+    syncedAt: syncedAt.toISOString(),
+    marketplaceId: marketplace.id,
+  };
+}
+
+export interface SyncCampaignMetricsDeps {
+  /** Source of truth. In tests, a FakeAdsClient. */
+  client: Pick<AdsClient, 'getCampaignMetrics'>;
+  /** Service-role Supabase client (bypasses RLS) for the mirror write. */
+  admin: AdsWriter;
+  /** Marketplace to sync. Defaults to US. */
+  marketplace?: Marketplace;
+}
+
+/**
+ * Fetch campaign performance metrics (ONE batched async report, all campaigns)
+ * from the Advertising API, map to mirror rows, and UPSERT them on conflict
+ * (marketplace_id, campaign_id), refreshing impressions/clicks/cost/sales and
+ * synced_at.
+ *
+ * UNKNOWN invariant: null metrics flow through untouched (never 0). ACOS/ROAS
+ * are intentionally NOT stored — they are computed at render time from
+ * cost/sales (see metrics.ts).
+ *
+ * Idempotent: re-running with the same Amazon data converges the mirror to the
+ * same row set (upsert overwrites by primary key), it does not duplicate.
+ */
+export async function syncCampaignMetrics(
+  deps: SyncCampaignMetricsDeps,
+): Promise<SyncCampaignsResult> {
+  const marketplace = deps.marketplace ?? DEFAULT_MARKETPLACE;
+
+  const metrics = await deps.client.getCampaignMetrics();
+
+  // One timestamp for the whole batch.
+  const syncedAt = new Date();
+  const rows = mapMetricsToRows(metrics, {
+    marketplaceId: marketplace.id,
+    syncedAt,
+  });
+
+  const { error } = await deps.admin
+    .from('ads_campaign_metrics')
+    .upsert(rows, { onConflict: 'marketplace_id,campaign_id' });
+
+  if (error) {
+    throw new Error(
+      `syncCampaignMetrics: mirror upsert failed: ${error.message}`,
+    );
   }
 
   return {

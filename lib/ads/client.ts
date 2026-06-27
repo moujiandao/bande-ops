@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { getAdsConfig } from './config';
-import type { Campaign } from './types';
+import type { Campaign, CampaignMetrics } from './types';
 import { parseV3Campaign } from './v3';
 
 /**
@@ -14,6 +14,20 @@ import { parseV3Campaign } from './v3';
  */
 export interface AdsClient {
   listCampaigns(): Promise<Campaign[]>;
+  /**
+   * Fetch performance metrics (impressions/clicks/cost/sales) for all campaigns
+   * over a reporting window, in ONE batched async report (never per-campaign).
+   * Missing metrics MUST come back as null (UNKNOWN), never fabricated 0s.
+   */
+  getCampaignMetrics(opts?: GetCampaignMetricsOptions): Promise<CampaignMetrics[]>;
+}
+
+/** Options for {@link AdsClient.getCampaignMetrics}. */
+export interface GetCampaignMetricsOptions {
+  /** Inclusive report start date, 'YYYY-MM-DD'. Defaults to a recent window. */
+  startDate?: string;
+  /** Inclusive report end date, 'YYYY-MM-DD'. Defaults to today. */
+  endDate?: string;
 }
 
 /** Retry tuning for transient Advertising API failures (429 / 5xx). */
@@ -41,6 +55,38 @@ const SP_CAMPAIGN_V3_MEDIA_TYPE = 'application/vnd.spCampaign.v3+json';
 
 /** How many campaigns to request per page on the v3 list endpoint. */
 const LIST_PAGE_SIZE = 100;
+
+/**
+ * Vendored media type for CREATING a v3 async report (POST /reporting/reports).
+ * Sent as BOTH Content-Type and Accept on the create call.
+ */
+const CREATE_ASYNC_REPORT_MEDIA_TYPE =
+  'application/vnd.createasyncreportrequest.v3+json';
+
+/** Report type for the Sponsored Products campaign-level performance report. */
+const SP_CAMPAIGNS_REPORT_TYPE_ID = 'spCampaigns';
+
+/**
+ * v3 report columns we request. cost is ad spend; sales is the attribution-
+ * windowed attributed sales. ACOS/ROAS are NOT columns — Amazon never returns
+ * them; we compute them ourselves (see metrics.ts). campaignId is the join key.
+ */
+const SP_CAMPAIGNS_REPORT_COLUMNS = [
+  'campaignId',
+  'impressions',
+  'clicks',
+  'cost',
+  'sales1d', // attribution-windowed attributed sales; verify column id vs sandbox
+] as const;
+
+/** Terminal states of an async report. */
+const REPORT_STATUS_COMPLETED = 'COMPLETED';
+const REPORT_STATUS_FAILURE = 'FAILURE';
+const REPORT_STATUS_CANCELLED = 'CANCELLED';
+
+/** Poll tuning for the async report status loop. */
+const REPORT_POLL_INTERVAL_MS = 5_000;
+const REPORT_POLL_MAX_ATTEMPTS = 60; // ~5 min ceiling
 
 interface RequestOptions {
   method?: string;
@@ -263,6 +309,61 @@ export class AdsApiClient implements AdsClient {
     } while (nextToken);
 
     return campaigns;
+  }
+
+  /**
+   * Real v3 reporting flow for campaign performance metrics — documented
+   * skeleton. The shape below is the production path; the live network +
+   * gunzip + parse leg is gated on sandbox verification (creds + a gzip
+   * download primitive), so today it throws rather than fabricating data.
+   *
+   * BATCHED, never per-campaign: one async report covers ALL campaigns at once
+   * (like the FBA ledger pull). Per-campaign report requests are explicitly
+   * wrong here — they would N-multiply the report quota and miss the batched
+   * attribution model.
+   *
+   * Flow (TODO: verify against sandbox):
+   *   1. POST /reporting/reports with Content-Type
+   *      `application/vnd.createasyncreportrequest.v3+json`, body carrying
+   *      reportTypeId 'spCampaigns', a {startDate,endDate} range, groupBy
+   *      ['campaign'], the columns (campaignId, impressions, clicks, cost,
+   *      sales*), and format 'GZIP_JSON'. Returns a reportId.
+   *   2. Poll GET /reporting/reports/{reportId} until status COMPLETED; bail
+   *      loudly on FAILURE / CANCELLED (never return partial/fabricated rows).
+   *   3. Download the GZIP from the returned `url`, gunzip, and JSON-parse.
+   *   4. Map each row -> CampaignMetrics with absent metrics as null (UNKNOWN),
+   *      NEVER 0. ACOS/ROAS stay computed downstream.
+   */
+  async getCampaignMetrics(
+    _opts?: GetCampaignMetricsOptions,
+  ): Promise<CampaignMetrics[]> {
+    // Reference the report contract so it is type-checked even while gated.
+    void {
+      mediaType: CREATE_ASYNC_REPORT_MEDIA_TYPE,
+      reportTypeId: SP_CAMPAIGNS_REPORT_TYPE_ID,
+      columns: SP_CAMPAIGNS_REPORT_COLUMNS,
+      groupBy: ['campaign'],
+      format: 'GZIP_JSON',
+      pollIntervalMs: REPORT_POLL_INTERVAL_MS,
+      pollMaxAttempts: REPORT_POLL_MAX_ATTEMPTS,
+      terminal: [
+        REPORT_STATUS_COMPLETED,
+        REPORT_STATUS_FAILURE,
+        REPORT_STATUS_CANCELLED,
+      ],
+    };
+
+    // TODO(creds): implement the create -> poll -> download(gunzip) -> parse
+    // flow above once Advertising API creds + a gzip download primitive are
+    // available and verified against the sandbox. Until then this is a hard
+    // skeleton: it MUST NOT silently return [] or fabricated 0s (either would
+    // read as "no spend / no sales" and corrupt ACOS/ROAS). Throw so a
+    // mis-wired production path fails loud.
+    throw new Error(
+      'AdsApiClient.getCampaignMetrics: not implemented (gated on Advertising ' +
+        'API creds + sandbox-verified v3 async reporting). Set ' +
+        'AMAZON_USE_FAKE=true to use FakeAdsClient.',
+    );
   }
 }
 
