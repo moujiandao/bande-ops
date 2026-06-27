@@ -1,4 +1,8 @@
-import type { AdsClient, GetCampaignMetricsOptions } from './client';
+import type {
+  AdsClient,
+  GetCampaignMetricsOptions,
+  UpdateCampaignInput,
+} from './client';
 import { DEFAULT_MARKETPLACE, type Campaign, type CampaignMetrics } from './types';
 
 /**
@@ -81,5 +85,30 @@ export class FakeAdsClient implements AdsClient {
     _opts?: GetCampaignMetricsOptions,
   ): Promise<CampaignMetrics[]> {
     return this.metrics;
+  }
+
+  /**
+   * Mutate the in-memory campaign so a fake round-trip reflects the change: a
+   * subsequent listCampaigns() (same array reference) returns the new state /
+   * budget. This is what lets the write action re-sync and show the applied
+   * change end-to-end without any network. Throws on an unknown campaignId or an
+   * empty change (matching the real client's fail-loud contract).
+   */
+  async updateCampaign(input: UpdateCampaignInput): Promise<void> {
+    if (input.state === undefined && input.dailyBudget === undefined) {
+      throw new Error(
+        'FakeAdsClient.updateCampaign: nothing to change (provide state and/or dailyBudget).',
+      );
+    }
+    const campaign = this.campaigns.find(
+      (c) => c.campaignId === input.campaignId,
+    );
+    if (!campaign) {
+      throw new Error(
+        `FakeAdsClient.updateCampaign: unknown campaignId ${input.campaignId}.`,
+      );
+    }
+    if (input.state !== undefined) campaign.state = input.state;
+    if (input.dailyBudget !== undefined) campaign.dailyBudget = input.dailyBudget;
   }
 }

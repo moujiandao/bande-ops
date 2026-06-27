@@ -1,9 +1,13 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { acos, roas } from '@/lib/ads/metrics';
 import { classifyCampaign, type CampaignFlag } from '@/lib/ads/classify';
+import {
+  recommendCampaignActions,
+  type Recommendation,
+} from '@/lib/ads/recommend';
 import {
   searchCampaigns,
   sortBySpend,
@@ -11,6 +15,7 @@ import {
   type SortDirection,
 } from '@/lib/ads/view';
 import type { CampaignState } from '@/lib/ads/types';
+import { applyCampaignChange } from './write-actions';
 
 /**
  * Client-side ads table: search + sort (by spend, by ACOS) over the
@@ -36,11 +41,12 @@ export type AdsTableRow = {
   sales: number | null;
 };
 
-/** A row enriched with computed ACOS/ROAS + flags, used for sorting + render. */
+/** A row enriched with computed ACOS/ROAS + flags + recs, for sort + render. */
 type DerivedRow = AdsTableRow & {
   acos: number | null;
   roas: number | null;
   flags: CampaignFlag[];
+  recommendations: Recommendation[];
 };
 
 type SortMode = 'default' | 'spend-desc' | 'spend-asc' | 'acos-desc' | 'acos-asc';
@@ -109,13 +115,202 @@ function FlagBadge({ flag }: { flag: CampaignFlag }) {
   );
 }
 
+const recKindLabel: Record<Recommendation['kind'], string> = {
+  pause: 'Pause',
+  'lower-budget': 'Lower budget',
+  'raise-budget': 'Raise budget',
+};
+
+/** Read-only recommendation chips (shown to everyone, including staff). */
+function Recommendations({ recs }: { recs: Recommendation[] }) {
+  if (recs.length === 0) return <span className="text-xs text-faint">—</span>;
+  return (
+    <div className="flex flex-col gap-1">
+      {recs.map((rec) => (
+        <span
+          key={rec.kind}
+          title={rec.reason}
+          className="inline-flex w-fit items-center gap-1 rounded-md border border-accent/30 bg-accent-soft px-1.5 py-0.5 text-[11px] font-medium text-accent-strong"
+        >
+          {recKindLabel[rec.kind]}
+          {rec.suggestedBudget !== undefined
+            ? ` → ${formatCurrency(rec.suggestedBudget)}`
+            : ''}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Owner-only write-back controls for one campaign. Every write is a TWO-STEP
+ * action: the first click arms a confirmation, the second executes — an explicit
+ * confirmation gate before anything calls the (owner-gated, audited) server
+ * action. Staff never see this component (the parent renders it only for owners).
+ *
+ * A budget pre-fill comes from a 'lower-budget' recommendation's suggestedBudget
+ * when present, otherwise the current daily budget. The compare-to-current sets
+ * the audit `kind` (lower vs raise) honestly.
+ */
+function CampaignActions({ row }: { row: DerivedRow }) {
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<null | 'pause' | 'budget'>(null);
+
+  const suggested = row.recommendations.find(
+    (r) => r.kind === 'lower-budget' && r.suggestedBudget !== undefined,
+  )?.suggestedBudget;
+  const [budget, setBudget] = useState<string>(
+    suggested !== undefined
+      ? String(suggested)
+      : row.daily_budget !== null
+        ? String(row.daily_budget)
+        : '',
+  );
+
+  function run(action: () => Promise<void>) {
+    setError(null);
+    startTransition(async () => {
+      try {
+        await action();
+        setConfirming(null);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Write failed.');
+      }
+    });
+  }
+
+  function doPause() {
+    run(() =>
+      applyCampaignChange({
+        campaignId: row.campaign_id,
+        marketplaceId: row.marketplace_id,
+        kind: 'pause',
+      }),
+    );
+  }
+
+  function doBudget() {
+    const value = Number(budget);
+    if (!Number.isFinite(value) || value <= 0) {
+      setError('Enter a positive budget.');
+      return;
+    }
+    // Honest audit kind: a decrease vs the known current budget is 'lower-budget'.
+    const kind =
+      row.daily_budget !== null && value < row.daily_budget
+        ? 'lower-budget'
+        : 'raise-budget';
+    run(() =>
+      applyCampaignChange({
+        campaignId: row.campaign_id,
+        marketplaceId: row.marketplace_id,
+        kind,
+        dailyBudget: value,
+      }),
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {/* Pause (only meaningful for an enabled campaign). */}
+      {row.state === 'enabled' ? (
+        confirming === 'pause' ? (
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              disabled={isPending}
+              onClick={doPause}
+              className="rounded-md bg-red-600 px-2 py-1 text-[11px] font-medium text-white disabled:opacity-50"
+            >
+              {isPending ? 'Pausing…' : 'Confirm pause'}
+            </button>
+            <button
+              type="button"
+              disabled={isPending}
+              onClick={() => setConfirming(null)}
+              className="rounded-md border border-border px-2 py-1 text-[11px] text-muted"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={() => {
+              setError(null);
+              setConfirming('pause');
+            }}
+            className="w-fit rounded-md border border-border px-2 py-1 text-[11px] font-medium text-foreground hover:bg-panel-muted disabled:opacity-50"
+          >
+            Pause
+          </button>
+        )
+      ) : null}
+
+      {/* Set daily budget. */}
+      <div className="flex items-center gap-1.5">
+        <input
+          type="number"
+          min={0}
+          step="0.01"
+          value={budget}
+          disabled={isPending}
+          onChange={(e) => setBudget(e.target.value)}
+          aria-label={`Set daily budget for ${row.name}`}
+          className="w-20 rounded-md border border-border bg-panel px-2 py-1 text-[11px] tabular-nums text-foreground focus:border-accent focus:outline-none"
+          placeholder="budget"
+        />
+        {confirming === 'budget' ? (
+          <>
+            <button
+              type="button"
+              disabled={isPending}
+              onClick={doBudget}
+              className="rounded-md bg-accent px-2 py-1 text-[11px] font-medium text-accent-foreground disabled:opacity-50"
+            >
+              {isPending ? 'Saving…' : 'Confirm'}
+            </button>
+            <button
+              type="button"
+              disabled={isPending}
+              onClick={() => setConfirming(null)}
+              className="rounded-md border border-border px-2 py-1 text-[11px] text-muted"
+            >
+              Cancel
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            disabled={isPending}
+            onClick={() => {
+              setError(null);
+              setConfirming('budget');
+            }}
+            className="rounded-md border border-border px-2 py-1 text-[11px] font-medium text-foreground hover:bg-panel-muted disabled:opacity-50"
+          >
+            Set budget
+          </button>
+        )}
+      </div>
+
+      {error ? <span className="text-[11px] text-red-600">{error}</span> : null}
+    </div>
+  );
+}
+
 export function AdsTable({
   rows,
   acosTarget,
+  isOwner = false,
 }: {
   rows: AdsTableRow[];
   /** ACOS target as a RATIO (0.25 = 25%); null = not set. Drives 'high-acos'. */
   acosTarget: number | null;
+  /** Only owners get the write-back action controls; staff are read-only. */
+  isOwner?: boolean;
 }) {
   const [query, setQuery] = useState('');
   const [sortMode, setSortMode] = useState<SortMode>('default');
@@ -124,18 +319,29 @@ export function AdsTable({
   // are null (UNKNOWN) on divide-by-zero; flags never trip on UNKNOWN data.
   const derived: DerivedRow[] = useMemo(
     () =>
-      rows.map((row) => ({
-        ...row,
-        acos: acos(row.cost, row.sales),
-        roas: roas(row.sales, row.cost),
-        flags: classifyCampaign({
+      rows.map((row) => {
+        const flags = classifyCampaign({
           state: row.state,
           cost: row.cost,
           sales: row.sales,
           dailyBudget: row.daily_budget,
           acosTarget,
-        }),
-      })),
+        });
+        return {
+          ...row,
+          acos: acos(row.cost, row.sales),
+          roas: roas(row.sales, row.cost),
+          flags,
+          recommendations: recommendCampaignActions({
+            state: row.state,
+            cost: row.cost,
+            sales: row.sales,
+            dailyBudget: row.daily_budget,
+            acosTarget,
+            flags,
+          }),
+        };
+      }),
     [rows, acosTarget],
   );
 
@@ -195,12 +401,19 @@ export function AdsTable({
               <th className="px-4 py-3 text-right font-medium">ACOS</th>
               <th className="px-4 py-3 text-right font-medium">ROAS</th>
               <th className="px-4 py-3 font-medium">Flags</th>
+              <th className="px-4 py-3 font-medium">Recommendations</th>
+              {isOwner ? (
+                <th className="px-4 py-3 font-medium">Actions</th>
+              ) : null}
             </tr>
           </thead>
           <tbody>
             {visibleRows.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-sm text-muted">
+                <td
+                  colSpan={isOwner ? 10 : 9}
+                  className="px-4 py-8 text-center text-sm text-muted"
+                >
                   No campaigns match &ldquo;{query}&rdquo;.
                 </td>
               </tr>
@@ -272,13 +485,21 @@ export function AdsTable({
                       </div>
                     )}
                   </td>
+                  <td className="px-4 py-3">
+                    <Recommendations recs={row.recommendations} />
+                  </td>
+                  {isOwner ? (
+                    <td className="px-4 py-3">
+                      <CampaignActions row={row} />
+                    </td>
+                  ) : null}
                 </tr>
               ))
             )}
           </tbody>
           <tfoot>
             <tr>
-              <td colSpan={8}>
+              <td colSpan={isOwner ? 10 : 9}>
                 <div className="flex items-center justify-between gap-2 border-t border-border px-4 py-2.5">
                   <span className="text-[11px] text-faint">
                     {visibleRows.length} of {rows.length} campaign
