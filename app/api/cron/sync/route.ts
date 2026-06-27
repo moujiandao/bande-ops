@@ -1,21 +1,23 @@
 import { NextResponse } from 'next/server';
 import { getAmazonClient } from '@/lib/amazon';
+import { getAdsClient } from '@/lib/ads';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { syncCatalog } from '@/lib/catalog/sync';
-import { syncInventory } from '@/lib/inventory/sync';
+import { runFullSync } from '@/lib/cron/sync-all';
 import { isAuthorizedCronRequest } from '@/lib/cron/auth';
 
 /**
  * Scheduled full sync endpoint (Vercel Cron — see `vercel.json`).
  *
- * The same orchestration the "Sync now" server action runs, but driven on a
- * schedule instead of a click: refresh both synced mirrors (catalog +
- * inventory) from Amazon via the service-role admin client. Unlike the catalog
- * page action there is no logged-in user here, so auth is a shared-secret /
- * platform-header check (`isAuthorizedCronRequest`) rather than `requireUser()`.
+ * The same orchestration the page "Sync now" actions run, but driven on a
+ * schedule instead of a click: refresh every synced mirror — catalog + inventory
+ * (from SP-API) AND ads campaigns + campaign metrics (from the Advertising API)
+ * — via the service-role admin client. One scheduled tick refreshes all four.
+ * Unlike the page actions there is no logged-in user here, so auth is a
+ * shared-secret / platform-header check (`isAuthorizedCronRequest`) rather than
+ * `requireUser()`.
  *
- * Node runtime + dynamic: this pulls server-only modules (admin client,
- * Amazon SP-API client) and must never be statically cached.
+ * Node runtime + dynamic: this pulls server-only modules (admin client, the
+ * Amazon SP-API and Advertising clients) and must never be statically cached.
  */
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -25,18 +27,13 @@ export async function GET(request: Request): Promise<Response> {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
 
-  const client = getAmazonClient();
-  const admin = createAdminClient();
-
-  // Reuse both clients across the two syncs, mirroring the manual action.
-  const catalog = await syncCatalog({ client, admin });
-  const inventory = await syncInventory({ client, admin });
-
-  return NextResponse.json({
-    ok: true,
-    counts: {
-      catalog: catalog.count,
-      inventory: inventory.count,
-    },
+  // Wire the real clients into the injectable full-sync orchestration. One admin
+  // client is shared across all mirror writes, mirroring the manual actions.
+  const counts = await runFullSync({
+    amazonClient: getAmazonClient(),
+    adsClient: getAdsClient(),
+    admin: createAdminClient(),
   });
+
+  return NextResponse.json({ ok: true, counts });
 }

@@ -1,24 +1,26 @@
 import { createClient } from '@/lib/supabase/server';
-import { Badge } from '@/components/ui/badge';
 import type { AdsCampaignRow, AdsCampaignMetricsRow } from '@/lib/ads/types';
-import { acos, roas } from '@/lib/ads/metrics';
+import { DEFAULT_MARKETPLACE } from '@/lib/ads/types';
 import { syncAdsAction } from './actions';
+import { updateAcosTargetAction } from '@/lib/ads/rules-actions';
+import { AdsTable, type AdsTableRow } from './ads-table';
 
 /**
- * Ads (Module 2, slices A1 + A2) — Sponsored Products campaign list with
- * performance metrics.
+ * Ads (Module 2, slices A1 + A2 + A4) — Sponsored Products campaign list with
+ * performance metrics, made actionable.
  *
  * Server component. Reads the `ads_campaigns` and `ads_campaign_metrics` synced
- * mirrors through the authenticated Supabase server client (RLS), joins them by
- * the natural key (marketplace_id, campaign_id), and renders name, state, daily
- * budget, spend, sales, ACOS, and ROAS. The mirrors are rebuildable from the
- * Amazon Advertising API (ADR-0001); "Sync now" repopulates them via the
- * service-role write path.
+ * mirrors plus the `ads_rules` ACOS target (operational, user-authored) through
+ * the authenticated Supabase server client (RLS), joins campaigns to metrics by
+ * the natural key (marketplace_id, campaign_id), and hands the raw rows to a
+ * client table that adds search, sort (by spend / ACOS), and per-campaign
+ * wasted-spend flags. The mirrors are rebuildable from the Amazon Advertising
+ * API (ADR-0001); "Sync now" repopulates them via the service-role write path.
  *
  * UNKNOWN rules: a null daily_budget, a null metric, an absent metrics row, or a
- * computed-UNKNOWN ACOS/ROAS (divide-by-zero -> null) all render a distinct
- * muted "Unknown" badge, NEVER as 0 or $0. ACOS/ROAS are COMPUTED here from
- * cost/sales via lib/ads/metrics.ts — never stored.
+ * computed-UNKNOWN ACOS/ROAS all render a distinct muted "Unknown" badge, NEVER
+ * as 0 or $0. ACOS/ROAS are COMPUTED (never stored); flags never trip on UNKNOWN
+ * data. Decision-support only — nothing here writes back to Amazon.
  */
 
 function formatTimestamp(iso: string): string {
@@ -36,58 +38,19 @@ function mostRecentSyncedAt(rows: AdsCampaignRow[]): string | null {
   );
 }
 
-const stateVariant: Record<string, 'default' | 'soon' | 'accent'> = {
-  enabled: 'accent',
-  paused: 'default',
-  archived: 'soon',
-};
-
-function formatBudget(value: number | null): string {
-  // UNKNOWN (null) is distinct from a true 0 — never render null as "$0".
-  if (value === null) return '—';
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-  }).format(value);
-}
-
-function formatCurrency(value: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-  }).format(value);
-}
-
-/** Format a computed ACOS ratio as a percentage (0.2 -> "20.0%"). */
-function formatAcos(value: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'percent',
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  }).format(value);
-}
-
-/** Format a computed ROAS ratio as a multiple (5 -> "5.00x"). */
-function formatRoas(value: number): string {
-  return `${value.toFixed(2)}x`;
-}
-
 const metricKey = (marketplaceId: string, campaignId: string): string =>
   `${marketplaceId}:${campaignId}`;
 
-/** A muted badge for any UNKNOWN cell (null metric, absent row, or null ratio). */
-function UnknownCell({ title }: { title: string }) {
-  return (
-    <span title={title}>
-      <Badge variant="soon">Unknown</Badge>
-    </span>
-  );
-}
+type AdsRuleRow = {
+  marketplace_id: string;
+  acos_target: number;
+  updated_at: string;
+};
 
 export default async function AdsPage() {
   const supabase = await createClient();
 
-  const [campaignsRes, metricsRes] = await Promise.all([
+  const [campaignsRes, metricsRes, ruleRes] = await Promise.all([
     supabase
       .from('ads_campaigns')
       .select(
@@ -99,6 +62,11 @@ export default async function AdsPage() {
       .select(
         'marketplace_id, campaign_id, impressions, clicks, cost, sales, synced_at',
       ),
+    supabase
+      .from('ads_rules')
+      .select('marketplace_id, acos_target, updated_at')
+      .eq('marketplace_id', DEFAULT_MARKETPLACE.id)
+      .maybeSingle(),
   ]);
 
   const { data, error } = campaignsRes;
@@ -118,6 +86,31 @@ export default async function AdsPage() {
     console.error('ads: ads_campaign_metrics read failed', metricsError);
   }
 
+  // ACOS target (operational, user-authored) is stored as a RATIO; the editor
+  // below displays/edits it as a percent. null = not set yet (no 'high-acos').
+  // A failed read looks identical to "not set" and would silently drop every
+  // high-ACOS flag — surface it rather than swallow.
+  if (ruleRes.error) {
+    console.error('ads: ads_rules read failed', ruleRes.error);
+  }
+  const rule = (ruleRes.data ?? null) as AdsRuleRow | null;
+  const acosTarget = rule?.acos_target ?? null;
+  const acosTargetPercent = acosTarget !== null ? acosTarget * 100 : null;
+
+  // Build raw rows for the client table; it computes ACOS/ROAS/flags itself.
+  const tableRows: AdsTableRow[] = rows.map((row) => {
+    const metrics = metricsByKey.get(metricKey(row.marketplace_id, row.campaign_id));
+    return {
+      marketplace_id: row.marketplace_id,
+      campaign_id: row.campaign_id,
+      name: row.name,
+      state: row.state,
+      daily_budget: row.daily_budget,
+      cost: metrics?.cost ?? null,
+      sales: metrics?.sales ?? null,
+    };
+  });
+
   const lastSynced = mostRecentSyncedAt(rows);
 
   return (
@@ -129,8 +122,9 @@ export default async function AdsPage() {
           </h1>
           <p className="max-w-prose text-sm text-muted">
             Synced mirror of your Sponsored Products campaigns. Amazon is the
-            source of truth; this view is rebuildable and shows when it was last
-            pulled.
+            source of truth; this view is rebuildable and flags wasted spend
+            against your ACOS target. Decision-support only — nothing here writes
+            back to Amazon.
           </p>
         </div>
 
@@ -156,6 +150,46 @@ export default async function AdsPage() {
         </div>
       </header>
 
+      {/* ACOS target editor (operational, user-authored). Drives 'high-acos'. */}
+      <section className="flex flex-col gap-2 rounded-panel border border-border bg-panel p-4">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="text-sm font-semibold text-foreground">ACOS target</h2>
+          {rule ? (
+            <span className="text-[11px] text-faint">
+              Updated {formatTimestamp(rule.updated_at)}
+            </span>
+          ) : (
+            <span className="text-[11px] text-faint">Not set yet</span>
+          )}
+        </div>
+        <p className="max-w-prose text-xs text-muted">
+          Campaigns whose computed ACOS exceeds this target are flagged{' '}
+          <span className="font-medium text-foreground">High ACOS</span>. Entered
+          as a percentage.
+        </p>
+        <form action={updateAcosTargetAction} className="flex items-end gap-2">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-muted">Target ACOS (%)</span>
+            <input
+              type="number"
+              name="acosTargetPercent"
+              min={0}
+              step="0.1"
+              required
+              defaultValue={acosTargetPercent ?? ''}
+              placeholder="e.g. 25"
+              className="w-32 rounded-md border border-border bg-panel px-3 py-1.5 text-sm text-foreground tabular-nums focus:border-accent focus:outline-none"
+            />
+          </label>
+          <button
+            type="submit"
+            className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground transition-colors hover:opacity-90"
+          >
+            Save target
+          </button>
+        </form>
+      </section>
+
       {metricsError ? (
         <div className="rounded-panel border border-border bg-panel-muted p-3 text-xs text-foreground">
           ⚠ Campaign metrics failed to load ({metricsError.message}). Spend / ACOS
@@ -170,9 +204,7 @@ export default async function AdsPage() {
         </div>
       ) : rows.length === 0 ? (
         <div className="flex flex-col items-start gap-3 rounded-panel border border-dashed border-border bg-panel p-8">
-          <h2 className="text-sm font-medium text-foreground">
-            No campaigns yet
-          </h2>
+          <h2 className="text-sm font-medium text-foreground">No campaigns yet</h2>
           <p className="max-w-prose text-sm text-muted">
             The mirror is empty. Run a sync to pull your Sponsored Products
             campaigns from Amazon into this view.
@@ -187,113 +219,7 @@ export default async function AdsPage() {
           </form>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-panel border border-border bg-panel">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-xs uppercase tracking-wider text-faint">
-                <th className="px-4 py-3 font-medium">Campaign</th>
-                <th className="px-4 py-3 font-medium">State</th>
-                <th className="px-4 py-3 text-right font-medium">Daily budget</th>
-                <th className="px-4 py-3 text-right font-medium">Spend</th>
-                <th className="px-4 py-3 text-right font-medium">Sales</th>
-                <th className="px-4 py-3 text-right font-medium">ACOS</th>
-                <th className="px-4 py-3 text-right font-medium">ROAS</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => {
-                const isUnknownBudget = row.daily_budget === null;
-
-                // Joined metrics (may be absent -> all UNKNOWN, never 0).
-                const metrics = metricsByKey.get(
-                  metricKey(row.marketplace_id, row.campaign_id),
-                );
-                const cost = metrics?.cost ?? null;
-                const sales = metrics?.sales ?? null;
-                // ACOS/ROAS are COMPUTED here; divide-by-zero -> null (UNKNOWN).
-                const acosValue = acos(cost, sales);
-                const roasValue = roas(sales, cost);
-
-                return (
-                  <tr
-                    key={`${row.marketplace_id}:${row.campaign_id}`}
-                    className="border-b border-border last:border-b-0 align-top"
-                  >
-                    <td className="px-4 py-3 text-foreground">{row.name}</td>
-                    <td className="px-4 py-3">
-                      <Badge variant={stateVariant[row.state] ?? 'default'}>
-                        {row.state}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {isUnknownBudget ? (
-                        // UNKNOWN (null): a muted badge, visually distinct from a
-                        // numeric 0. Never rendered as "$0".
-                        <UnknownCell title="Amazon did not report a budget - flagged for review" />
-                      ) : (
-                        <span className="font-mono text-xs tabular-nums text-foreground">
-                          {formatBudget(row.daily_budget)}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {cost === null ? (
-                        <UnknownCell title="No ad spend reported - flagged for review" />
-                      ) : (
-                        <span className="font-mono text-xs tabular-nums text-foreground">
-                          {formatCurrency(cost)}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {sales === null ? (
-                        <UnknownCell title="No sales reported - flagged for review" />
-                      ) : (
-                        <span className="font-mono text-xs tabular-nums text-foreground">
-                          {formatCurrency(sales)}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {acosValue === null ? (
-                        // UNKNOWN ACOS: no sales (divide-by-zero) or no data.
-                        // Never 0, never "Infinity".
-                        <UnknownCell title="ACOS is UNKNOWN (no sales or no spend data) - never shown as 0%" />
-                      ) : (
-                        <span className="font-mono text-xs tabular-nums text-foreground">
-                          {formatAcos(acosValue)}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {roasValue === null ? (
-                        <UnknownCell title="ROAS is UNKNOWN (no spend or no sales data) - never shown as 0x" />
-                      ) : (
-                        <span className="font-mono text-xs tabular-nums text-foreground">
-                          {formatRoas(roasValue)}
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colSpan={7}>
-                  <div className="flex items-center justify-between gap-2 border-t border-border px-4 py-2.5">
-                    <span className="text-[11px] text-faint">
-                      {rows.length} campaign{rows.length === 1 ? '' : 's'}
-                    </span>
-                    <Badge className="border-border bg-panel-muted text-muted">
-                      US
-                    </Badge>
-                  </div>
-                </td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
+        <AdsTable rows={tableRows} acosTarget={acosTarget} />
       )}
     </div>
   );
