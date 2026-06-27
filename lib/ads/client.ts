@@ -1,7 +1,8 @@
 import 'server-only';
 
 import { getAdsConfig } from './config';
-import type { Campaign, CampaignState } from './types';
+import type { Campaign } from './types';
+import { parseV3Campaign } from './v3';
 
 /**
  * The single test seam for the Ads module.
@@ -25,11 +26,34 @@ const LWA_TOKEN_URL = 'https://api.amazon.com/auth/o2/token';
 /** Refresh this many ms before real expiry to avoid edge-of-expiry races. */
 const EXPIRY_SKEW_MS = 60_000;
 
+/**
+ * LWA scope requested at token exchange for the Advertising API. The campaign
+ * management scope is what the v3 Sponsored Products endpoints require.
+ */
+const ADS_LWA_SCOPE = 'advertising::campaign_management';
+
+/**
+ * Vendored (per-endpoint) media type for the Sponsored Products v3 campaigns
+ * list endpoint, sent as BOTH Content-Type and Accept. v3 replaces the generic
+ * application/json of v2 with these versioned, resource-scoped media types.
+ */
+const SP_CAMPAIGN_V3_MEDIA_TYPE = 'application/vnd.spCampaign.v3+json';
+
+/** How many campaigns to request per page on the v3 list endpoint. */
+const LIST_PAGE_SIZE = 100;
+
 interface RequestOptions {
   method?: string;
   /** Path beginning with '/', appended to the Advertising API host. */
   path: string;
   query?: Record<string, string | string[] | undefined>;
+  /** JSON body for POST/PUT requests; serialized with JSON.stringify. */
+  body?: unknown;
+  /**
+   * Per-call vendored media type, sent as BOTH Content-Type and Accept. When
+   * omitted, defaults to Accept: application/json (no Content-Type).
+   */
+  mediaType?: string;
 }
 
 interface CachedToken {
@@ -72,21 +96,6 @@ function isRetryable(status: number): boolean {
   return status === 429 || (status >= 500 && status <= 599);
 }
 
-/**
- * Coerce a possibly-non-numeric Advertising daily budget into number | null.
- * UNKNOWN (non-numeric/unavailable) maps to null, never 0.
- */
-function toBudget(raw: unknown): number | null {
-  if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
-  return null;
-}
-
-function toCampaignState(raw: unknown): CampaignState {
-  // Advertising API returns lowercase enabled/paused/archived; default unknown
-  // values to 'paused' (the safe, non-spending state) rather than guessing.
-  return raw === 'enabled' || raw === 'archived' ? raw : 'paused';
-}
-
 export class AdsApiClient implements AdsClient {
   private cachedToken: CachedToken | null = null;
   /** Coalesce concurrent refreshes so we don't hammer LWA on a cold cache. */
@@ -121,6 +130,8 @@ export class AdsApiClient implements AdsClient {
       refresh_token: config.refreshToken,
       client_id: config.clientId,
       client_secret: config.clientSecret,
+      // Request the campaign-management scope the v3 SP endpoints require.
+      scope: ADS_LWA_SCOPE,
     });
 
     const res = await fetch(LWA_TOKEN_URL, {
@@ -159,22 +170,36 @@ export class AdsApiClient implements AdsClient {
   private async request<T>(opts: RequestOptions): Promise<T> {
     const config = getAdsConfig();
     const url = buildUrl(config.host, opts.path, opts.query);
+    const method = opts.method ?? 'GET';
+    const hasBody = opts.body !== undefined;
+    const serializedBody = hasBody ? JSON.stringify(opts.body) : undefined;
+
+    // Per-call vendored media type (v3) governs BOTH Accept and Content-Type;
+    // fall back to plain JSON when no media type is supplied.
+    const accept = opts.mediaType ?? 'application/json';
 
     let lastError: unknown;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       // Refresh token each attempt in case a long backoff outlived the token.
       const accessToken = await this.getAccessToken();
 
+      const headers: Record<string, string> = {
+        authorization: `Bearer ${accessToken}`,
+        'Amazon-Advertising-API-ClientId': config.clientId,
+        'Amazon-Advertising-API-Scope': config.profileId,
+        accept,
+      };
+      // Only set Content-Type when we actually send a body.
+      if (hasBody) {
+        headers['content-type'] = opts.mediaType ?? 'application/json';
+      }
+
       let res: Response;
       try {
         res = await fetch(url, {
-          method: opts.method ?? 'GET',
-          headers: {
-            authorization: `Bearer ${accessToken}`,
-            'Amazon-Advertising-API-ClientId': config.clientId,
-            'Amazon-Advertising-API-Scope': config.profileId,
-            accept: 'application/json',
-          },
+          method,
+          headers,
+          body: serializedBody,
           cache: 'no-store',
         });
       } catch (err) {
@@ -200,7 +225,7 @@ export class AdsApiClient implements AdsClient {
       // Non-retryable (4xx) or out of retries: fail without re-looping.
       const detail = await res.text().catch(() => '');
       throw new Error(
-        `Ads API ${opts.method ?? 'GET'} ${opts.path} failed: ${res.status} ${
+        `Ads API ${method} ${opts.path} failed: ${res.status} ${
           res.statusText
         }${detail ? ` — ${detail}` : ''}`,
       );
@@ -212,29 +237,40 @@ export class AdsApiClient implements AdsClient {
   }
 
   async listCampaigns(): Promise<Campaign[]> {
-    // Sponsored Products campaigns (v2). TODO: verify against sandbox.
-    const data = await this.request<RawCampaign[]>({
-      path: '/v2/sp/campaigns',
-    });
+    // Sponsored Products v3: POST /sp/campaigns/list with the vendored media
+    // type, paginating via nextToken until exhausted. Each raw v3 campaign is
+    // normalized through the pure parseV3Campaign mapper.
+    // TODO: verify against sandbox.
+    const campaigns: Campaign[] = [];
+    let nextToken: string | undefined;
 
-    return (data ?? []).map(mapCampaign);
+    do {
+      const page = await this.request<V3CampaignListResponse>({
+        method: 'POST',
+        path: '/sp/campaigns/list',
+        mediaType: SP_CAMPAIGN_V3_MEDIA_TYPE,
+        body: {
+          maxResults: LIST_PAGE_SIZE,
+          stateFilter: { include: ['ENABLED', 'PAUSED', 'ARCHIVED'] },
+          ...(nextToken ? { nextToken } : {}),
+        },
+      });
+
+      for (const raw of page?.campaigns ?? []) {
+        campaigns.push(parseV3Campaign(raw));
+      }
+      nextToken = page?.nextToken;
+    } while (nextToken);
+
+    return campaigns;
   }
 }
 
-// --- Advertising API raw response shapes (partial; only what we map) ---
+// --- Sponsored Products v3 raw response shapes (partial; only what we map) ---
 
-interface RawCampaign {
-  campaignId?: number | string;
-  name?: string;
-  state?: string;
-  dailyBudget?: unknown;
-}
-
-function mapCampaign(raw: RawCampaign): Campaign {
-  return {
-    campaignId: raw.campaignId != null ? String(raw.campaignId) : '',
-    name: raw.name ?? '',
-    state: toCampaignState(raw.state),
-    dailyBudget: toBudget(raw.dailyBudget),
-  };
+/** A single page of the v3 POST /sp/campaigns/list response. */
+interface V3CampaignListResponse {
+  campaigns?: unknown[];
+  /** Present only while more pages remain. */
+  nextToken?: string;
 }
