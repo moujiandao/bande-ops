@@ -1,5 +1,5 @@
-import type { AdsClient } from './client';
-import type { Campaign } from './types';
+import type { AdsClient, GetCampaignMetricsOptions } from './client';
+import { DEFAULT_MARKETPLACE, type Campaign, type CampaignMetrics } from './types';
 
 /**
  * Deterministic, network-free AdsClient for tests and local dev.
@@ -14,8 +14,40 @@ import type { Campaign } from './types';
  */
 export class FakeAdsClient implements AdsClient {
   private readonly campaigns: Campaign[];
+  private readonly metrics: CampaignMetrics[];
 
-  constructor(seed?: { campaigns?: Campaign[] }) {
+  constructor(seed?: { campaigns?: Campaign[]; metrics?: CampaignMetrics[] }) {
+    this.metrics = seed?.metrics ?? [
+      {
+        // Full metrics: cost 40 / sales 200 -> ACOS 0.2 (20%), ROAS 5x.
+        campaignId: '111111111',
+        marketplaceId: DEFAULT_MARKETPLACE.id,
+        impressions: 12000,
+        clicks: 340,
+        cost: 40,
+        sales: 200,
+      },
+      {
+        // Spend, no sales: cost 15 / sales 0 -> ACOS UNKNOWN (null, never 0),
+        // ROAS 0. Exercises the divide-by-zero -> UNKNOWN path on the page.
+        campaignId: '222222222',
+        marketplaceId: DEFAULT_MARKETPLACE.id,
+        impressions: 800,
+        clicks: 12,
+        cost: 15,
+        sales: 0,
+      },
+      {
+        // All UNKNOWN: Amazon reported nothing. Every metric null, never 0;
+        // both ACOS and ROAS resolve to UNKNOWN.
+        campaignId: '333333333',
+        marketplaceId: DEFAULT_MARKETPLACE.id,
+        impressions: null,
+        clicks: null,
+        cost: null,
+        sales: null,
+      },
+    ];
     this.campaigns = seed?.campaigns ?? [
       {
         campaignId: '111111111',
@@ -41,5 +73,13 @@ export class FakeAdsClient implements AdsClient {
 
   async listCampaigns(): Promise<Campaign[]> {
     return this.campaigns;
+  }
+
+  // The fake returns canned metrics directly (no async report machinery). The
+  // window is ignored — determinism matters more than honoring the date range.
+  async getCampaignMetrics(
+    _opts?: GetCampaignMetricsOptions,
+  ): Promise<CampaignMetrics[]> {
+    return this.metrics;
   }
 }

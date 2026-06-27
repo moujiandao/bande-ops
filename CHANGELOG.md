@@ -1,5 +1,17 @@
 # Changelog
 
+## [2026-06-27]
+
+### Added
+- Add Ads Module 2 slice A2 (campaign performance metrics) to `lib/ads/`: `metrics.ts` (PURE `acos(cost, sales)` / `roas(sales, cost)` -> `number | null`; zero/null denominator and non-finite inputs yield `null` (UNKNOWN), NEVER 0 or Infinity), `metrics-mapping.ts` (pure `CampaignMetrics -> ads_campaign_metrics row`, nulls preserved), and `syncCampaignMetrics` in `sync.ts` (dependency-injected upsert, idempotent on conflict `(marketplace_id, campaign_id)`). Extend `types.ts` with `CampaignMetrics` and `AdsCampaignMetricsRow`.
+- Extend the `AdsClient` interface with `getCampaignMetrics(opts?)`: `AdsApiClient` implements it as a documented, BATCHED (one report, all campaigns) v3 async reporting skeleton (POST `/reporting/reports` with `application/vnd.createasyncreportrequest.v3+json`, `reportTypeId` `spCampaigns`, poll until COMPLETED, download+gunzip+parse) — the live network/gunzip leg throws NotImplemented (gated on sandbox-verified creds, never fabricates 0s); `FakeAdsClient` returns canned metrics (full / spend-no-sales / all-UNKNOWN).
+- Add `supabase/migrations/0007_ads_campaign_metrics.sql`: `public.ads_campaign_metrics` synced mirror keyed on `(marketplace_id, campaign_id)` with nullable `impressions`/`clicks`/`cost`/`sales` numeric (NULL = UNKNOWN, column-commented; ACOS/ROAS deliberately not stored), `synced_at`, RLS enabled, authenticated SELECT only (writes via service role).
+- Add vitest coverage: `metrics.test.ts` (exhaustive null/zero-denominator invariant — UNKNOWN is null, never 0/Infinity), `metrics-mapping.test.ts` (nulls preserved, true 0 distinct), and `syncCampaignMetrics` tests in `sync.test.ts` (idempotent upsert, UNKNOWN preserved).
+
+### Changed
+- Extend `/ads` (`app/(app)/ads/page.tsx`) with Spend, Sales, ACOS, ROAS columns joined from `ads_campaign_metrics` on `(marketplace_id, campaign_id)`; ACOS/ROAS are computed at render via `lib/ads/metrics.ts`. A null metric, absent metrics row, or computed-UNKNOWN ratio renders a distinct muted "Unknown" badge, never as 0/$0/0%. ACOS formatted as a percentage.
+- Wire `syncAdsAction` (`app/(app)/ads/actions.ts`) to run `syncCampaigns` then `syncCampaignMetrics` after `requireUser()`.
+
 ## [2026-06-26]
 
 ### Added

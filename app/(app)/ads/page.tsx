@@ -1,16 +1,24 @@
 import { createClient } from '@/lib/supabase/server';
 import { Badge } from '@/components/ui/badge';
-import type { AdsCampaignRow } from '@/lib/ads/types';
+import type { AdsCampaignRow, AdsCampaignMetricsRow } from '@/lib/ads/types';
+import { acos, roas } from '@/lib/ads/metrics';
 import { syncAdsAction } from './actions';
 
 /**
- * Ads (Module 2, slice A1) — the Sponsored Products campaign list view.
+ * Ads (Module 2, slices A1 + A2) — Sponsored Products campaign list with
+ * performance metrics.
  *
- * Server component. Reads the `ads_campaigns` synced mirror through the
- * authenticated Supabase server client (RLS) and renders name, state, and daily
- * budget. The mirror is rebuildable from the Amazon Advertising API (ADR-0001);
- * "Sync now" repopulates it via the service-role write path. UNKNOWN-budget
- * rule: a null daily_budget renders a distinct "Unknown" badge, NEVER as 0.
+ * Server component. Reads the `ads_campaigns` and `ads_campaign_metrics` synced
+ * mirrors through the authenticated Supabase server client (RLS), joins them by
+ * the natural key (marketplace_id, campaign_id), and renders name, state, daily
+ * budget, spend, sales, ACOS, and ROAS. The mirrors are rebuildable from the
+ * Amazon Advertising API (ADR-0001); "Sync now" repopulates them via the
+ * service-role write path.
+ *
+ * UNKNOWN rules: a null daily_budget, a null metric, an absent metrics row, or a
+ * computed-UNKNOWN ACOS/ROAS (divide-by-zero -> null) all render a distinct
+ * muted "Unknown" badge, NEVER as 0 or $0. ACOS/ROAS are COMPUTED here from
+ * cost/sales via lib/ads/metrics.ts — never stored.
  */
 
 function formatTimestamp(iso: string): string {
@@ -43,15 +51,73 @@ function formatBudget(value: number | null): string {
   }).format(value);
 }
 
+function formatCurrency(value: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+  }).format(value);
+}
+
+/** Format a computed ACOS ratio as a percentage (0.2 -> "20.0%"). */
+function formatAcos(value: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'percent',
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
+/** Format a computed ROAS ratio as a multiple (5 -> "5.00x"). */
+function formatRoas(value: number): string {
+  return `${value.toFixed(2)}x`;
+}
+
+const metricKey = (marketplaceId: string, campaignId: string): string =>
+  `${marketplaceId}:${campaignId}`;
+
+/** A muted badge for any UNKNOWN cell (null metric, absent row, or null ratio). */
+function UnknownCell({ title }: { title: string }) {
+  return (
+    <span title={title}>
+      <Badge variant="soon">Unknown</Badge>
+    </span>
+  );
+}
+
 export default async function AdsPage() {
   const supabase = await createClient();
 
-  const { data, error } = await supabase
-    .from('ads_campaigns')
-    .select('marketplace_id, campaign_id, name, state, daily_budget, synced_at')
-    .order('name', { ascending: true });
+  const [campaignsRes, metricsRes] = await Promise.all([
+    supabase
+      .from('ads_campaigns')
+      .select(
+        'marketplace_id, campaign_id, name, state, daily_budget, synced_at',
+      )
+      .order('name', { ascending: true }),
+    supabase
+      .from('ads_campaign_metrics')
+      .select(
+        'marketplace_id, campaign_id, impressions, clicks, cost, sales, synced_at',
+      ),
+  ]);
 
+  const { data, error } = campaignsRes;
   const rows = (data ?? []) as AdsCampaignRow[];
+
+  // Join metrics by the natural key (marketplace_id, campaign_id). A missing
+  // entry means UNKNOWN (no metrics synced for this campaign), NEVER 0.
+  const metricsRows = (metricsRes.data ?? []) as AdsCampaignMetricsRow[];
+  const metricsByKey = new Map<string, AdsCampaignMetricsRow>(
+    metricsRows.map((m) => [metricKey(m.marketplace_id, m.campaign_id), m]),
+  );
+
+  // Don't let a metrics READ FAILURE masquerade as legitimately-absent metrics
+  // (which render as UNKNOWN). Surface it instead of silently blanking to Unknown.
+  const metricsError = metricsRes.error;
+  if (metricsError) {
+    console.error('ads: ads_campaign_metrics read failed', metricsError);
+  }
+
   const lastSynced = mostRecentSyncedAt(rows);
 
   return (
@@ -90,6 +156,14 @@ export default async function AdsPage() {
         </div>
       </header>
 
+      {metricsError ? (
+        <div className="rounded-panel border border-border bg-panel-muted p-3 text-xs text-foreground">
+          ⚠ Campaign metrics failed to load ({metricsError.message}). Spend / ACOS
+          / ROAS below read &ldquo;Unknown&rdquo; because of this load error — not
+          because Amazon reported them as unknown.
+        </div>
+      ) : null}
+
       {error ? (
         <div className="rounded-panel border border-border bg-panel p-5 text-sm text-muted">
           Couldn&apos;t load the campaigns mirror: {error.message}
@@ -120,11 +194,26 @@ export default async function AdsPage() {
                 <th className="px-4 py-3 font-medium">Campaign</th>
                 <th className="px-4 py-3 font-medium">State</th>
                 <th className="px-4 py-3 text-right font-medium">Daily budget</th>
+                <th className="px-4 py-3 text-right font-medium">Spend</th>
+                <th className="px-4 py-3 text-right font-medium">Sales</th>
+                <th className="px-4 py-3 text-right font-medium">ACOS</th>
+                <th className="px-4 py-3 text-right font-medium">ROAS</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((row) => {
                 const isUnknownBudget = row.daily_budget === null;
+
+                // Joined metrics (may be absent -> all UNKNOWN, never 0).
+                const metrics = metricsByKey.get(
+                  metricKey(row.marketplace_id, row.campaign_id),
+                );
+                const cost = metrics?.cost ?? null;
+                const sales = metrics?.sales ?? null;
+                // ACOS/ROAS are COMPUTED here; divide-by-zero -> null (UNKNOWN).
+                const acosValue = acos(cost, sales);
+                const roasValue = roas(sales, cost);
+
                 return (
                   <tr
                     key={`${row.marketplace_id}:${row.campaign_id}`}
@@ -140,12 +229,48 @@ export default async function AdsPage() {
                       {isUnknownBudget ? (
                         // UNKNOWN (null): a muted badge, visually distinct from a
                         // numeric 0. Never rendered as "$0".
-                        <span title="Amazon did not report a budget - flagged for review">
-                          <Badge variant="soon">Unknown</Badge>
-                        </span>
+                        <UnknownCell title="Amazon did not report a budget - flagged for review" />
                       ) : (
                         <span className="font-mono text-xs tabular-nums text-foreground">
                           {formatBudget(row.daily_budget)}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {cost === null ? (
+                        <UnknownCell title="No ad spend reported - flagged for review" />
+                      ) : (
+                        <span className="font-mono text-xs tabular-nums text-foreground">
+                          {formatCurrency(cost)}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {sales === null ? (
+                        <UnknownCell title="No sales reported - flagged for review" />
+                      ) : (
+                        <span className="font-mono text-xs tabular-nums text-foreground">
+                          {formatCurrency(sales)}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {acosValue === null ? (
+                        // UNKNOWN ACOS: no sales (divide-by-zero) or no data.
+                        // Never 0, never "Infinity".
+                        <UnknownCell title="ACOS is UNKNOWN (no sales or no spend data) - never shown as 0%" />
+                      ) : (
+                        <span className="font-mono text-xs tabular-nums text-foreground">
+                          {formatAcos(acosValue)}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {roasValue === null ? (
+                        <UnknownCell title="ROAS is UNKNOWN (no spend or no sales data) - never shown as 0x" />
+                      ) : (
+                        <span className="font-mono text-xs tabular-nums text-foreground">
+                          {formatRoas(roasValue)}
                         </span>
                       )}
                     </td>
@@ -155,7 +280,7 @@ export default async function AdsPage() {
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan={3}>
+                <td colSpan={7}>
                   <div className="flex items-center justify-between gap-2 border-t border-border px-4 py-2.5">
                     <span className="text-[11px] text-faint">
                       {rows.length} campaign{rows.length === 1 ? '' : 's'}

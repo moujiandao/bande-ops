@@ -1,7 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
-import { syncCampaigns, type SyncCampaignsDeps } from './sync';
+import {
+  syncCampaigns,
+  syncCampaignMetrics,
+  type SyncCampaignsDeps,
+} from './sync';
 import { FakeAdsClient } from './fake-client';
-import { DEFAULT_MARKETPLACE, type Campaign } from './types';
+import { DEFAULT_MARKETPLACE, type Campaign, type CampaignMetrics } from './types';
 
 // Sync orchestration: Advertising API (source of truth) -> mirror upsert. We
 // inject a FakeAdsClient and a mocked admin client so there is no live network
@@ -108,5 +112,100 @@ describe('syncCampaigns', () => {
 
     expect(listSpy).toHaveBeenCalledTimes(1);
     expect(result.marketplaceId).toBe(DEFAULT_MARKETPLACE.id);
+  });
+});
+
+describe('syncCampaignMetrics', () => {
+  it('upserts the FakeAdsClient metrics into ads_campaign_metrics', async () => {
+    const { admin, from, upsert } = makeAdminMock();
+    const client = new FakeAdsClient();
+
+    const result = await syncCampaignMetrics({ client, admin });
+
+    expect(from).toHaveBeenCalledWith('ads_campaign_metrics');
+    expect(upsert).toHaveBeenCalledTimes(1);
+    const [rows, options] = upsert.mock.calls[0];
+    expect(options).toEqual({ onConflict: 'marketplace_id,campaign_id' });
+
+    // Three seeded metric rows, each tagged US with a string timestamp.
+    expect(rows).toHaveLength(3);
+    for (const row of rows) {
+      expect(row.marketplace_id).toBe(DEFAULT_MARKETPLACE.id);
+      expect(typeof row.synced_at).toBe('string');
+    }
+
+    // The all-UNKNOWN row carries null metrics through, never 0.
+    const unknown = rows.find(
+      (r: { campaign_id: string }) => r.campaign_id === '333333333',
+    );
+    expect(unknown.cost).toBeNull();
+    expect(unknown.sales).toBeNull();
+    expect(unknown.cost).not.toBe(0);
+
+    // The spend-no-sales row keeps a true 0 sales (distinct from UNKNOWN).
+    const spendNoSales = rows.find(
+      (r: { campaign_id: string }) => r.campaign_id === '222222222',
+    );
+    expect(spendNoSales.cost).toBe(15);
+    expect(spendNoSales.sales).toBe(0);
+
+    expect(result.count).toBe(3);
+    expect(result.marketplaceId).toBe(DEFAULT_MARKETPLACE.id);
+  });
+
+  it('stamps every metrics row in a sync with one shared synced_at', async () => {
+    const { admin, upsert } = makeAdminMock();
+    await syncCampaignMetrics({ client: new FakeAdsClient(), admin });
+
+    const [rows] = upsert.mock.calls[0];
+    const stamps = new Set(rows.map((r: { synced_at: string }) => r.synced_at));
+    expect(stamps.size).toBe(1);
+  });
+
+  it('is idempotent: re-running upserts the same key set, not duplicates', async () => {
+    const metrics: CampaignMetrics[] = [
+      {
+        campaignId: 'M-1',
+        marketplaceId: DEFAULT_MARKETPLACE.id,
+        impressions: 100,
+        clicks: 5,
+        cost: 2,
+        sales: 10,
+      },
+      {
+        campaignId: 'M-2',
+        marketplaceId: DEFAULT_MARKETPLACE.id,
+        impressions: null,
+        clicks: null,
+        cost: null,
+        sales: null,
+      },
+    ];
+    const client = new FakeAdsClient({ metrics });
+    const { admin, upsert } = makeAdminMock();
+
+    await syncCampaignMetrics({ client, admin });
+    await syncCampaignMetrics({ client, admin });
+
+    expect(upsert).toHaveBeenCalledTimes(2);
+    const keysOf = (call: number) =>
+      upsert.mock.calls[call][0].map(
+        (r: { marketplace_id: string; campaign_id: string }) =>
+          `${r.marketplace_id}:${r.campaign_id}`,
+      );
+    expect(keysOf(1)).toEqual(keysOf(0));
+    expect(new Set(keysOf(1)).size).toBe(keysOf(1).length);
+  });
+
+  it('throws a clear error when the mirror upsert fails', async () => {
+    const upsert = vi
+      .fn()
+      .mockResolvedValue({ data: null, error: { message: 'boom' } });
+    const from = vi.fn().mockReturnValue({ upsert });
+    const admin = { from } as unknown as SyncCampaignsDeps['admin'];
+
+    await expect(
+      syncCampaignMetrics({ client: new FakeAdsClient(), admin }),
+    ).rejects.toThrow(/mirror upsert failed: boom/);
   });
 });
