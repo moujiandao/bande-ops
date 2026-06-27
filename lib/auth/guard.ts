@@ -19,3 +19,24 @@ export async function requireUser(): Promise<SessionUser> {
   if (!user) redirect("/login");
   return user;
 }
+
+/**
+ * Require an authenticated user whose role is `owner`.
+ *
+ * This is the authorization gate for PRIVILEGED, state-changing actions — most
+ * importantly the FIRST write-back to Amazon (pause a campaign, change a daily
+ * budget). Only the `owner` may execute those; `staff` can view recommendations
+ * but never act.
+ *
+ * Builds on {@link requireUser}: an unauthenticated caller is redirected to
+ * /login (never returns), and an authenticated NON-owner is rejected by throwing
+ * — a write action must FAIL LOUD, not silently no-op or quietly redirect away
+ * while the caller assumes success. Returns the owner {@link SessionUser}.
+ */
+export async function requireOwner(): Promise<SessionUser> {
+  const user = await requireUser();
+  if (user.role !== "owner") {
+    throw new Error("Forbidden: this action requires the owner role.");
+  }
+  return user;
+}

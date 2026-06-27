@@ -17,9 +17,15 @@ export {
   DEFAULT_MARKETPLACE,
 } from './types';
 
-export type { AdsClient } from './client';
+export type { AdsClient, UpdateCampaignInput } from './client';
 export { AdsApiClient } from './client';
 export { FakeAdsClient } from './fake-client';
+export {
+  recommendCampaignActions,
+  type Recommendation,
+  type RecommendationKind,
+  type RecommendInput,
+} from './recommend';
 
 import type { AdsClient } from './client';
 import { AdsApiClient } from './client';

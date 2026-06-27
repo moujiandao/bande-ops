@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { loadSessionUser } from '@/lib/auth/session';
 import type { AdsCampaignRow, AdsCampaignMetricsRow } from '@/lib/ads/types';
 import { DEFAULT_MARKETPLACE } from '@/lib/ads/types';
 import { syncAdsAction } from './actions';
@@ -49,6 +50,11 @@ type AdsRuleRow = {
 
 export default async function AdsPage() {
   const supabase = await createClient();
+
+  // Role gates the write-back controls: only an owner may pause campaigns or
+  // change budgets. Staff see recommendations but not the action buttons.
+  const sessionUser = await loadSessionUser(supabase);
+  const isOwner = sessionUser?.role === 'owner';
 
   const [campaignsRes, metricsRes, ruleRes] = await Promise.all([
     supabase
@@ -219,7 +225,7 @@ export default async function AdsPage() {
           </form>
         </div>
       ) : (
-        <AdsTable rows={tableRows} acosTarget={acosTarget} />
+        <AdsTable rows={tableRows} acosTarget={acosTarget} isOwner={isOwner} />
       )}
     </div>
   );

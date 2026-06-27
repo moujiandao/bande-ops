@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { getAdsConfig } from './config';
-import type { Campaign, CampaignMetrics } from './types';
+import type { Campaign, CampaignMetrics, CampaignState } from './types';
 import { parseV3Campaign } from './v3';
 
 /**
@@ -20,6 +20,27 @@ export interface AdsClient {
    * Missing metrics MUST come back as null (UNKNOWN), never fabricated 0s.
    */
   getCampaignMetrics(opts?: GetCampaignMetricsOptions): Promise<CampaignMetrics[]>;
+  /**
+   * Write a change back to a single Sponsored Products campaign — the FIRST and
+   * only write-back in the app. Can pause/enable a campaign and/or change its
+   * daily budget, i.e. it stops ads or changes spend, so it is always
+   * user-initiated, owner-gated, confirmed, and audited at the call site
+   * (`app/(app)/ads/write-actions.ts`); this seam only performs the write.
+   *
+   * At least one of `state` / `dailyBudget` must be supplied. Resolves on
+   * success; rejects (never silently no-ops) on failure so a caller cannot
+   * mistake a no-op for an applied change.
+   */
+  updateCampaign(input: UpdateCampaignInput): Promise<void>;
+}
+
+/** A single-campaign write. At least one mutable field must be present. */
+export interface UpdateCampaignInput {
+  campaignId: string;
+  /** New lifecycle state (e.g. 'paused' to stop the campaign). */
+  state?: CampaignState;
+  /** New daily budget (currency amount, > 0). */
+  dailyBudget?: number;
 }
 
 /** Options for {@link AdsClient.getCampaignMetrics}. */
@@ -55,6 +76,12 @@ const SP_CAMPAIGN_V3_MEDIA_TYPE = 'application/vnd.spCampaign.v3+json';
 
 /** How many campaigns to request per page on the v3 list endpoint. */
 const LIST_PAGE_SIZE = 100;
+
+/**
+ * Budget type for a v3 Sponsored Products campaign budget object. Only DAILY is
+ * exercised here (the only budget the app edits).
+ */
+const SP_BUDGET_TYPE_DAILY = 'DAILY';
 
 /**
  * Vendored media type for CREATING a v3 async report (POST /reporting/reports).
@@ -362,6 +389,63 @@ export class AdsApiClient implements AdsClient {
     throw new Error(
       'AdsApiClient.getCampaignMetrics: not implemented (gated on Advertising ' +
         'API creds + sandbox-verified v3 async reporting). Set ' +
+        'AMAZON_USE_FAKE=true to use FakeAdsClient.',
+    );
+  }
+
+  /**
+   * Real v3 Sponsored Products campaign WRITE — documented skeleton.
+   *
+   * This is the highest-risk call in the app: it can pause/enable a campaign and
+   * change its daily budget (stop ads / change spend). The production path is a
+   *   PUT /sp/campaigns
+   * with Content-Type/Accept `application/vnd.spCampaign.v3+json` and the
+   * ClientId + Scope (profile) headers (all carried by `request()`), body:
+   *   { campaigns: [{ campaignId, state?, budget?: { budget, budgetType } }] }
+   * where our lowercase CampaignState maps to Amazon's uppercase enum and the
+   * daily budget maps to a DAILY budget object.
+   *
+   * The live network leg is GATED on sandbox verification — a wrong write here
+   * changes real spend. Until verified it MUST NOT silently no-op (that would
+   * read as "applied" while nothing changed). It validates the input, builds the
+   * exact request (type-checked below), then throws loud. // TODO(creds): verify
+   * the endpoint/method/body against the sandbox, then send via `this.request`.
+   */
+  async updateCampaign(input: UpdateCampaignInput): Promise<void> {
+    if (input.state === undefined && input.dailyBudget === undefined) {
+      throw new Error(
+        'AdsApiClient.updateCampaign: nothing to change (provide state and/or dailyBudget).',
+      );
+    }
+
+    // Build the v3 update payload for ONE campaign. Map our lowercase state to
+    // Amazon's uppercase enum; map dailyBudget to a DAILY budget object.
+    const campaignUpdate: Record<string, unknown> = {
+      campaignId: input.campaignId,
+    };
+    if (input.state !== undefined) {
+      campaignUpdate.state = input.state.toUpperCase();
+    }
+    if (input.dailyBudget !== undefined) {
+      campaignUpdate.budget = {
+        budget: input.dailyBudget,
+        budgetType: SP_BUDGET_TYPE_DAILY,
+      };
+    }
+
+    // Reference the exact request contract so it stays type-checked while gated.
+    // TODO(creds): replace this `void` with `await this.request(...)` once the
+    // write is verified against the sandbox.
+    void ({
+      method: 'PUT',
+      path: '/sp/campaigns',
+      mediaType: SP_CAMPAIGN_V3_MEDIA_TYPE,
+      body: { campaigns: [campaignUpdate] },
+    } satisfies RequestOptions);
+
+    throw new Error(
+      'AdsApiClient.updateCampaign: not implemented (gated on sandbox-verified ' +
+        'v3 Sponsored Products write — a real write changes live spend). Set ' +
         'AMAZON_USE_FAKE=true to use FakeAdsClient.',
     );
   }
