@@ -18,7 +18,7 @@ const overview: NavItem[] = [{ label: "Dashboard", href: "/", active: true }];
 const modules: NavItem[] = [
   { label: "Catalog & Inventory", href: "/catalog" },
   { label: "Reorder", href: "/reorder" },
-  { label: "Ads", soon: true },
+  { label: "Ads", href: "/ads" },
   { label: "Launch", soon: true },
   { label: "Research", soon: true },
 ];
