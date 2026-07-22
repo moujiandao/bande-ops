@@ -1,5 +1,24 @@
 # Changelog
 
+## [2026-07-22]
+
+### Added
+- Add live multi-source reorder: `/reorder` recommendations are assembled from four synced mirrors instead of the old throw-only demand provider — detailed FBA inventory (fulfillable + inbound buckets), AWD inventory (`lib/awd`), FBA daily ledger → calculated sales velocity (`lib/velocity`), and SV Direct replenishment inventory (`lib/svd`). New `supabase/migrations/0010_live_inventory_reorder.sql` adds the mirror tables, `source_sync_runs`/`source_sync_state`, `inventory_source_mappings`, and `replenishment_policy` (all RLS-gated, read-only to authenticated).
+- Add `lib/sync/run.ts`: source-agnostic sync-run/-state helpers (`recordSyncAttempt`/`recordSyncSuccess`/`recordSyncFailure`) and the shared `SyncWriter` seam every sync module now uses.
+- Add `lib/settings/policy.ts`: global `replenishment_policy` (velocity window, which inbound buckets count as usable supply) with defaults, row mapping, form parsing, and validation; editable from `/settings`.
+- Add `lib/svd/` (types, server-only config/client, HTML parser, sync, owner-gated `refreshSvdInventoryAction`): SVD is a THIRD external source (not Amazon), server-side creds only, refreshed from the owner-gated `Refresh SVD` button on `/reorder` — never on the cron.
+- Add `lib/velocity/` (pure 90-in-stock-day `calculateSalesVelocity`, ledger TSV normalization, Reports-API-driven sync) and `lib/amazon/reports.ts` (report request/status shapes + ledger report body).
+- Add `lib/reorder/supply.ts` (pure usable-supply from FBA + AWD + SVD under policy) and `lib/reorder/mappings.ts` (FNSKU-first → SKU → manual SVD mapping).
+
+### Changed
+- Fix SP-API client correctness for the live path: send `SPAPI_SELLER_ID` on seller-SKU catalog lookups, add `details=true` to FBA inventory, paginate catalog/FBA/AWD, add AWD inventory + Reports API methods, drop the superfluous `Authorization` header. `SPAPI_SELLER_ID` is now required in live mode.
+- Rewire `lib/cron/sync-all.ts` (`runFullSync`) to refresh catalog, FBA inventory, AWD inventory, and velocity alongside the two ads mirrors; unify all six sync modules on the shared `SyncWriter` seam so the cron's single `admin` dep doesn't exceed TypeScript's instantiation-depth limit at `next build`.
+- Rewrite `lib/reorder/service.ts` off the `DemandProvider`: read persisted velocity + multi-source supply and surface source health, supply breakdown, velocity sample size, and `Needs review` reasons; rename `recommend()`'s `onHand` input to `usableSupply`. Reorder and settings UIs render the new source-health strip, supply breakdown, and policy controls.
+- Document `SPAPI_SELLER_ID` and `SVD_BASE_URL`/`SVD_USERNAME`/`SVD_PASSWORD` in `.env.example`; update `docs/go-live-readiness.md` with the live-reorder readiness checklist.
+
+### Removed
+- Remove the per-SKU page-load demand path (`lib/reorder/demand.ts`, `fake-demand.ts`, `spapi-demand.ts`), replaced by the persisted velocity mirror.
+
 ## [2026-06-27]
 
 ### Added
