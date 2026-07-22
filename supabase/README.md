@@ -27,6 +27,16 @@ Per ADR-0001, the local DB holds two kinds of tables:
 `auth.users`, a `role` of `owner` or `staff`, RLS restricting each user to
 their own row, and a trigger that auto-creates a profile on signup.
 
+### Live replenishment mirrors
+
+FBA inventory, AWD inventory, FBA daily ledger inputs, calculated sales velocity,
+and SVD inventory are synced mirrors. Refresh code writes them with the service
+role and records source freshness in `source_sync_state`. Reorder calculations
+must surface stale, unknown, or unmapped source data as `Needs review`.
+
+`replenishment_policy`, `replenishment_settings`, and
+`inventory_source_mappings` are operational data owned by this app.
+
 ## Applying migrations
 
 Local / linked project, in order:
