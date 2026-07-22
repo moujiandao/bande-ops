@@ -36,7 +36,7 @@ function makeAdmin() {
 }
 
 describe('sync run helpers', () => {
-  it('records attempt, success, and failure as source-agnostic state', async () => {
+  it('records attempt and success payloads with source, marketplace, state, and row count', async () => {
     const { admin, calls } = makeAdmin();
 
     const syncRunId = await recordSyncAttempt({
@@ -53,21 +53,101 @@ describe('sync run helpers', () => {
       rowCount: 2,
     });
 
-    await recordSyncFailure({
-      admin,
-      source: 'fba_inventory',
-      marketplaceId: 'ATVPDKIKX0DER',
-      syncRunId,
-      error: new Error('boom'),
-    });
-
     expect(calls.map((call) => `${call.method}:${call.table}`)).toEqual([
       'insert:source_sync_runs',
       'upsert:source_sync_state',
       'update:source_sync_runs',
       'upsert:source_sync_state',
+    ]);
+    expect(calls).toEqual([
+      {
+        table: 'source_sync_runs',
+        method: 'insert',
+        payload: {
+          source: 'fba_inventory',
+          marketplace_id: 'ATVPDKIKX0DER',
+          status: 'running',
+          started_at: expect.any(String),
+        },
+      },
+      {
+        table: 'source_sync_state',
+        method: 'upsert',
+        payload: {
+          source: 'fba_inventory',
+          marketplace_id: 'ATVPDKIKX0DER',
+          last_attempt_at: expect.any(String),
+          status: 'running',
+          error_summary: null,
+          updated_at: expect.any(String),
+        },
+      },
+      {
+        table: 'source_sync_runs',
+        method: 'update',
+        payload: {
+          status: 'success',
+          finished_at: expect.any(String),
+          row_count: 2,
+          error_summary: null,
+        },
+      },
+      {
+        table: 'source_sync_state',
+        method: 'upsert',
+        payload: {
+          source: 'fba_inventory',
+          marketplace_id: 'ATVPDKIKX0DER',
+          last_success_at: expect.any(String),
+          current_success_run_id: 'run-1',
+          status: 'success',
+          row_count: 2,
+          error_summary: null,
+          updated_at: expect.any(String),
+        },
+      },
+    ]);
+  });
+
+  it('persists a generic failure summary without raw upstream error content', async () => {
+    const { admin, calls } = makeAdmin();
+    const rawError = 'Amazon response: {"access_token":"super-secret-token"}';
+
+    await recordSyncFailure({
+      admin,
+      source: 'fba_inventory',
+      marketplaceId: 'ATVPDKIKX0DER',
+      syncRunId: 'run-1',
+      error: new Error(rawError),
+    });
+
+    expect(calls.map((call) => `${call.method}:${call.table}`)).toEqual([
       'update:source_sync_runs',
       'upsert:source_sync_state',
     ]);
+    expect(calls).toEqual([
+      {
+        table: 'source_sync_runs',
+        method: 'update',
+        payload: {
+          status: 'failed',
+          finished_at: expect.any(String),
+          error_summary: 'Sync failed; check server logs for details.',
+        },
+      },
+      {
+        table: 'source_sync_state',
+        method: 'upsert',
+        payload: {
+          source: 'fba_inventory',
+          marketplace_id: 'ATVPDKIKX0DER',
+          status: 'failed',
+          error_summary: 'Sync failed; check server logs for details.',
+          updated_at: expect.any(String),
+        },
+      },
+    ]);
+    expect(JSON.stringify(calls)).not.toContain(rawError);
+    expect(JSON.stringify(calls)).not.toContain('super-secret-token');
   });
 });

@@ -40,8 +40,8 @@ export interface SyncFailureInput extends SyncAttemptInput {
   error: unknown;
 }
 
-function errorSummary(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+function errorSummary(_error: unknown): string {
+  return 'Sync failed; check server logs for details.';
 }
 
 export async function recordSyncAttempt(input: SyncAttemptInput): Promise<string> {
@@ -65,6 +65,7 @@ export async function recordSyncAttempt(input: SyncAttemptInput): Promise<string
       last_attempt_at: startedAt,
       status: 'running',
       error_summary: null,
+      updated_at: startedAt,
     },
     { onConflict: 'source,marketplace_id' },
   );
@@ -93,6 +94,7 @@ export async function recordSyncSuccess(input: SyncSuccessInput): Promise<void> 
       status: 'success',
       row_count: input.rowCount,
       error_summary: null,
+      updated_at: finishedAt,
     },
     { onConflict: 'source,marketplace_id' },
   );
@@ -117,6 +119,7 @@ export async function recordSyncFailure(input: SyncFailureInput): Promise<void> 
       marketplace_id: input.marketplaceId,
       status: 'failed',
       error_summary: summary,
+      updated_at: finishedAt,
     },
     { onConflict: 'source,marketplace_id' },
   );
