@@ -12,14 +12,33 @@ import { DEFAULT_MARKETPLACE, type InventorySummary } from '@/lib/amazon/types';
 // NOTE: import FakeAmazonClient from '@/lib/amazon/fake-client' directly, not
 // the '@/lib/amazon' barrel, which pulls SpApiClient -> 'server-only'.
 
-/** A mock admin client exposing just `from().upsert()`, recording calls. */
-function makeAdminMock() {
+/** A mock admin client that records mirror writes and source-sync lifecycle writes. */
+function makeAdminMock(upsertError: { message: string } | null = null) {
   const upsert = vi.fn().mockResolvedValue({ data: null, error: null });
-  const from = vi.fn().mockReturnValue({ upsert });
+  const sourceStateUpsert = vi.fn().mockResolvedValue({ error: null });
+  const sourceRunInsert = vi.fn().mockReturnValue({
+    select: vi.fn().mockReturnValue({
+      single: vi.fn().mockResolvedValue({ data: { id: 'run-1' }, error: null }),
+    }),
+  });
+  const sourceRunUpdate = vi.fn().mockReturnValue({
+    eq: vi.fn().mockResolvedValue({ error: null }),
+  });
+  upsert.mockResolvedValue({ data: null, error: upsertError });
+  const from = vi.fn((table: string) => {
+    if (table === 'inventory_levels') return { upsert };
+    if (table === 'source_sync_state') return { upsert: sourceStateUpsert };
+    if (table === 'source_sync_runs') {
+      return { insert: sourceRunInsert, update: sourceRunUpdate };
+    }
+    throw new Error(`Unexpected table: ${table}`);
+  });
   return {
     admin: { from } as unknown as SyncInventoryDeps['admin'],
     from,
     upsert,
+    sourceStateUpsert,
+    sourceRunUpdate,
   };
 }
 
@@ -74,6 +93,25 @@ describe('syncInventory', () => {
     expect(stamps.size).toBe(1);
   });
 
+  it('links mirror rows and successful source state to the sync run', async () => {
+    const { admin, upsert, sourceStateUpsert } = makeAdminMock();
+
+    await syncInventory({ client: new FakeAmazonClient(), admin });
+
+    const [rows] = upsert.mock.calls[0];
+    expect(rows.every((row: { sync_run_id: string }) => row.sync_run_id === 'run-1')).toBe(
+      true,
+    );
+    expect(sourceStateUpsert).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        source: 'fba_inventory',
+        status: 'success',
+        current_success_run_id: 'run-1',
+      }),
+      { onConflict: 'source,marketplace_id' },
+    );
+  });
+
   it('is idempotent: re-running upserts the same key set, not duplicates', async () => {
     const seed: InventorySummary[] = [
       { sku: 'SEED-1', marketplaceId: DEFAULT_MARKETPLACE.id, totalQuantity: 3 },
@@ -109,15 +147,14 @@ describe('syncInventory', () => {
   });
 
   it('throws a clear error when the mirror upsert fails', async () => {
-    const upsert = vi
-      .fn()
-      .mockResolvedValue({ data: null, error: { message: 'boom' } });
-    const from = vi.fn().mockReturnValue({ upsert });
-    const admin = { from } as unknown as SyncInventoryDeps['admin'];
+    const { admin, sourceRunUpdate } = makeAdminMock({ message: 'boom' });
 
     await expect(
       syncInventory({ client: new FakeAmazonClient(), admin }),
     ).rejects.toThrow(/mirror upsert failed: boom/);
+    expect(sourceRunUpdate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: 'failed' }),
+    );
   });
 
   it('passes the marketplace through to the Amazon client', async () => {

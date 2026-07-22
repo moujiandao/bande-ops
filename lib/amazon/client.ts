@@ -5,6 +5,7 @@ import { getAccessToken } from './lwa';
 import {
   DEFAULT_MARKETPLACE,
   type CatalogItem,
+  type AwdInventorySummary,
   type InventorySummary,
   type Marketplace,
   type MarketplaceId,
@@ -22,6 +23,9 @@ export interface AmazonClient {
   getInventorySummaries(
     opts?: GetInventorySummariesOptions,
   ): Promise<InventorySummary[]>;
+  listAwdInventory(
+    opts?: ListAwdInventoryOptions,
+  ): Promise<AwdInventorySummary[]>;
 }
 
 export interface ListCatalogItemsOptions {
@@ -33,6 +37,11 @@ export interface ListCatalogItemsOptions {
 export interface GetInventorySummariesOptions {
   marketplace?: Marketplace;
   sellerSkus?: string[];
+}
+
+export interface ListAwdInventoryOptions {
+  marketplace?: Marketplace;
+  sellerSku?: string;
 }
 
 /** Retry tuning for transient SP-API failures (429 / 5xx). */
@@ -84,7 +93,7 @@ function toQuantity(raw: unknown): number | null {
 export class SpApiClient implements AmazonClient {
   /**
    * Signed, retrying request against the marketplace's SP-API host.
-   * Adds Authorization: Bearer + x-amz-access-token (both carry the LWA token).
+   * Adds the LWA token required by SP-API.
    */
   private async request<T>(opts: RequestOptions): Promise<T> {
     const config = getAmazonConfig(opts.marketplace);
@@ -100,7 +109,6 @@ export class SpApiClient implements AmazonClient {
         res = await fetch(url, {
           method: opts.method ?? 'GET',
           headers: {
-            authorization: `Bearer ${accessToken}`,
             'x-amz-access-token': accessToken,
             accept: 'application/json',
           },
@@ -145,18 +153,28 @@ export class SpApiClient implements AmazonClient {
   ): Promise<CatalogItem[]> {
     const marketplace = opts.marketplace ?? DEFAULT_MARKETPLACE;
     // Catalog Items API (2022-04-01). TODO: verify against sandbox.
-    const data = await this.request<CatalogItemsResponse>({
-      path: '/catalog/2022-04-01/items',
-      marketplace,
-      query: {
-        marketplaceIds: marketplace.id,
-        includedData: 'identifiers,summaries,images',
-        identifiers: opts.sellerSkus,
-        identifiersType: opts.sellerSkus ? 'SKU' : undefined,
-      },
-    });
+    const config = getAmazonConfig(marketplace);
+    const items: CatalogItem[] = [];
+    let nextToken: string | undefined;
 
-    return (data.items ?? []).map(mapCatalogItem);
+    do {
+      const data = await this.request<CatalogItemsResponse>({
+        path: '/catalog/2022-04-01/items',
+        marketplace,
+        query: {
+          marketplaceIds: marketplace.id,
+          includedData: 'identifiers,summaries,images',
+          identifiers: opts.sellerSkus,
+          identifiersType: opts.sellerSkus ? 'SKU' : undefined,
+          sellerId: opts.sellerSkus ? config.sellerId : undefined,
+          pageToken: nextToken,
+        },
+      });
+      items.push(...(data.items ?? []).map(mapCatalogItem));
+      nextToken = data.pagination?.nextToken;
+    } while (nextToken);
+
+    return items;
   }
 
   async getInventorySummaries(
@@ -164,19 +182,59 @@ export class SpApiClient implements AmazonClient {
   ): Promise<InventorySummary[]> {
     const marketplace = opts.marketplace ?? DEFAULT_MARKETPLACE;
     // FBA Inventory API (v1). TODO: verify against sandbox.
-    const data = await this.request<InventorySummariesResponse>({
-      path: '/fba/inventory/v1/summaries',
-      marketplace,
-      query: {
-        granularityType: 'Marketplace',
-        granularityId: marketplace.id,
-        marketplaceIds: marketplace.id,
-        sellerSkus: opts.sellerSkus,
-      },
-    });
+    const summaries: InventorySummary[] = [];
+    let nextToken: string | undefined;
 
-    const summaries = data.payload?.inventorySummaries ?? [];
-    return summaries.map((s) => mapInventorySummary(s, marketplace.id));
+    do {
+      const data = await this.request<InventorySummariesResponse>({
+        path: '/fba/inventory/v1/summaries',
+        marketplace,
+        query: {
+          details: 'true',
+          granularityType: 'Marketplace',
+          granularityId: marketplace.id,
+          marketplaceIds: marketplace.id,
+          sellerSkus: opts.sellerSkus,
+          nextToken,
+        },
+      });
+      summaries.push(
+        ...(data.payload?.inventorySummaries ?? []).map((summary) =>
+          mapInventorySummary(summary, marketplace.id),
+        ),
+      );
+      nextToken = data.pagination?.nextToken;
+    } while (nextToken);
+
+    return summaries;
+  }
+
+  async listAwdInventory(
+    opts: ListAwdInventoryOptions = {},
+  ): Promise<AwdInventorySummary[]> {
+    const marketplace = opts.marketplace ?? DEFAULT_MARKETPLACE;
+    const summaries: AwdInventorySummary[] = [];
+    let nextToken: string | undefined;
+
+    do {
+      const data = await this.request<AwdInventoryResponse>({
+        path: '/awd/2024-05-09/inventory',
+        marketplace,
+        query: {
+          details: 'SHOW',
+          sku: opts.sellerSku,
+          nextToken,
+        },
+      });
+      summaries.push(
+        ...(data.inventory ?? []).map((summary) =>
+          mapAwdInventorySummary(summary, marketplace.id),
+        ),
+      );
+      nextToken = data.nextToken;
+    } while (nextToken);
+
+    return summaries;
   }
 }
 
@@ -184,6 +242,7 @@ export class SpApiClient implements AmazonClient {
 
 interface CatalogItemsResponse {
   items?: RawCatalogItem[];
+  pagination?: Pagination;
 }
 
 interface RawCatalogItem {
@@ -203,11 +262,37 @@ interface InventorySummariesResponse {
   payload?: {
     inventorySummaries?: RawInventorySummary[];
   };
+  pagination?: Pagination;
+}
+
+interface Pagination {
+  nextToken?: string;
 }
 
 interface RawInventorySummary {
   sellerSku?: string;
   fnSku?: string;
+  totalQuantity?: unknown;
+  inventoryDetails?: {
+    fulfillableQuantity?: unknown;
+    inboundWorkingQuantity?: unknown;
+    inboundShippedQuantity?: unknown;
+    inboundReceivingQuantity?: unknown;
+    reservedQuantity?: { totalReservedQuantity?: unknown };
+    researchingQuantity?: { totalResearchingQuantity?: unknown };
+    unfulfillableQuantity?: { totalUnfulfillableQuantity?: unknown };
+  };
+}
+
+interface AwdInventoryResponse {
+  inventory?: RawAwdInventorySummary[];
+  nextToken?: string;
+}
+
+interface RawAwdInventorySummary {
+  sku?: string;
+  fnSku?: string;
+  replenishmentQuantity?: unknown;
   totalQuantity?: unknown;
 }
 
@@ -231,10 +316,35 @@ function mapInventorySummary(
   raw: RawInventorySummary,
   marketplaceId: MarketplaceId,
 ): InventorySummary {
+  const details = raw.inventoryDetails;
   return {
     sku: raw.sellerSku ?? '',
     marketplaceId,
     totalQuantity: toQuantity(raw.totalQuantity),
     ...(raw.fnSku ? { fnSku: raw.fnSku } : {}),
+    fulfillableQuantity: toQuantity(details?.fulfillableQuantity),
+    inboundWorkingQuantity: toQuantity(details?.inboundWorkingQuantity),
+    inboundShippedQuantity: toQuantity(details?.inboundShippedQuantity),
+    inboundReceivingQuantity: toQuantity(details?.inboundReceivingQuantity),
+    reservedQuantity: toQuantity(details?.reservedQuantity?.totalReservedQuantity),
+    researchingQuantity: toQuantity(
+      details?.researchingQuantity?.totalResearchingQuantity,
+    ),
+    unfulfillableQuantity: toQuantity(
+      details?.unfulfillableQuantity?.totalUnfulfillableQuantity,
+    ),
+  };
+}
+
+function mapAwdInventorySummary(
+  raw: RawAwdInventorySummary,
+  marketplaceId: MarketplaceId,
+): AwdInventorySummary {
+  return {
+    sku: raw.sku ?? '',
+    marketplaceId,
+    ...(raw.fnSku ? { fnSku: raw.fnSku } : {}),
+    replenishmentQuantity: toQuantity(raw.replenishmentQuantity),
+    totalQuantity: toQuantity(raw.totalQuantity),
   };
 }

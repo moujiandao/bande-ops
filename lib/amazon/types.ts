@@ -64,4 +64,19 @@ export interface InventorySummary {
   /** null = UNKNOWN (see UNKNOWN-stock convention above). */
   totalQuantity: number | null;
   fnSku?: string;
+  fulfillableQuantity?: number | null;
+  inboundWorkingQuantity?: number | null;
+  inboundShippedQuantity?: number | null;
+  inboundReceivingQuantity?: number | null;
+  reservedQuantity?: number | null;
+  researchingQuantity?: number | null;
+  unfulfillableQuantity?: number | null;
+}
+
+export interface AwdInventorySummary {
+  sku: string;
+  marketplaceId: MarketplaceId;
+  fnSku?: string;
+  replenishmentQuantity: number | null;
+  totalQuantity: number | null;
 }

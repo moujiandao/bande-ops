@@ -10,6 +10,7 @@ export type {
   Marketplace,
   CatalogItem,
   InventorySummary,
+  AwdInventorySummary,
 } from './types';
 export { MARKETPLACES, DEFAULT_MARKETPLACE } from './types';
 
@@ -17,6 +18,7 @@ export type {
   AmazonClient,
   ListCatalogItemsOptions,
   GetInventorySummariesOptions,
+  ListAwdInventoryOptions,
 } from './client';
 export { SpApiClient } from './client';
 export { FakeAmazonClient } from './fake-client';

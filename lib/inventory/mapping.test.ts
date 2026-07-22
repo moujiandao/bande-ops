@@ -28,7 +28,15 @@ describe('mapInventorySummaryToRow', () => {
       sku: 'BANDE-001',
       total_quantity: 42,
       fn_sku: 'X000111AAA',
+      fulfillable_quantity: null,
+      inbound_working_quantity: null,
+      inbound_shipped_quantity: null,
+      inbound_receiving_quantity: null,
+      reserved_quantity: null,
+      researching_quantity: null,
+      unfulfillable_quantity: null,
       synced_at: FIXED.toISOString(),
+      sync_run_id: null,
     });
   });
 
@@ -79,6 +87,36 @@ describe('mapInventorySummaryToRow', () => {
       { marketplaceId: 'A1OTHER', syncedAt: FIXED },
     );
     expect(row.marketplace_id).toBe('A1OTHER');
+  });
+
+  it('maps detailed FBA buckets and preserves unknown quantities', () => {
+    const row = mapInventorySummaryToRow(
+      {
+        sku: 'SKU-1',
+        marketplaceId: 'ATVPDKIKX0DER' as never,
+        fnSku: 'FNSKU-1',
+        totalQuantity: 20,
+        fulfillableQuantity: 7,
+        inboundWorkingQuantity: null,
+        inboundShippedQuantity: 5,
+        inboundReceivingQuantity: 2,
+        reservedQuantity: 3,
+        researchingQuantity: 1,
+        unfulfillableQuantity: 2,
+      },
+      { syncedAt: new Date('2026-07-21T00:00:00.000Z'), syncRunId: 'run-1' },
+    );
+
+    expect(row).toMatchObject({
+      fulfillable_quantity: 7,
+      inbound_working_quantity: null,
+      inbound_shipped_quantity: 5,
+      inbound_receiving_quantity: 2,
+      reserved_quantity: 3,
+      researching_quantity: 1,
+      unfulfillable_quantity: 2,
+      sync_run_id: 'run-1',
+    });
   });
 });
 

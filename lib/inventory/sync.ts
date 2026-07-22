@@ -1,6 +1,11 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AmazonClient } from '@/lib/amazon/client';
 import { DEFAULT_MARKETPLACE, type Marketplace } from '@/lib/amazon/types';
+import {
+  recordSyncAttempt,
+  recordSyncFailure,
+  recordSyncSuccess,
+  type SyncWriter,
+} from '@/lib/sync/run';
 import { mapInventorySummariesToRows } from './mapping';
 
 /**
@@ -15,14 +20,11 @@ import { mapInventorySummariesToRows } from './mapping';
  * node test.
  */
 
-/** The slice of the admin client this orchestration actually uses. */
-type InventoryWriter = Pick<SupabaseClient, 'from'>;
-
 export interface SyncInventoryDeps {
   /** Source of truth. In tests, a FakeAmazonClient. */
   client: Pick<AmazonClient, 'getInventorySummaries'>;
   /** Service-role Supabase client (bypasses RLS) for the mirror write. */
-  admin: InventoryWriter;
+  admin: SyncWriter;
   /** Marketplace to sync. Defaults to US. */
   marketplace?: Marketplace;
 }
@@ -33,6 +35,7 @@ export interface SyncInventoryResult {
   /** Shared sync timestamp (ISO-8601) stamped on every row. */
   syncedAt: string;
   marketplaceId: string;
+  syncRunId: string;
 }
 
 /**
@@ -48,27 +51,53 @@ export async function syncInventory(
   deps: SyncInventoryDeps,
 ): Promise<SyncInventoryResult> {
   const marketplace = deps.marketplace ?? DEFAULT_MARKETPLACE;
-
-  const summaries = await deps.client.getInventorySummaries({ marketplace });
-
-  // One timestamp for the whole batch.
-  const syncedAt = new Date();
-  const rows = mapInventorySummariesToRows(summaries, {
+  const syncRunId = await recordSyncAttempt({
+    admin: deps.admin,
+    source: 'fba_inventory',
     marketplaceId: marketplace.id,
-    syncedAt,
   });
 
-  const { error } = await deps.admin
-    .from('inventory_levels')
-    .upsert(rows, { onConflict: 'marketplace_id,sku' });
+  try {
+    const summaries = await deps.client.getInventorySummaries({ marketplace });
 
-  if (error) {
-    throw new Error(`syncInventory: mirror upsert failed: ${error.message}`);
+    // One timestamp for the whole batch.
+    const syncedAt = new Date();
+    const rows = mapInventorySummariesToRows(summaries, {
+      marketplaceId: marketplace.id,
+      syncedAt,
+      syncRunId,
+    });
+
+    const { error } = await deps.admin
+      .from('inventory_levels')
+      .upsert(rows, { onConflict: 'marketplace_id,sku' });
+
+    if (error) {
+      throw new Error(`syncInventory: mirror upsert failed: ${error.message}`);
+    }
+
+    await recordSyncSuccess({
+      admin: deps.admin,
+      source: 'fba_inventory',
+      marketplaceId: marketplace.id,
+      syncRunId,
+      rowCount: rows.length,
+    });
+
+    return {
+      count: rows.length,
+      syncedAt: syncedAt.toISOString(),
+      marketplaceId: marketplace.id,
+      syncRunId,
+    };
+  } catch (error) {
+    await recordSyncFailure({
+      admin: deps.admin,
+      source: 'fba_inventory',
+      marketplaceId: marketplace.id,
+      syncRunId,
+      error,
+    });
+    throw error;
   }
-
-  return {
-    count: rows.length,
-    syncedAt: syncedAt.toISOString(),
-    marketplaceId: marketplace.id,
-  };
 }

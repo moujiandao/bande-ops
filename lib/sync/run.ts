@@ -1,19 +1,19 @@
 type SyncError = { message: string } | null;
 
-type SyncWriter = {
+export type SyncWriter = {
   from(table: string): {
     insert(payload: unknown): {
       select(columns?: string): {
-        single(): Promise<{ data: unknown; error: SyncError }>;
+        single(): PromiseLike<{ data: unknown; error: SyncError }>;
       };
     };
     update(payload: unknown): {
-      eq(column: string, value: string): Promise<{ error: SyncError }>;
+      eq(column: string, value: string): PromiseLike<{ error: SyncError }>;
     };
     upsert(
       payload: unknown,
       options?: { onConflict: string },
-    ): Promise<{ error: SyncError }>;
+    ): PromiseLike<{ error: SyncError }>;
   };
 };
 

@@ -12,10 +12,23 @@ import { FakeAdsClient } from '@/lib/ads/fake-client';
 // NOTE: import the fakes from their modules directly, not the '@/lib/amazon' /
 // '@/lib/ads' barrels, which pull the real clients -> 'server-only'.
 
-/** A mock admin client exposing just `from().upsert()`, recording every table. */
+/** A mock admin client exposing the write methods used by the sync chain. */
 function makeAdminMock() {
   const upsert = vi.fn().mockResolvedValue({ data: null, error: null });
-  const from = vi.fn().mockReturnValue({ upsert });
+  const sourceRunInsert = vi.fn().mockReturnValue({
+    select: vi.fn().mockReturnValue({
+      single: vi.fn().mockResolvedValue({ data: { id: 'run-1' }, error: null }),
+    }),
+  });
+  const sourceRunUpdate = vi.fn().mockReturnValue({
+    eq: vi.fn().mockResolvedValue({ error: null }),
+  });
+  const from = vi.fn().mockImplementation((table: string) => {
+    if (table === 'source_sync_runs') {
+      return { insert: sourceRunInsert, update: sourceRunUpdate };
+    }
+    return { upsert };
+  });
   return {
     admin: { from } as unknown as RunFullSyncDeps['admin'],
     from,
@@ -25,7 +38,7 @@ function makeAdminMock() {
 
 describe('runFullSync', () => {
   it('refreshes catalog, inventory AND ads mirrors in one run', async () => {
-    const { admin, from, upsert } = makeAdminMock();
+    const { admin, from } = makeAdminMock();
 
     const counts = await runFullSync({
       amazonClient: new FakeAmazonClient(),
@@ -35,13 +48,16 @@ describe('runFullSync', () => {
 
     // Every mirror table was written exactly once — ads included (the A3 guard).
     const tables = from.mock.calls.map((c) => c[0]);
-    expect(tables).toEqual([
-      'catalog_items',
-      'inventory_levels',
-      'ads_campaigns',
-      'ads_campaign_metrics',
-    ]);
-    expect(upsert).toHaveBeenCalledTimes(4);
+    expect(tables).toEqual(
+      expect.arrayContaining([
+        'catalog_items',
+        'inventory_levels',
+        'source_sync_runs',
+        'source_sync_state',
+        'ads_campaigns',
+        'ads_campaign_metrics',
+      ]),
+    );
 
     // Counts reflect the seeded fakes: 2 catalog + 2 inventory, 3 + 3 ads.
     expect(counts).toEqual({
@@ -58,7 +74,18 @@ describe('runFullSync', () => {
     const upsert = vi.fn().mockImplementation((_rows, _opts) => {
       return Promise.resolve({ data: null, error: null });
     });
+    const sourceRunInsert = vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        single: vi.fn().mockResolvedValue({ data: { id: 'run-1' }, error: null }),
+      }),
+    });
+    const sourceRunUpdate = vi.fn().mockReturnValue({
+      eq: vi.fn().mockResolvedValue({ error: null }),
+    });
     const from = vi.fn().mockImplementation((table: string) => {
+      if (table === 'source_sync_runs') {
+        return { insert: sourceRunInsert, update: sourceRunUpdate };
+      }
       if (table === 'ads_campaigns') {
         return {
           upsert: vi

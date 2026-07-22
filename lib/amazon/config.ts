@@ -17,6 +17,7 @@ export interface AmazonConfig {
   /** Resolved SP-API host for the active marketplace + sandbox flag. */
   host: string;
   marketplace: Marketplace;
+  sellerId?: string;
 }
 
 const REQUIRED_ENV = [
@@ -48,6 +49,13 @@ export function getAmazonConfig(
   }
 
   const useSandbox = readUseSandbox();
+  const sellerId = process.env.SPAPI_SELLER_ID?.trim();
+  if (!useSandbox && !sellerId) {
+    throw new Error(
+      'Amazon SP-API config missing required env var(s): SPAPI_SELLER_ID. ' +
+        'Set it in the server environment (.env.local / Vercel project env).',
+    );
+  }
   const host = useSandbox ? marketplace.sandboxHost : marketplace.host;
 
   return {
@@ -57,5 +65,6 @@ export function getAmazonConfig(
     useSandbox,
     host,
     marketplace,
+    ...(sellerId ? { sellerId } : {}),
   };
 }

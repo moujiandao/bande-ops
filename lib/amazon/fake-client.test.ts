@@ -45,6 +45,32 @@ describe('FakeAmazonClient (test seam)', () => {
     }
   });
 
+  it('seeds detailed FBA buckets for the known inventory row', async () => {
+    const summaries = await new FakeAmazonClient().getInventorySummaries();
+
+    expect(summaries.find((summary) => summary.sku === 'BANDE-001')).toMatchObject({
+      fulfillableQuantity: 42,
+      inboundShippedQuantity: 10,
+      inboundReceivingQuantity: 5,
+      inboundWorkingQuantity: 0,
+      reservedQuantity: 0,
+      researchingQuantity: 0,
+      unfulfillableQuantity: 0,
+    });
+  });
+
+  it('lists AWD replenishment inventory separately from FBA inventory', async () => {
+    const summaries = await new FakeAmazonClient().listAwdInventory();
+
+    expect(summaries).toMatchObject([
+      {
+        sku: 'BANDE-001',
+        marketplaceId: DEFAULT_MARKETPLACE.id,
+        replenishmentQuantity: 25,
+      },
+    ]);
+  });
+
   it('accepts a seed so tests can stage their own scenarios', async () => {
     const client = new FakeAmazonClient({
       inventory: [

@@ -18,7 +18,15 @@ export interface InventoryLevelRow {
   sku: string;
   total_quantity: number | null;
   fn_sku: string | null;
+  fulfillable_quantity: number | null;
+  inbound_working_quantity: number | null;
+  inbound_shipped_quantity: number | null;
+  inbound_receiving_quantity: number | null;
+  reserved_quantity: number | null;
+  researching_quantity: number | null;
+  unfulfillable_quantity: number | null;
   synced_at: string;
+  sync_run_id: string | null;
 }
 
 export interface MapInventoryOptions {
@@ -26,6 +34,8 @@ export interface MapInventoryOptions {
   marketplaceId?: string;
   /** Sync timestamp stamped onto the row. Defaults to now. */
   syncedAt?: Date;
+  /** Source-sync run that produced this row. */
+  syncRunId?: string;
 }
 
 /**
@@ -52,7 +62,15 @@ export function mapInventorySummaryToRow(
     // Deliberately NOT `?? 0`: null (UNKNOWN) must survive as null.
     total_quantity: summary.totalQuantity,
     fn_sku: summary.fnSku ?? null,
+    fulfillable_quantity: summary.fulfillableQuantity ?? null,
+    inbound_working_quantity: summary.inboundWorkingQuantity ?? null,
+    inbound_shipped_quantity: summary.inboundShippedQuantity ?? null,
+    inbound_receiving_quantity: summary.inboundReceivingQuantity ?? null,
+    reserved_quantity: summary.reservedQuantity ?? null,
+    researching_quantity: summary.researchingQuantity ?? null,
+    unfulfillable_quantity: summary.unfulfillableQuantity ?? null,
     synced_at: syncedAt.toISOString(),
+    sync_run_id: opts.syncRunId ?? null,
   };
 }
 
