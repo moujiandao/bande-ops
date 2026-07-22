@@ -19,6 +19,10 @@ export type {
   ListCatalogItemsOptions,
   GetInventorySummariesOptions,
   ListAwdInventoryOptions,
+  CreateLedgerReportOptions,
+  GetReportUntilDoneOptions,
+  DownloadReportDocumentOptions,
+  CompletedReport,
 } from './client';
 export { SpApiClient } from './client';
 export { FakeAmazonClient } from './fake-client';

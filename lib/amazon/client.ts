@@ -1,7 +1,13 @@
 import 'server-only';
 
+import { gunzipSync } from 'node:zlib';
 import { getAmazonConfig } from './config';
 import { getAccessToken } from './lwa';
+import {
+  buildLedgerReportBody,
+  type ReportDocument,
+  type ReportStatus,
+} from './reports';
 import {
   DEFAULT_MARKETPLACE,
   type CatalogItem,
@@ -26,6 +32,9 @@ export interface AmazonClient {
   listAwdInventory(
     opts?: ListAwdInventoryOptions,
   ): Promise<AwdInventorySummary[]>;
+  createLedgerReport(opts: CreateLedgerReportOptions): Promise<string>;
+  getReportUntilDone(opts: GetReportUntilDoneOptions): Promise<CompletedReport>;
+  downloadReportDocument(opts: DownloadReportDocumentOptions): Promise<string>;
 }
 
 export interface ListCatalogItemsOptions {
@@ -44,6 +53,29 @@ export interface ListAwdInventoryOptions {
   sellerSku?: string;
 }
 
+export interface CreateLedgerReportOptions {
+  marketplace?: Marketplace;
+  dataStartTime: string;
+  dataEndTime: string;
+}
+
+export interface GetReportUntilDoneOptions {
+  marketplace?: Marketplace;
+  reportId: string;
+  maxAttempts?: number;
+  pollDelayMs?: number;
+}
+
+export interface CompletedReport {
+  reportId: string;
+  reportDocumentId: string;
+}
+
+export interface DownloadReportDocumentOptions {
+  marketplace?: Marketplace;
+  reportDocumentId: string;
+}
+
 /** Retry tuning for transient SP-API failures (429 / 5xx). */
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 500;
@@ -54,6 +86,7 @@ interface RequestOptions {
   /** Path beginning with '/', appended to the marketplace host. */
   path: string;
   query?: Record<string, string | string[] | undefined>;
+  body?: unknown;
   marketplace: Marketplace;
 }
 
@@ -111,7 +144,9 @@ export class SpApiClient implements AmazonClient {
           headers: {
             'x-amz-access-token': accessToken,
             accept: 'application/json',
+            ...(opts.body ? { 'content-type': 'application/json' } : {}),
           },
+          ...(opts.body ? { body: JSON.stringify(opts.body) } : {}),
           cache: 'no-store',
         });
       } catch (err) {
@@ -235,6 +270,91 @@ export class SpApiClient implements AmazonClient {
     } while (nextToken);
 
     return summaries;
+  }
+
+  async createLedgerReport(opts: CreateLedgerReportOptions): Promise<string> {
+    const marketplace = opts.marketplace ?? DEFAULT_MARKETPLACE;
+    const data = await this.request<{ reportId?: string }>({
+      method: 'POST',
+      path: '/reports/2021-06-30/reports',
+      marketplace,
+      body: buildLedgerReportBody({
+        marketplaceId: marketplace.id,
+        dataStartTime: opts.dataStartTime,
+        dataEndTime: opts.dataEndTime,
+      }),
+    });
+
+    if (!data.reportId) {
+      throw new Error('createLedgerReport: SP-API did not return reportId.');
+    }
+    return data.reportId;
+  }
+
+  async getReportUntilDone(
+    opts: GetReportUntilDoneOptions,
+  ): Promise<CompletedReport> {
+    const marketplace = opts.marketplace ?? DEFAULT_MARKETPLACE;
+    const maxAttempts = opts.maxAttempts ?? 60;
+    const pollDelayMs = opts.pollDelayMs ?? 5_000;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const report = await this.request<ReportStatus>({
+        path: `/reports/2021-06-30/reports/${encodeURIComponent(opts.reportId)}`,
+        marketplace,
+      });
+
+      if (report.processingStatus === 'DONE') {
+        if (!report.reportDocumentId) {
+          throw new Error(`Report ${opts.reportId} completed without document id.`);
+        }
+        return {
+          reportId: opts.reportId,
+          reportDocumentId: report.reportDocumentId,
+        };
+      }
+
+      if (
+        report.processingStatus === 'FATAL' ||
+        report.processingStatus === 'CANCELLED'
+      ) {
+        throw new Error(
+          `Report ${opts.reportId} ended with ${report.processingStatus}.`,
+        );
+      }
+
+      if (attempt < maxAttempts - 1) {
+        await sleep(pollDelayMs);
+      }
+    }
+
+    throw new Error(`Report ${opts.reportId} did not finish before timeout.`);
+  }
+
+  async downloadReportDocument(
+    opts: DownloadReportDocumentOptions,
+  ): Promise<string> {
+    const marketplace = opts.marketplace ?? DEFAULT_MARKETPLACE;
+    const document = await this.request<ReportDocument>({
+      path: `/reports/2021-06-30/documents/${encodeURIComponent(
+        opts.reportDocumentId,
+      )}`,
+      marketplace,
+    });
+
+    const res = await fetch(document.url, { cache: 'no-store' });
+    if (!res.ok) {
+      throw new Error(
+        `Report document download failed: ${res.status} ${res.statusText}`,
+      );
+    }
+
+    if (document.compressionAlgorithm === 'GZIP') {
+      const buffer = Buffer.from(await res.arrayBuffer());
+      return gunzipSync(buffer).toString('utf8');
+    }
+
+    return res.text();
   }
 }
 

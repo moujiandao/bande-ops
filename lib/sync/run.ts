@@ -1,7 +1,6 @@
 type SyncError = { message: string } | null;
 
-export type SyncWriter = {
-  from(table: string): {
+export type SyncTable = {
     insert(payload: unknown): {
       select(columns?: string): {
         single(): PromiseLike<{ data: unknown; error: SyncError }>;
@@ -14,7 +13,10 @@ export type SyncWriter = {
       payload: unknown,
       options?: { onConflict: string },
     ): PromiseLike<{ error: SyncError }>;
-  };
+};
+
+export type SyncWriter = {
+  from(table: string): SyncTable;
 };
 
 export type SourceName =

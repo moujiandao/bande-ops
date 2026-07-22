@@ -6,7 +6,11 @@ import {
 } from './types';
 import type {
   AmazonClient,
+  CompletedReport,
+  CreateLedgerReportOptions,
+  DownloadReportDocumentOptions,
   GetInventorySummariesOptions,
+  GetReportUntilDoneOptions,
   ListAwdInventoryOptions,
   ListCatalogItemsOptions,
 } from './client';
@@ -92,5 +96,31 @@ export class FakeAmazonClient implements AmazonClient {
     _opts: ListAwdInventoryOptions = {},
   ): Promise<AwdInventorySummary[]> {
     return this.awdInventory;
+  }
+
+  async createLedgerReport(
+    _opts: CreateLedgerReportOptions,
+  ): Promise<string> {
+    return 'fake-ledger-report';
+  }
+
+  async getReportUntilDone(
+    _opts: GetReportUntilDoneOptions,
+  ): Promise<CompletedReport> {
+    return {
+      reportId: 'fake-ledger-report',
+      reportDocumentId: 'fake-ledger-document',
+    };
+  }
+
+  async downloadReportDocument(
+    _opts: DownloadReportDocumentOptions,
+  ): Promise<string> {
+    return [
+      'Date\tFNSKU\tMSKU\tDisposition\tCustomer Shipments\tEnding Warehouse Balance',
+      '2026-07-21\tX000111AAA\tBANDE-001\tSELLABLE\t2\t42',
+      '2026-07-20\tX000111AAA\tBANDE-001\tSELLABLE\t1\t40',
+      '2026-07-21\t\tBANDE-002\tSELLABLE\t0\t0',
+    ].join('\n');
   }
 }

@@ -187,4 +187,70 @@ describe('SpApiClient', () => {
     expect(String(fetchMock.mock.calls[0][0])).toContain('details=SHOW');
     expect(String(fetchMock.mock.calls[1][0])).toContain('nextToken=awd-next');
   });
+
+  it('creates a daily ledger report through the Reports API', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response({ reportId: 'report-1' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const reportId = await new SpApiClient().createLedgerReport({
+      dataStartTime: '2025-07-21T00:00:00.000Z',
+      dataEndTime: '2026-07-21T00:00:00.000Z',
+    });
+
+    expect(reportId).toBe('report-1');
+    const [requestUrl, request] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(String(requestUrl)).toContain('/reports/2021-06-30/reports');
+    expect(request.method).toBe('POST');
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      reportType: 'GET_LEDGER_SUMMARY_VIEW_DATA',
+      reportOptions: {
+        aggregateByLocation: 'COUNTRY',
+        aggregatedByTimePeriod: 'DAILY',
+      },
+    });
+  });
+
+  it('downloads report documents without Amazon auth headers', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        response({
+          reportDocumentId: 'doc-1',
+          url: 'https://documents.example/report.tsv',
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response('Date\tMSKU\n2026-07-21\tSKU-1', { status: 200 }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const text = await new SpApiClient().downloadReportDocument({
+      reportDocumentId: 'doc-1',
+    });
+
+    expect(text).toContain('SKU-1');
+    const [, documentRequest] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(documentRequest.headers).toBeUndefined();
+  });
+
+  it.each(['FATAL', 'CANCELLED'] as const)(
+    'throws on %s report failures',
+    async (processingStatus) => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      response({
+        reportId: 'report-1',
+        processingStatus,
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      new SpApiClient().getReportUntilDone({
+        reportId: 'report-1',
+        pollDelayMs: 0,
+        maxAttempts: 1,
+      }),
+    ).rejects.toThrow(`Report report-1 ended with ${processingStatus}.`);
+    },
+  );
 });
