@@ -96,7 +96,7 @@ Delete after Task 5:
 - Produces: `recordSyncSuccess(input: SyncSuccessInput): Promise<void>`
 - Produces: `recordSyncFailure(input: SyncFailureInput): Promise<void>`
 
-- [ ] **Step 1: Write failing policy tests**
+- [x] **Step 1: Write failing policy tests**
 
 Add `lib/settings/policy.test.ts`:
 
@@ -146,7 +146,7 @@ Run: `npm test -- lib/settings/policy.test.ts`
 
 Expected: FAIL with missing `./policy`.
 
-- [ ] **Step 2: Implement policy module**
+- [x] **Step 2: Implement policy module**
 
 Create `lib/settings/policy.ts`:
 
@@ -244,7 +244,7 @@ Run: `npm test -- lib/settings/policy.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 3: Write failing sync-state tests**
+- [x] **Step 3: Write failing sync-state tests**
 
 Add `lib/sync/run.test.ts`:
 
@@ -328,7 +328,7 @@ Run: `npm test -- lib/sync/run.test.ts`
 
 Expected: FAIL with missing `./run`.
 
-- [ ] **Step 4: Implement sync run helpers**
+- [x] **Step 4: Implement sync run helpers**
 
 Create `lib/sync/run.ts` with:
 
@@ -448,7 +448,7 @@ Run: `npm test -- lib/sync/run.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 5: Add migration**
+- [x] **Step 5: Add migration**
 
 Create `supabase/migrations/0010_live_inventory_reorder.sql` with tables:
 
@@ -593,7 +593,7 @@ create policy "replenishment_policy_insert_authenticated" on public.replenishmen
 create policy "replenishment_policy_update_authenticated" on public.replenishment_policy for update to authenticated using (true) with check (true);
 ```
 
-- [ ] **Step 6: Update Supabase docs**
+- [x] **Step 6: Update Supabase docs**
 
 Add to `supabase/README.md`:
 
@@ -609,7 +609,7 @@ must surface stale, unknown, or unmapped source data as `Needs review`.
 `inventory_source_mappings` are operational data owned by this app.
 ```
 
-- [ ] **Step 7: Verify and commit**
+- [x] **Step 7: Verify and commit**
 
 Run: `npm test -- lib/settings/policy.test.ts lib/sync/run.test.ts`
 
@@ -656,7 +656,7 @@ git commit -m "feat: add live replenishment schema"
 - Produces: `syncAwdInventory(deps: SyncAwdInventoryDeps): Promise<SyncAwdInventoryResult>`.
 - Consumes: sync-state helpers from Task 1.
 
-- [ ] **Step 1: Write failing FBA mapping test**
+- [x] **Step 1: Write failing FBA mapping test**
 
 In `lib/inventory/mapping.test.ts`, add:
 
@@ -696,7 +696,7 @@ Run: `npm test -- lib/inventory/mapping.test.ts`
 
 Expected: FAIL because detailed properties are absent.
 
-- [ ] **Step 2: Implement detailed FBA types and mapping**
+- [x] **Step 2: Implement detailed FBA types and mapping**
 
 Patch `lib/amazon/types.ts`:
 
@@ -730,7 +730,7 @@ Run: `npm test -- lib/inventory/mapping.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 3: Write failing AWD mapper test**
+- [x] **Step 3: Write failing AWD mapper test**
 
 Create `lib/awd/mapping.test.ts`:
 
@@ -772,7 +772,7 @@ Run: `npm test -- lib/awd/mapping.test.ts`
 
 Expected: FAIL with missing `./mapping`.
 
-- [ ] **Step 4: Implement AWD mapper**
+- [x] **Step 4: Implement AWD mapper**
 
 Create `lib/awd/mapping.ts`:
 
@@ -815,7 +815,7 @@ Run: `npm test -- lib/awd/mapping.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 5: Add Amazon client request tests**
+- [x] **Step 5: Add Amazon client request tests**
 
 Create or extend `lib/amazon/client.test.ts` with mocked `fetch` and mocked LWA token. Assert:
 
@@ -831,7 +831,7 @@ Run: `npm test -- lib/amazon/client.test.ts`
 
 Expected: FAIL until the client is fixed.
 
-- [ ] **Step 6: Fix Amazon client inventory, AWD, and pagination**
+- [x] **Step 6: Fix Amazon client inventory, AWD, and pagination**
 
 In `lib/amazon/client.ts`:
 
@@ -848,7 +848,7 @@ Run: `npm test -- lib/amazon`
 
 Expected: PASS.
 
-- [ ] **Step 7: Update fake client and syncs**
+- [x] **Step 7: Update fake client and syncs**
 
 In `lib/amazon/fake-client.ts`, seed `BANDE-001` with:
 
@@ -878,7 +878,7 @@ Run: `npm test -- lib/inventory lib/awd lib/amazon lib/sync`
 
 Expected: PASS.
 
-- [ ] **Step 8: Verify, review, and commit**
+- [x] **Step 8: Verify, review, and commit**
 
 Run: `npm test`
 
@@ -915,7 +915,7 @@ git commit -m "feat: sync detailed FBA and AWD inventory"
 - Produces: `syncFbaLedgerVelocity(deps): Promise<{ ledgerRows: number; velocityRows: number; syncRunId: string }>` .
 - Produces Amazon client methods for ledger report creation, polling, document metadata, and document download.
 
-- [ ] **Step 1: Write failing velocity calculator tests**
+- [x] **Step 1: Write failing velocity calculator tests**
 
 Create `lib/velocity/calculate.test.ts`:
 
@@ -964,7 +964,7 @@ Run: `npm test -- lib/velocity/calculate.test.ts`
 
 Expected: FAIL with missing `./calculate`.
 
-- [ ] **Step 2: Implement velocity calculator**
+- [x] **Step 2: Implement velocity calculator**
 
 Create `lib/velocity/calculate.ts`:
 
@@ -1035,7 +1035,7 @@ Run: `npm test -- lib/velocity/calculate.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 3: Write failing ledger normalization tests**
+- [x] **Step 3: Write failing ledger normalization tests**
 
 Create `lib/velocity/ledger-mapping.test.ts`:
 
@@ -1090,7 +1090,7 @@ Run: `npm test -- lib/velocity/ledger-mapping.test.ts`
 
 Expected: FAIL with missing `./ledger-mapping`.
 
-- [ ] **Step 4: Implement ledger normalization**
+- [x] **Step 4: Implement ledger normalization**
 
 Create `lib/velocity/ledger-mapping.ts` with a TSV parser that:
 
@@ -1106,7 +1106,7 @@ Run: `npm test -- lib/velocity/ledger-mapping.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 5: Add Reports API tests and implementation**
+- [x] **Step 5: Add Reports API tests and implementation**
 
 Create `lib/amazon/reports.test.ts` that asserts:
 
@@ -1141,7 +1141,7 @@ Run: `npm test -- lib/amazon/reports.test.ts lib/amazon/client.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 6: Implement velocity sync**
+- [x] **Step 6: Implement velocity sync**
 
 Create `lib/velocity/sync.test.ts` with a fake Amazon client returning one report document and a fake admin client. Assert:
 
@@ -1170,7 +1170,7 @@ Run: `npm test -- lib/velocity`
 
 Expected: PASS.
 
-- [ ] **Step 7: Verify, review, and commit**
+- [x] **Step 7: Verify, review, and commit**
 
 Run: `npm test`
 
@@ -1205,7 +1205,7 @@ git commit -m "feat: persist FBA ledger velocity"
 - Produces: `refreshSvdInventory(deps): Promise<{ count: number; syncRunId: string }>` .
 - Produces: `refreshSvdInventoryAction(): Promise<void>`.
 
-- [ ] **Step 1: Write failing parser tests**
+- [x] **Step 1: Write failing parser tests**
 
 Create `lib/svd/parse.test.ts`:
 
@@ -1250,7 +1250,7 @@ Run: `npm test -- lib/svd/parse.test.ts`
 
 Expected: FAIL with missing `./parse`.
 
-- [ ] **Step 2: Implement parser and types**
+- [x] **Step 2: Implement parser and types**
 
 Create `lib/svd/types.ts`:
 
@@ -1276,7 +1276,7 @@ Run: `npm test -- lib/svd/parse.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 3: Implement config and client**
+- [x] **Step 3: Implement config and client**
 
 Create `lib/svd/config.ts`:
 
@@ -1341,7 +1341,7 @@ export class HttpSvdClient implements SvdClient {
 
 If the real SVD login field names differ, change only `HttpSvdClient`. Keep `SvdClient.fetchInventoryHtml()` stable.
 
-- [ ] **Step 4: Write sync tests and implementation**
+- [x] **Step 4: Write sync tests and implementation**
 
 Create `lib/svd/sync.test.ts` with fake admin/client. Assert:
 
@@ -1364,7 +1364,7 @@ Run: `npm test -- lib/svd/sync.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 5: Add owner-gated server action**
+- [x] **Step 5: Add owner-gated server action**
 
 Create `lib/svd/actions.ts`:
 
@@ -1394,7 +1394,7 @@ Run: `npm test -- lib/svd`
 
 Expected: PASS.
 
-- [ ] **Step 6: Verify, review, and commit**
+- [x] **Step 6: Verify, review, and commit**
 
 Run: `npm test`
 
@@ -1432,7 +1432,7 @@ git commit -m "feat: refresh SVD inventory server-side"
 - Produces: `resolveSourceMapping(input: ResolveSourceMappingInput): SourceMappingResult`.
 - Produces: `assembleRecommendations({ supabase, marketplace }): Promise<AssembleRecommendationsResult>` without `DemandProvider`.
 
-- [ ] **Step 1: Write failing supply tests**
+- [x] **Step 1: Write failing supply tests**
 
 Create `lib/reorder/supply.test.ts`:
 
@@ -1488,7 +1488,7 @@ Run: `npm test -- lib/reorder/supply.test.ts`
 
 Expected: FAIL with missing `./supply`.
 
-- [ ] **Step 2: Implement supply module**
+- [x] **Step 2: Implement supply module**
 
 Create `lib/reorder/supply.ts` that:
 
@@ -1504,7 +1504,7 @@ Run: `npm test -- lib/reorder/supply.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 3: Write failing mapping tests**
+- [x] **Step 3: Write failing mapping tests**
 
 Create `lib/reorder/mappings.test.ts`:
 
@@ -1537,7 +1537,7 @@ Run: `npm test -- lib/reorder/mappings.test.ts`
 
 Expected: FAIL with missing `./mappings`.
 
-- [ ] **Step 4: Implement mapping module**
+- [x] **Step 4: Implement mapping module**
 
 Create `lib/reorder/mappings.ts` that:
 
@@ -1551,7 +1551,7 @@ Run: `npm test -- lib/reorder/mappings.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 5: Update recommendation math**
+- [x] **Step 5: Update recommendation math**
 
 Patch `lib/reorder/recommend.ts`:
 
@@ -1566,7 +1566,7 @@ Run: `npm test -- lib/reorder/recommend.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 6: Rewrite reorder service**
+- [x] **Step 6: Rewrite reorder service**
 
 Patch `lib/reorder/service.test.ts` first. Fake Supabase must return rows for:
 
@@ -1610,7 +1610,7 @@ Run: `npm test -- lib/reorder/service.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 7: Remove old demand provider path**
+- [x] **Step 7: Remove old demand provider path**
 
 Delete:
 
@@ -1624,7 +1624,7 @@ Run: `rg -n "DemandProvider|getDailyDemand|getDemandProvider|spapi-demand|fake-d
 
 Expected: no matches.
 
-- [ ] **Step 8: Verify, review, and commit**
+- [x] **Step 8: Verify, review, and commit**
 
 Run: `npm test -- lib/reorder`
 
@@ -1661,7 +1661,7 @@ git commit -m "feat: compute reorder from multi-source supply"
 - Produces: `parsePolicyForm(formData: FormData): ReplenishmentPolicyInput`.
 - Produces: `saveReplenishmentPolicyAction(formData: FormData): Promise<void>`.
 
-- [ ] **Step 1: Write failing policy form test**
+- [x] **Step 1: Write failing policy form test**
 
 Patch `lib/settings/policy.test.ts`:
 
@@ -1689,7 +1689,7 @@ Run: `npm test -- lib/settings/policy.test.ts`
 
 Expected: FAIL because `parsePolicyForm` is missing.
 
-- [ ] **Step 2: Implement policy form parsing and save action**
+- [x] **Step 2: Implement policy form parsing and save action**
 
 Add to `lib/settings/policy.ts`:
 
@@ -1738,7 +1738,7 @@ Run: `npm test -- lib/settings`
 
 Expected: PASS.
 
-- [ ] **Step 3: Update settings UI**
+- [x] **Step 3: Update settings UI**
 
 Patch `app/(app)/settings/page.tsx` to:
 
@@ -1753,7 +1753,7 @@ Run: `npm run lint`
 
 Expected: PASS.
 
-- [ ] **Step 4: Update reorder UI**
+- [x] **Step 4: Update reorder UI**
 
 Patch `app/(app)/reorder/page.tsx` to:
 
@@ -1767,7 +1767,7 @@ Run: `npm run lint`
 
 Expected: PASS.
 
-- [ ] **Step 5: Verify, review, and commit**
+- [x] **Step 5: Verify, review, and commit**
 
 Run: `npm test -- lib/settings lib/reorder lib/svd`
 
@@ -1805,7 +1805,7 @@ git commit -m "feat: show live reorder source health"
 - Consumes: `syncInventory`, `syncAwdInventory`, `syncFbaLedgerVelocity`, existing catalog and ads syncs.
 - Produces: `runFullSync()` counts for catalog, FBA inventory, AWD inventory, velocity, ads campaigns, and ads campaign metrics.
 
-- [ ] **Step 1: Write failing cron test**
+- [x] **Step 1: Write failing cron test**
 
 Patch `lib/cron/sync-all.test.ts` so the successful run expects:
 
@@ -1824,7 +1824,7 @@ Run: `npm test -- lib/cron/sync-all.test.ts`
 
 Expected: FAIL because `awdInventory` and `velocity` are absent.
 
-- [ ] **Step 2: Wire syncs into cron**
+- [x] **Step 2: Wire syncs into cron**
 
 Patch `lib/cron/sync-all.ts`:
 
@@ -1839,7 +1839,7 @@ Run: `npm test -- lib/cron/sync-all.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 3: Check manual catalog sync wording**
+- [x] **Step 3: Check manual catalog sync wording**
 
 Open `app/(app)/catalog/actions.ts`.
 
@@ -1853,7 +1853,7 @@ Run: `npm run lint`
 
 Expected: PASS.
 
-- [ ] **Step 4: Update readiness docs**
+- [x] **Step 4: Update readiness docs**
 
 Patch `docs/go-live-readiness.md` with a live reorder checklist:
 
@@ -1872,7 +1872,7 @@ velocity, and SVD replenishment inventory as separate mirrors. Before flipping
 - Reorder rows show `Needs review` for unknown, stale, or unmapped inputs
 ```
 
-- [ ] **Step 5: Final verification**
+- [x] **Step 5: Final verification**
 
 Run: `npm test`
 
@@ -1910,7 +1910,7 @@ npm test -- lib/reorder/mappings.test.ts lib/velocity/calculate.test.ts lib/svd/
 
 Expected: PASS.
 
-- [ ] **Step 6: Code review gate and commit**
+- [x] **Step 6: Code review gate and commit**
 
 Invoke code review for changed code files in `lib/cron` and `app/(app)/catalog/actions.ts`.
 
