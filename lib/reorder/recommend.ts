@@ -1,24 +1,24 @@
 /**
- * PURE reorder recommender — the highest-stakes math in the app (wrong numbers
+ * PURE reorder recommender: the highest-stakes math in the app (wrong numbers
  * = wrong money), so it lives in one tested, side-effect-free place.
  *
  * Textbook reorder-point logic, carried in INTENT from the legacy
  * `supplier-reorder` tool but simplified to the inputs this app actually has:
  *
  *   reorderPoint  = dailyDemand * leadTimeDays + safetyStock
- *   recommendedQty = onHand <= reorderPoint ? (reorderPoint - onHand) : 0
+ *   recommendedQty = usableSupply <= reorderPoint ? (reorderPoint - usableSupply) : 0
  *
- * The non-negotiable rule (carried from supplier-reorder): an item whose on-hand
+ * The non-negotiable rule (carried from supplier-reorder): an item whose usable supply
  * is UNKNOWN (null), or whose demand is UNKNOWN (null), is NEVER given a number.
- * It is surfaced as 'needs-review'. Folding an unknown on-hand in as 0 would
- * manufacture a large, wrong purchase order — exactly the silent corruption this
+ * It is surfaced as 'needs-review'. Folding an unknown usable supply in as 0 would
+ * manufacture a large, wrong purchase order, exactly the silent corruption this
  * module exists to prevent. null is NEVER coalesced to 0 here.
  */
 
 /** Inputs to a single recommendation. */
 export interface RecommendInput {
-  /** Sellable on-hand. null = UNKNOWN (Amazon gave no number); never treated as 0. */
-  onHand: number | null;
+  /** FBA + selected inbound + AWD + SVD usable supply. null = UNKNOWN; never treated as 0. */
+  usableSupply: number | null;
   /** Average daily demand (units/day). null = UNKNOWN (no demand window). */
   dailyDemand: number | null;
   /** Replenishment lead time in days (>= 0). */
@@ -29,7 +29,7 @@ export interface RecommendInput {
 
 /** The reasoning shown alongside an 'ok' recommendation (all the math inputs + the derived point). */
 export interface RecommendReasoning {
-  onHand: number;
+  usableSupply: number;
   dailyDemand: number;
   leadTimeDays: number;
   safetyStock: number;
@@ -42,7 +42,7 @@ export type Recommendation =
   | { status: 'ok'; recommendedQty: number; reasoning: RecommendReasoning }
   | { status: 'needs-review'; reason: string };
 
-/** A finite, non-negative number — the only shape the math accepts for the policy inputs. */
+/** A finite, non-negative number, the only shape the math accepts for the policy inputs. */
 function isNonNegativeFinite(n: number): boolean {
   return Number.isFinite(n) && n >= 0;
 }
@@ -50,17 +50,17 @@ function isNonNegativeFinite(n: number): boolean {
 /**
  * Recommend a reorder quantity for one SKU, or flag it for review.
  *
- * Order of checks matters: UNKNOWN (null) on-hand or demand short-circuits to
+ * Order of checks matters: UNKNOWN (null) usable supply or demand short-circuits to
  * needs-review BEFORE any arithmetic, so a null can never reach the math and be
  * coerced to 0. Negative/NaN/Infinite policy inputs are also rejected (a bad
  * input must surface, not silently produce a wrong number).
  */
 export function recommend(input: RecommendInput): Recommendation {
-  const { onHand, dailyDemand, leadTimeDays, safetyStock } = input;
+  const { usableSupply, dailyDemand, leadTimeDays, safetyStock } = input;
 
-  // UNKNOWN on-hand: cannot compute, must not fabricate. The spine of the rule.
-  if (onHand === null) {
-    return { status: 'needs-review', reason: 'unknown-on-hand' };
+  // UNKNOWN usable supply: cannot compute, must not fabricate. The spine of the rule.
+  if (usableSupply === null) {
+    return { status: 'needs-review', reason: 'unknown-usable-supply' };
   }
   // UNKNOWN demand: cannot forecast (distinct from a real all-zero history).
   if (dailyDemand === null) {
@@ -68,9 +68,9 @@ export function recommend(input: RecommendInput): Recommendation {
   }
 
   // Guard non-finite / negative inputs. These should never produce a numeric
-  // recommendation — surface them for review rather than emit a wrong number.
-  if (!isNonNegativeFinite(onHand)) {
-    return { status: 'needs-review', reason: 'invalid-on-hand' };
+  // recommendation. Surface them for review rather than emit a wrong number.
+  if (!isNonNegativeFinite(usableSupply)) {
+    return { status: 'needs-review', reason: 'invalid-usable-supply' };
   }
   if (!isNonNegativeFinite(dailyDemand)) {
     return { status: 'needs-review', reason: 'invalid-demand' };
@@ -94,11 +94,17 @@ export function recommend(input: RecommendInput): Recommendation {
   // fractional (units/day), so round the order quantity UP: never under-order
   // and leave the SKU short of its reorder point.
   const recommendedQty =
-    onHand <= reorderPoint ? Math.ceil(reorderPoint - onHand) : 0;
+    usableSupply <= reorderPoint ? Math.ceil(reorderPoint - usableSupply) : 0;
 
   return {
     status: 'ok',
     recommendedQty,
-    reasoning: { onHand, dailyDemand, leadTimeDays, safetyStock, reorderPoint },
+    reasoning: {
+      usableSupply,
+      dailyDemand,
+      leadTimeDays,
+      safetyStock,
+      reorderPoint,
+    },
   };
 }

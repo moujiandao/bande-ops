@@ -1,158 +1,366 @@
-/**
- * Reorder recommendation ASSEMBLY: join the three inputs the math needs and run
- * the pure recommender over every catalog SKU.
- *
- *   on-hand   <- inventory_levels   (synced mirror; null = UNKNOWN, never 0)
- *   policy    <- replenishment_settings (per-SKU override over global default)
- *   demand    <- DemandProvider      (FBA ledger aggregate; null = UNKNOWN)
- *
- * Dependencies are INJECTED (a Supabase reader + a DemandProvider) so this is
- * unit-testable with a mocked client + FakeDemandProvider — no live network or
- * DB. Like lib/inventory/sync.ts, this file deliberately does NOT `import
- * 'server-only'` and only depends on the `DemandProvider` *type* (an erased
- * import) from the `./demand` barrel, so it stays loadable in node tests. The
- * real wiring (auth'd client + getDemandProvider) lives in the page.
- *
- * UNKNOWN propagates honestly end to end: a missing inventory row or a null
- * demand becomes a `needs-review` recommendation, NEVER a number. null is never
- * coalesced to 0 anywhere in here.
- */
-
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { DEFAULT_MARKETPLACE, type Marketplace, type MarketplaceId } from '@/lib/amazon/types';
+import { DEFAULT_MARKETPLACE, type Marketplace } from '@/lib/amazon/types';
+import {
+  mapPolicyRow,
+  type ReplenishmentPolicy,
+  type ReplenishmentPolicyRow,
+} from '@/lib/settings/policy';
 import { effectiveSetting, type ReplenishmentValues } from '@/lib/settings/resolve';
 import { recommend, type Recommendation } from './recommend';
-import type { DemandProvider } from './demand';
+import { resolveSourceMapping } from './mappings';
+import { calculateUsableSupply, type UsableSupplyResult } from './supply';
 
-/** The slice of the Supabase client this assembly actually uses (read-only). */
 type ReorderReader = Pick<SupabaseClient, 'from'>;
 
 export interface AssembleRecommendationsDeps {
-  /** Authenticated Supabase reader (RLS). In tests, a mock exposing from().select(). */
   supabase: ReorderReader;
-  /** Demand source. In tests, a FakeDemandProvider. */
-  demand: DemandProvider;
-  /** Marketplace to compute for. Defaults to US. */
   marketplace?: Marketplace;
 }
 
-/** One assembled recommendation row for the view. */
+export interface SourceHealthRow {
+  source: string;
+  status: string;
+  lastSuccessAt: string | null;
+  rowCount: number | null;
+  errorSummary: string | null;
+}
+
 export interface RecommendationRow {
   marketplaceId: string;
   sku: string;
   title: string;
-  /** On-hand as joined from the mirror (null = UNKNOWN). Echoed for the UI. */
-  onHand: number | null;
-  /** The pure recommender's verdict (discriminated union: ok | needs-review). */
+  usableSupply: number | null;
+  dailyDemand: number | null;
+  velocitySampleDays: number | null;
+  sourceMapping:
+    | { status: 'mapped'; svdItemId: string; mappingSource: 'fn_sku' | 'sku' | 'manual' }
+    | { status: 'needs-review'; reason: 'missing-svd-mapping' };
+  supplyBreakdown:
+    | (Extract<UsableSupplyResult, { status: 'ok' }>['breakdown'])
+    | null;
   recommendation: Recommendation;
 }
 
 export interface AssembleRecommendationsResult {
   rows: RecommendationRow[];
-  /** Non-fatal read errors surfaced so the view can distinguish a failure from genuine UNKNOWN. */
-  errors: { catalog?: string; inventory?: string; settings?: string };
+  sourceHealth: SourceHealthRow[];
+  policy: ReplenishmentPolicy;
+  errors: {
+    catalog?: string;
+    fbaInventory?: string;
+    awdInventory?: string;
+    svdInventory?: string;
+    mappings?: string;
+    velocity?: string;
+    settings?: string;
+    policy?: string;
+    sourceState?: string;
+  };
 }
 
-/**
- * Fallback replenishment policy when there is no global-default row yet. Mirrors
- * the settings page form defaults (14d lead time, 0 safety stock). Kept here so
- * the recommender always has a concrete policy rather than failing on an empty
- * settings table.
- */
 const FALLBACK_DEFAULTS: ReplenishmentValues = { leadTimeDays: 14, safetyStock: 0 };
 
 type CatalogRow = { marketplace_id: string; sku: string; title: string };
-type InventoryRow = { marketplace_id: string; sku: string; total_quantity: number | null };
+type FbaRow = {
+  marketplace_id: string;
+  sku: string;
+  fn_sku: string | null;
+  fulfillable_quantity: number | null;
+  inbound_working_quantity: number | null;
+  inbound_shipped_quantity: number | null;
+  inbound_receiving_quantity: number | null;
+};
+type AwdRow = {
+  marketplace_id: string;
+  sku: string;
+  fn_sku: string | null;
+  replenishment_quantity: number | null;
+};
+type SvdRow = {
+  svd_item_id: string;
+  sku: string | null;
+  fn_sku: string | null;
+  quantity: number | null;
+};
+type MappingRow = {
+  marketplace_id: string;
+  amazon_sku: string;
+  svd_item_id: string | null;
+  status: string;
+};
+type VelocityRow = {
+  marketplace_id: string;
+  sku: string;
+  daily_velocity: number | string | null;
+  status: string;
+  in_stock_sample_days: number;
+};
 type SettingRow = {
   marketplace_id: string;
   sku: string | null;
   lead_time_days: number;
   safety_stock: number;
 };
+type SourceStateDbRow = {
+  source: string;
+  status: string;
+  last_success_at: string | null;
+  row_count: number | null;
+  error_summary: string | null;
+};
 
 function rowKey(r: { marketplace_id: string; sku: string }): string {
   return `${r.marketplace_id}:${r.sku}`;
 }
 
-/**
- * Assemble reorder recommendations for every catalog SKU in the marketplace.
- *
- * Reads the three sources, joins in memory on (marketplace_id, sku), resolves
- * the effective replenishment policy per SKU, fetches demand from the provider,
- * and runs the pure `recommend()` for each. Returns one row per catalog SKU.
- */
+function toErrorMessage(error: unknown): string | undefined {
+  return (error as { message?: string } | null)?.message;
+}
+
+function velocityValue(row: VelocityRow | undefined): number | null {
+  if (!row || row.status !== 'ok' || row.daily_velocity === null) return null;
+  const value = Number(row.daily_velocity);
+  return Number.isFinite(value) ? value : null;
+}
+
+function mapSourceHealth(rows: SourceStateDbRow[]): SourceHealthRow[] {
+  return rows.map((row) => ({
+    source: row.source,
+    status: row.status,
+    lastSuccessAt: row.last_success_at,
+    rowCount: row.row_count,
+    errorSummary: row.error_summary,
+  }));
+}
+
+const REQUIRED_SYNC_SOURCES = [
+  'fba_inventory',
+  'awd_inventory',
+  'fba_ledger',
+  'svd_inventory',
+] as const;
+
+function sourceState(source: string, status: string): SourceStateDbRow {
+  return {
+    source,
+    status,
+    last_success_at: null,
+    row_count: null,
+    error_summary: null,
+  };
+}
+
+function blockingSource(
+  rows: SourceStateDbRow[],
+  sourceStateError: unknown,
+): SourceStateDbRow | null {
+  if (sourceStateError) return sourceState('source_sync_state', 'failed');
+
+  const bySource = new Map(rows.map((row) => [row.source, row]));
+  for (const source of REQUIRED_SYNC_SOURCES) {
+    const row = bySource.get(source);
+    if (!row) return sourceState(source, 'missing');
+    if (row.status !== 'success') return row;
+  }
+  return null;
+}
+
 export async function assembleRecommendations(
   deps: AssembleRecommendationsDeps,
 ): Promise<AssembleRecommendationsResult> {
   const marketplace = deps.marketplace ?? DEFAULT_MARKETPLACE;
 
-  const [catalogRes, inventoryRes, settingsRes] = await Promise.all([
+  const [
+    catalogRes,
+    fbaRes,
+    awdRes,
+    svdRes,
+    mappingsRes,
+    velocityRes,
+    settingsRes,
+    policyRes,
+    sourceStateRes,
+  ] = await Promise.all([
     deps.supabase
       .from('catalog_items')
       .select('marketplace_id, sku, title')
       .eq('marketplace_id', marketplace.id),
     deps.supabase
       .from('inventory_levels')
-      .select('marketplace_id, sku, total_quantity')
+      .select(
+        'marketplace_id, sku, fn_sku, fulfillable_quantity, inbound_working_quantity, inbound_shipped_quantity, inbound_receiving_quantity',
+      )
+      .eq('marketplace_id', marketplace.id),
+    deps.supabase
+      .from('awd_inventory_levels')
+      .select('marketplace_id, sku, fn_sku, replenishment_quantity')
+      .eq('marketplace_id', marketplace.id),
+    deps.supabase
+      .from('svd_inventory_levels')
+      .select('svd_item_id, sku, fn_sku, quantity'),
+    deps.supabase
+      .from('inventory_source_mappings')
+      .select('marketplace_id, amazon_sku, svd_item_id, status')
+      .eq('marketplace_id', marketplace.id),
+    deps.supabase
+      .from('sales_velocity')
+      .select('marketplace_id, sku, daily_velocity, status, in_stock_sample_days')
       .eq('marketplace_id', marketplace.id),
     deps.supabase
       .from('replenishment_settings')
       .select('marketplace_id, sku, lead_time_days, safety_stock')
       .eq('marketplace_id', marketplace.id),
+    deps.supabase.from('replenishment_policy').select('*').eq('marketplace_id', marketplace.id),
+    deps.supabase
+      .from('source_sync_state')
+      .select('source, status, last_success_at, row_count, error_summary')
+      .eq('marketplace_id', marketplace.id),
   ]);
 
   const catalogRows = (catalogRes.data ?? []) as CatalogRow[];
-  const inventoryRows = (inventoryRes.data ?? []) as InventoryRow[];
+  const fbaRows = (fbaRes.data ?? []) as FbaRow[];
+  const awdRows = (awdRes.data ?? []) as AwdRow[];
+  const svdRows = (svdRes.data ?? []) as SvdRow[];
+  const mappingRows = (mappingsRes.data ?? []) as MappingRow[];
+  const velocityRows = (velocityRes.data ?? []) as VelocityRow[];
   const settingRows = (settingsRes.data ?? []) as SettingRow[];
+  const policyRows = (policyRes.data ?? []) as ReplenishmentPolicyRow[];
+  const sourceStateRows = (sourceStateRes.data ?? []) as SourceStateDbRow[];
 
-  // On-hand by key. A SKU with no inventory row stays UNKNOWN (null) — never 0.
-  const onHandByKey = new Map<string, number | null>(
-    inventoryRows.map((r) => [rowKey(r), r.total_quantity]),
+  const policy = mapPolicyRow(policyRows[0] ?? null);
+  const staleSource =
+    policy.staleSourceMode === 'needs_review'
+      ? blockingSource(sourceStateRows, sourceStateRes.error)
+      : null;
+
+  const fbaByKey = new Map<string, FbaRow>(fbaRows.map((row) => [rowKey(row), row]));
+  const awdByKey = new Map<string, AwdRow>(awdRows.map((row) => [rowKey(row), row]));
+  const velocityByKey = new Map<string, VelocityRow>(
+    velocityRows.map((row) => [rowKey(row), row]),
   );
+  const svdById = new Map<string, SvdRow>(svdRows.map((row) => [row.svd_item_id, row]));
 
-  // Effective policy: per-SKU override wins over the global default (sku IS NULL).
-  const defaultRow = settingRows.find((r) => r.sku === null) ?? null;
+  const defaultRow = settingRows.find((row) => row.sku === null) ?? null;
   const defaults: ReplenishmentValues = defaultRow
     ? { leadTimeDays: defaultRow.lead_time_days, safetyStock: defaultRow.safety_stock }
     : FALLBACK_DEFAULTS;
   const overrideBySku = new Map<string, ReplenishmentValues>(
     settingRows
-      .filter((r): r is SettingRow & { sku: string } => r.sku !== null)
-      .map((r) => [r.sku, { leadTimeDays: r.lead_time_days, safetyStock: r.safety_stock }]),
+      .filter((row): row is SettingRow & { sku: string } => row.sku !== null)
+      .map((row) => [
+        row.sku,
+        { leadTimeDays: row.lead_time_days, safetyStock: row.safety_stock },
+      ]),
   );
 
-  const rows: RecommendationRow[] = await Promise.all(
-    catalogRows.map(async (item) => {
-      const key = rowKey(item);
-      // Missing inventory row -> UNKNOWN (null), explicitly not 0.
-      const onHand = onHandByKey.has(key) ? (onHandByKey.get(key) ?? null) : null;
-      const { leadTimeDays, safetyStock } = effectiveSetting(
-        overrideBySku.get(item.sku),
-        defaults,
-      );
-      const dailyDemand = await deps.demand.getDailyDemand(
-        item.sku,
-        item.marketplace_id as MarketplaceId,
-      );
+  const activeManualMappings = mappingRows
+    .filter((row) => row.status === 'active' && row.svd_item_id)
+    .map((row) => ({ amazonSku: row.amazon_sku, svdItemId: row.svd_item_id as string }));
 
-      const recommendation = recommend({ onHand, dailyDemand, leadTimeDays, safetyStock });
+  const rows: RecommendationRow[] = catalogRows.map((item) => {
+    const key = rowKey(item);
+    const fba = fbaByKey.get(key) ?? null;
+    const awd = awdByKey.get(key) ?? null;
+    const fnSku = fba?.fn_sku ?? awd?.fn_sku ?? null;
+    const sourceMapping = resolveSourceMapping({
+      amazonSku: item.sku,
+      fnSku,
+      svdRows: svdRows.map((row) => ({
+        svdItemId: row.svd_item_id,
+        sku: row.sku,
+        fnSku: row.fn_sku,
+      })),
+      manualMappings: activeManualMappings,
+    });
 
+    const setting = effectiveSetting(overrideBySku.get(item.sku), defaults);
+    const velocity = velocityByKey.get(key);
+    const dailyDemand = velocityValue(velocity);
+
+    if (staleSource) {
       return {
         marketplaceId: item.marketplace_id,
         sku: item.sku,
         title: item.title,
-        onHand,
-        recommendation,
+        usableSupply: null,
+        dailyDemand,
+        velocitySampleDays: velocity?.in_stock_sample_days ?? null,
+        sourceMapping,
+        supplyBreakdown: null,
+        recommendation: {
+          status: 'needs-review',
+          reason: `stale-source-${staleSource.source}`,
+        },
       };
-    }),
-  );
+    }
+
+    if (sourceMapping.status === 'needs-review') {
+      return {
+        marketplaceId: item.marketplace_id,
+        sku: item.sku,
+        title: item.title,
+        usableSupply: null,
+        dailyDemand,
+        velocitySampleDays: velocity?.in_stock_sample_days ?? null,
+        sourceMapping,
+        supplyBreakdown: null,
+        recommendation: { status: 'needs-review', reason: sourceMapping.reason },
+      };
+    }
+
+    const svd = svdById.get(sourceMapping.svdItemId) ?? null;
+    const supply = calculateUsableSupply({
+      fba: fba
+        ? {
+            fulfillableQuantity: fba.fulfillable_quantity,
+            inboundWorkingQuantity: fba.inbound_working_quantity,
+            inboundShippedQuantity: fba.inbound_shipped_quantity,
+            inboundReceivingQuantity: fba.inbound_receiving_quantity,
+          }
+        : null,
+      awd: awd ? { replenishmentQuantity: awd.replenishment_quantity } : null,
+      svd: svd ? { quantity: svd.quantity } : null,
+      policy,
+    });
+
+    const usableSupply = supply.status === 'ok' ? supply.usableSupply : null;
+    const recommendation =
+      supply.status === 'needs-review'
+        ? { status: 'needs-review' as const, reason: supply.reason }
+        : recommend({
+            usableSupply,
+            dailyDemand,
+            leadTimeDays: setting.leadTimeDays,
+            safetyStock: setting.safetyStock,
+          });
+
+    return {
+      marketplaceId: item.marketplace_id,
+      sku: item.sku,
+      title: item.title,
+      usableSupply,
+      dailyDemand,
+      velocitySampleDays: velocity?.in_stock_sample_days ?? null,
+      sourceMapping,
+      supplyBreakdown: supply.status === 'ok' ? supply.breakdown : null,
+      recommendation,
+    };
+  });
 
   return {
     rows,
+    sourceHealth: mapSourceHealth(sourceStateRows),
+    policy,
     errors: {
-      catalog: catalogRes.error?.message,
-      inventory: inventoryRes.error?.message,
-      settings: settingsRes.error?.message,
+      catalog: toErrorMessage(catalogRes.error),
+      fbaInventory: toErrorMessage(fbaRes.error),
+      awdInventory: toErrorMessage(awdRes.error),
+      svdInventory: toErrorMessage(svdRes.error),
+      mappings: toErrorMessage(mappingsRes.error),
+      velocity: toErrorMessage(velocityRes.error),
+      settings: toErrorMessage(settingsRes.error),
+      policy: toErrorMessage(policyRes.error),
+      sourceState: toErrorMessage(sourceStateRes.error),
     },
   };
 }

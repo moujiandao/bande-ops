@@ -1,33 +1,24 @@
-import { describe, it, expect } from 'vitest';
-import { assembleRecommendations, type AssembleRecommendationsDeps } from './service';
-import { FakeDemandProvider } from './fake-demand';
+import { describe, expect, it } from 'vitest';
 import { DEFAULT_MARKETPLACE } from '@/lib/amazon/types';
-
-// Assembly tests: join inventory + settings + demand and run the pure
-// recommender per catalog SKU. We inject a mocked Supabase reader and a
-// FakeDemandProvider — no live DB or network. The invariant under test, end to
-// end: a SKU with UNKNOWN on-hand (missing inventory row) or UNKNOWN demand
-// surfaces as needs-review, NEVER a number.
-//
-// NOTE: import FakeDemandProvider from './fake-demand' directly, not the
-// './demand' barrel, which pulls SpApiDemandProvider -> 'server-only'.
+import { assembleRecommendations, type AssembleRecommendationsDeps } from './service';
 
 const mkt = DEFAULT_MARKETPLACE.id;
 
 type TableData = { data: unknown[] | null; error: { message: string } | null };
 
-/**
- * Mock Supabase reader: from(table).select(cols).eq(col,val) resolves to the
- * canned {data,error} for that table. Mirrors the PostgREST chain shape this
- * service uses, with the terminal `.eq()` being the awaited thenable.
- */
-function makeSupabaseMock(tables: Record<string, TableData>): AssembleRecommendationsDeps['supabase'] {
+function makeSupabaseMock(
+  tables: Record<string, TableData>,
+): AssembleRecommendationsDeps['supabase'] {
   return {
     from(table: string) {
       const result = tables[table] ?? { data: [], error: null };
       return {
         select() {
+          const promise = Promise.resolve(result);
           return {
+            then: promise.then.bind(promise),
+            catch: promise.catch.bind(promise),
+            finally: promise.finally.bind(promise),
             eq() {
               return Promise.resolve(result);
             },
@@ -44,21 +35,135 @@ function baseTables(): Record<string, TableData> {
       data: [
         { marketplace_id: mkt, sku: 'SKU-LOW', title: 'Low stock widget' },
         { marketplace_id: mkt, sku: 'SKU-HIGH', title: 'Well stocked widget' },
-        { marketplace_id: mkt, sku: 'SKU-UNKNOWN', title: 'Unknown stock widget' },
+        { marketplace_id: mkt, sku: 'SKU-MISSING-MAP', title: 'Missing map widget' },
       ],
       error: null,
     },
     inventory_levels: {
       data: [
-        { marketplace_id: mkt, sku: 'SKU-LOW', total_quantity: 5 },
-        { marketplace_id: mkt, sku: 'SKU-HIGH', total_quantity: 100 },
-        // SKU-UNKNOWN intentionally absent -> UNKNOWN on-hand (never 0).
+        {
+          marketplace_id: mkt,
+          sku: 'SKU-LOW',
+          fn_sku: 'FNSKU-LOW',
+          fulfillable_quantity: 5,
+          inbound_working_quantity: 99,
+          inbound_shipped_quantity: 3,
+          inbound_receiving_quantity: 2,
+        },
+        {
+          marketplace_id: mkt,
+          sku: 'SKU-HIGH',
+          fn_sku: 'FNSKU-HIGH',
+          fulfillable_quantity: 100,
+          inbound_working_quantity: 0,
+          inbound_shipped_quantity: 0,
+          inbound_receiving_quantity: 0,
+        },
+        {
+          marketplace_id: mkt,
+          sku: 'SKU-MISSING-MAP',
+          fn_sku: 'FNSKU-MISSING-MAP',
+          fulfillable_quantity: 5,
+          inbound_working_quantity: 0,
+          inbound_shipped_quantity: 0,
+          inbound_receiving_quantity: 0,
+        },
+      ],
+      error: null,
+    },
+    awd_inventory_levels: {
+      data: [
+        {
+          marketplace_id: mkt,
+          sku: 'SKU-LOW',
+          fn_sku: 'FNSKU-LOW',
+          replenishment_quantity: 8,
+        },
+        {
+          marketplace_id: mkt,
+          sku: 'SKU-HIGH',
+          fn_sku: 'FNSKU-HIGH',
+          replenishment_quantity: 50,
+        },
+      ],
+      error: null,
+    },
+    svd_inventory_levels: {
+      data: [
+        { svd_item_id: 'svd-low', sku: 'DIFFERENT-SKU', fn_sku: 'FNSKU-LOW', quantity: 7 },
+        { svd_item_id: 'svd-high', sku: 'SKU-HIGH', fn_sku: null, quantity: 20 },
+      ],
+      error: null,
+    },
+    inventory_source_mappings: {
+      data: [],
+      error: null,
+    },
+    sales_velocity: {
+      data: [
+        {
+          marketplace_id: mkt,
+          sku: 'SKU-LOW',
+          daily_velocity: 4,
+          status: 'ok',
+          in_stock_sample_days: 90,
+        },
+        {
+          marketplace_id: mkt,
+          sku: 'SKU-HIGH',
+          daily_velocity: 2,
+          status: 'ok',
+          in_stock_sample_days: 90,
+        },
+        {
+          marketplace_id: mkt,
+          sku: 'SKU-MISSING-MAP',
+          daily_velocity: 1,
+          status: 'ok',
+          in_stock_sample_days: 90,
+        },
       ],
       error: null,
     },
     replenishment_settings: {
-      // Global default only: lead 10d, safety 0. ROP = demand*10.
       data: [{ marketplace_id: mkt, sku: null, lead_time_days: 10, safety_stock: 0 }],
+      error: null,
+    },
+    replenishment_policy: {
+      data: [],
+      error: null,
+    },
+    source_sync_state: {
+      data: [
+        {
+          source: 'fba_inventory',
+          status: 'success',
+          last_success_at: '2026-07-21T00:00:00.000Z',
+          row_count: 3,
+          error_summary: null,
+        },
+        {
+          source: 'awd_inventory',
+          status: 'success',
+          last_success_at: '2026-07-21T00:00:00.000Z',
+          row_count: 2,
+          error_summary: null,
+        },
+        {
+          source: 'fba_ledger',
+          status: 'success',
+          last_success_at: '2026-07-21T00:00:00.000Z',
+          row_count: 3,
+          error_summary: null,
+        },
+        {
+          source: 'svd_inventory',
+          status: 'success',
+          last_success_at: '2026-07-21T00:00:00.000Z',
+          row_count: 2,
+          error_summary: null,
+        },
+      ],
       error: null,
     },
   };
@@ -66,100 +171,248 @@ function baseTables(): Record<string, TableData> {
 
 function makeDeps(
   overrides: Record<string, TableData> = {},
-  demandSeed?: Record<string, number | null>,
 ): AssembleRecommendationsDeps {
-  const tables = { ...baseTables(), ...overrides };
   return {
-    supabase: makeSupabaseMock(tables),
-    demand: new FakeDemandProvider(
-      demandSeed ?? { 'SKU-LOW': 2, 'SKU-HIGH': 2, 'SKU-UNKNOWN': 2 },
-    ),
+    supabase: makeSupabaseMock({ ...baseTables(), ...overrides }),
   };
 }
 
 describe('assembleRecommendations', () => {
-  it('recommends a quantity for a low-stock SKU with real demand', async () => {
+  it('computes reorder from FBA, AWD, SVD, and persisted velocity', async () => {
     const { rows } = await assembleRecommendations(makeDeps());
-    const low = rows.find((r) => r.sku === 'SKU-LOW');
+    const low = rows.find((row) => row.sku === 'SKU-LOW');
+
     expect(low).toBeDefined();
-    expect(low!.title).toBe('Low stock widget');
-    expect(low!.onHand).toBe(5);
+    expect(low!.sourceMapping).toEqual({
+      status: 'mapped',
+      svdItemId: 'svd-low',
+      mappingSource: 'fn_sku',
+    });
+    expect(low!.usableSupply).toBe(25);
+    expect(low!.dailyDemand).toBe(4);
+    expect(low!.velocitySampleDays).toBe(90);
+    expect(low!.supplyBreakdown).toEqual({
+      fbaFulfillable: 5,
+      fbaInboundWorking: 0,
+      fbaInboundShipped: 3,
+      fbaInboundReceiving: 2,
+      awdReplenishment: 8,
+      svdAvailable: 7,
+    });
     expect(low!.recommendation.status).toBe('ok');
     if (low!.recommendation.status === 'ok') {
-      // ROP = 2*10 + 0 = 20; 5 <= 20 -> 15
+      expect(low!.recommendation.reasoning.reorderPoint).toBe(40);
       expect(low!.recommendation.recommendedQty).toBe(15);
-      expect(low!.recommendation.reasoning.reorderPoint).toBe(20);
     }
   });
 
-  it('recommends 0 for a well-stocked SKU', async () => {
+  it('keeps well-stocked SKUs at zero reorder quantity', async () => {
     const { rows } = await assembleRecommendations(makeDeps());
-    const high = rows.find((r) => r.sku === 'SKU-HIGH');
+    const high = rows.find((row) => row.sku === 'SKU-HIGH');
+
+    expect(high!.usableSupply).toBe(170);
     expect(high!.recommendation.status).toBe('ok');
     if (high!.recommendation.status === 'ok') {
-      // ROP = 20; 100 > 20 -> 0
       expect(high!.recommendation.recommendedQty).toBe(0);
     }
   });
 
-  it('surfaces a SKU with no inventory row as needs-review (UNKNOWN on-hand), never a number', async () => {
+  it('flags SKUs without an SVD mapping for review', async () => {
     const { rows } = await assembleRecommendations(makeDeps());
-    const unknown = rows.find((r) => r.sku === 'SKU-UNKNOWN');
-    expect(unknown!.onHand).toBeNull();
-    expect(unknown!.onHand).not.toBe(0); // the core invariant, made explicit
-    expect(unknown!.recommendation.status).toBe('needs-review');
-    if (unknown!.recommendation.status === 'needs-review') {
-      expect(unknown!.recommendation.reason).toBe('unknown-on-hand');
+    const missing = rows.find((row) => row.sku === 'SKU-MISSING-MAP');
+
+    expect(missing!.recommendation.status).toBe('needs-review');
+    if (missing!.recommendation.status === 'needs-review') {
+      expect(missing!.recommendation.reason).toBe('missing-svd-mapping');
     }
-    // No numeric recommendation leaked onto the row.
-    expect('recommendedQty' in unknown!.recommendation).toBe(false);
   });
 
-  it('surfaces a SKU with UNKNOWN demand as needs-review even when on-hand is known', async () => {
+  it('uses manual mappings after FNSKU and SKU matching', async () => {
     const { rows } = await assembleRecommendations(
-      makeDeps(undefined, { 'SKU-LOW': null, 'SKU-HIGH': 2, 'SKU-UNKNOWN': 2 }),
+      makeDeps({
+        svd_inventory_levels: {
+          data: [
+            { svd_item_id: 'manual-svd', sku: null, fn_sku: null, quantity: 7 },
+            { svd_item_id: 'svd-high', sku: 'SKU-HIGH', fn_sku: null, quantity: 20 },
+          ],
+          error: null,
+        },
+        inventory_source_mappings: {
+          data: [
+            {
+              marketplace_id: mkt,
+              amazon_sku: 'SKU-LOW',
+              svd_item_id: 'manual-svd',
+              status: 'active',
+            },
+          ],
+          error: null,
+        },
+      }),
     );
-    const low = rows.find((r) => r.sku === 'SKU-LOW');
-    expect(low!.onHand).toBe(5); // on-hand is known...
-    expect(low!.recommendation.status).toBe('needs-review'); // ...but demand is not
+    const low = rows.find((row) => row.sku === 'SKU-LOW');
+
+    expect(low!.sourceMapping).toEqual({
+      status: 'mapped',
+      svdItemId: 'manual-svd',
+      mappingSource: 'manual',
+    });
+  });
+
+  it('surfaces unknown velocity as unknown demand', async () => {
+    const { rows } = await assembleRecommendations(
+      makeDeps({
+        sales_velocity: {
+          data: [
+            {
+              marketplace_id: mkt,
+              sku: 'SKU-LOW',
+              daily_velocity: null,
+              status: 'unknown',
+              in_stock_sample_days: 0,
+            },
+          ],
+          error: null,
+        },
+      }),
+    );
+    const low = rows.find((row) => row.sku === 'SKU-LOW');
+
+    expect(low!.dailyDemand).toBeNull();
+    expect(low!.recommendation.status).toBe('needs-review');
     if (low!.recommendation.status === 'needs-review') {
       expect(low!.recommendation.reason).toBe('unknown-demand');
     }
   });
 
-  it('applies a per-SKU override over the global default', async () => {
-    const tables = {
-      replenishment_settings: {
-        data: [
-          { marketplace_id: mkt, sku: null, lead_time_days: 10, safety_stock: 0 },
-          // Override SKU-LOW: lead 5, safety 50 -> ROP = 2*5 + 50 = 60.
-          { marketplace_id: mkt, sku: 'SKU-LOW', lead_time_days: 5, safety_stock: 50 },
-        ],
-        error: null,
-      } as TableData,
-    };
-    const { rows } = await assembleRecommendations(makeDeps(tables));
-    const low = rows.find((r) => r.sku === 'SKU-LOW');
-    if (low!.recommendation.status === 'ok') {
-      // ROP = 60; 5 <= 60 -> 55
-      expect(low!.recommendation.recommendedQty).toBe(55);
-      expect(low!.recommendation.reasoning.reorderPoint).toBe(60);
-    } else {
-      throw new Error('expected ok');
+  it('blocks numeric recommendations when a required source is not fresh', async () => {
+    const { rows } = await assembleRecommendations(
+      makeDeps({
+        source_sync_state: {
+          data: [
+            {
+              source: 'fba_inventory',
+              status: 'success',
+              last_success_at: '2026-07-21T00:00:00.000Z',
+              row_count: 3,
+              error_summary: null,
+            },
+            {
+              source: 'awd_inventory',
+              status: 'failed',
+              last_success_at: '2026-07-20T00:00:00.000Z',
+              row_count: 2,
+              error_summary: 'Sync failed; check server logs for details.',
+            },
+          ],
+          error: null,
+        },
+      }),
+    );
+    const low = rows.find((row) => row.sku === 'SKU-LOW');
+
+    expect(low!.usableSupply).toBeNull();
+    expect(low!.recommendation.status).toBe('needs-review');
+    if (low!.recommendation.status === 'needs-review') {
+      expect(low!.recommendation.reason).toBe('stale-source-awd_inventory');
+    }
+    expect('recommendedQty' in low!.recommendation).toBe(false);
+  });
+
+  it('blocks numeric recommendations when a required source has never synced', async () => {
+    const { rows } = await assembleRecommendations(
+      makeDeps({
+        source_sync_state: {
+          data: [
+            {
+              source: 'fba_inventory',
+              status: 'success',
+              last_success_at: '2026-07-21T00:00:00.000Z',
+              row_count: 3,
+              error_summary: null,
+            },
+            {
+              source: 'awd_inventory',
+              status: 'success',
+              last_success_at: '2026-07-21T00:00:00.000Z',
+              row_count: 2,
+              error_summary: null,
+            },
+            {
+              source: 'fba_ledger',
+              status: 'success',
+              last_success_at: '2026-07-21T00:00:00.000Z',
+              row_count: 3,
+              error_summary: null,
+            },
+          ],
+          error: null,
+        },
+      }),
+    );
+    const low = rows.find((row) => row.sku === 'SKU-LOW');
+
+    expect(low!.recommendation.status).toBe('needs-review');
+    if (low!.recommendation.status === 'needs-review') {
+      expect(low!.recommendation.reason).toBe('stale-source-svd_inventory');
     }
   });
 
-  it('returns one row per catalog SKU', async () => {
-    const { rows } = await assembleRecommendations(makeDeps());
-    expect(rows).toHaveLength(3);
+  it('blocks numeric recommendations when source freshness cannot be read', async () => {
+    const { rows, errors } = await assembleRecommendations(
+      makeDeps({
+        source_sync_state: { data: null, error: { message: 'freshness read failed' } },
+      }),
+    );
+    const low = rows.find((row) => row.sku === 'SKU-LOW');
+
+    expect(errors.sourceState).toBe('freshness read failed');
+    expect(low!.recommendation.status).toBe('needs-review');
+    if (low!.recommendation.status === 'needs-review') {
+      expect(low!.recommendation.reason).toBe('stale-source-source_sync_state');
+    }
   });
 
-  it('surfaces read errors so the view can distinguish failure from genuine UNKNOWN', async () => {
+  it('returns source health for the UI', async () => {
+    const { sourceHealth } = await assembleRecommendations(makeDeps());
+    expect(sourceHealth).toEqual([
+      {
+        source: 'fba_inventory',
+        status: 'success',
+        lastSuccessAt: '2026-07-21T00:00:00.000Z',
+        rowCount: 3,
+        errorSummary: null,
+      },
+      {
+        source: 'awd_inventory',
+        status: 'success',
+        lastSuccessAt: '2026-07-21T00:00:00.000Z',
+        rowCount: 2,
+        errorSummary: null,
+      },
+      {
+        source: 'fba_ledger',
+        status: 'success',
+        lastSuccessAt: '2026-07-21T00:00:00.000Z',
+        rowCount: 3,
+        errorSummary: null,
+      },
+      {
+        source: 'svd_inventory',
+        status: 'success',
+        lastSuccessAt: '2026-07-21T00:00:00.000Z',
+        rowCount: 2,
+        errorSummary: null,
+      },
+    ]);
+  });
+
+  it('surfaces read errors so the view can distinguish failure from unknown data', async () => {
     const { errors } = await assembleRecommendations(
       makeDeps({
         inventory_levels: { data: null, error: { message: 'boom' } },
       }),
     );
-    expect(errors.inventory).toBe('boom');
+    expect(errors.fbaInventory).toBe('boom');
   });
 });
