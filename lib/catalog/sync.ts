@@ -1,5 +1,5 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AmazonClient } from '@/lib/amazon/client';
+import type { SyncWriter } from '@/lib/sync/run';
 import { DEFAULT_MARKETPLACE, type Marketplace } from '@/lib/amazon/types';
 import { mapCatalogItemsToRows } from './mapping';
 
@@ -14,8 +14,17 @@ import { mapCatalogItemsToRows } from './mapping';
  * either would make the module unloadable in a node test.
  */
 
-/** The slice of the admin client this orchestration actually uses. */
-type CatalogWriter = Pick<SupabaseClient, 'from'>;
+/**
+ * The slice of the admin client this orchestration actually uses.
+ *
+ * Deliberately the shared structural `SyncWriter` rather than
+ * `Pick<SupabaseClient, 'from'>`. Every sync module declares this same narrow
+ * write seam, which lets `runFullSync` type its single `admin` dep as one of
+ * them instead of intersecting several — each intersection member would make
+ * TypeScript re-instantiate Supabase's generic, heavily-overloaded `from()`
+ * at the cron call site, exceeding the instantiation-depth limit.
+ */
+type CatalogWriter = SyncWriter;
 
 export interface SyncCatalogDeps {
   /** Source of truth. In tests, a FakeAmazonClient. */

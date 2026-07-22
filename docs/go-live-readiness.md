@@ -6,6 +6,21 @@
 
 Not close. The plumbing is sound — host routing, LWA token exchange, retry/backoff, the server-only/credentials-never-reach-browser boundary, the synced-mirror architecture, and (correctly) the *absence* of AWS SigV4/STS AssumeRole, which Amazon removed in 2023-24. But every one of the three integrations has at least one hard blocker that will either 400 on the first real call or, worse, silently return wrong data. SP-API catalog SKU lookups fail without a `sellerId` we don't yet configure; inventory quantities come back empty because `details=true` is missing, collapsing every SKU to UNKNOWN; the Reorder demand provider is a throw-only skeleton wired in an architecturally wrong shape (per-SKU at page load vs. one batched async report); and the Advertising client targets a Sponsored Products v2 endpoint Amazon **sunset on 2023-03-30**. The dangerous failures aren't the 400s (loud, easy to catch) — they're the three places where the project's central UNKNOWN-vs-true-0 invariant silently breaks once real data flows. Plan on real implementation work in all three modules plus a credentials/sandbox flip, not a config toggle.
 
+### 1a. 2026-07-21 live inventory reorder update
+
+The `feat/live-inventory-reorder` branch addresses the reorder-specific blockers from this audit:
+
+- SP-API catalog SKU lookups now carry `SPAPI_SELLER_ID` for live SKU search.
+- FBA inventory requests use detailed inventory and persist fulfillable plus inbound buckets.
+- Catalog, FBA inventory, and AWD inventory paginate.
+- AWD inventory is stored as its own synced mirror.
+- FBA ledger velocity is now a scheduled mirror using one report per marketplace/window, not per-SKU page-load calls.
+- Report document download uses the presigned document URL separately from SP-API JSON requests.
+- Reorder recommendations read persisted FBA, AWD, SVD, source mappings, sales velocity, policy, and freshness state.
+- SVD inventory refresh is owner-triggered from the Reorder page and uses server-side `SVD_USERNAME`/`SVD_PASSWORD`.
+
+Remaining go-live checks: apply migration `0010`, provide live Amazon and SVD env vars, verify the new SP-API/AWD/ledger/SVD paths against real credentials, and still migrate Advertising API to Sponsored Products v3 before trusting Ads live data.
+
 ### 2. Per-integration changes
 
 #### SP-API — Catalog & Inventory (`lib/amazon/`)
@@ -75,7 +90,7 @@ Affirmed correct (and notably different from SP-API): the Advertising API **does
 3. **Add `details=true`** to the `getInventorySummaries` query.
 4. **Add `nextToken` pagination loops** to catalog, inventory, and ads.
 5. **Migrate Ads to SP v3:** `POST /sp/campaigns/list`, `application/vnd.spCampaign.v3+json` content-type/accept, JSON body, parse `{ campaigns, nextToken }`, read nested `budget.budget`, map uppercase state enum.
-6. **Build the reorder demand mirror:** one `GET_LEDGER_SUMMARY_VIEW_DATA` report per marketplace+window on a sync/cron path; add a presigned-S3 gzip-TSV download primitive (no auth header); parse to a SKU→daily-demand map persisted as a mirror; reconcile truncated ledger MSKUs to canonical SKUs; poll for `DONE`/`FATAL`/`CANCELLED`. Rewire `service.ts` off the per-SKU page-load call.
+6. **Verify the reorder demand mirror against live credentials:** one `GET_LEDGER_SUMMARY_VIEW_DATA` report per marketplace+window on a sync/cron path; presigned-S3 gzip-TSV download with no SP-API auth header; parse to a SKU→daily-demand map persisted as a mirror; poll for `DONE`/`FATAL`/`CANCELLED`; page reads the mirror instead of making per-SKU calls.
 7. **Supply prod credentials and flip flags:** real LWA creds + refresh tokens, `SELLER_ID`, `ADS_PROFILE_ID`; set `AMAZON_USE_SANDBOX=false`, `ADS_USE_SANDBOX=false`, `AMAZON_USE_FAKE=false`.
 8. **Add proactive throttle + honor `Retry-After` / `x-amzn-RateLimit-Limit`** (FBA 2 rps, catalog/ads limits).
 9. **Add a `User-Agent` header;** filter catalog summaries/images by active `marketplace.id` and prefer `variant === 'MAIN'`.

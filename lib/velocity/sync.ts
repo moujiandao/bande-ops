@@ -8,7 +8,7 @@ import {
   recordSyncAttempt,
   recordSyncFailure,
   recordSyncSuccess,
-  type SyncTable,
+  type SyncWriter,
 } from '@/lib/sync/run';
 import { calculateSalesVelocity } from './calculate';
 import {
@@ -18,16 +18,26 @@ import {
 
 type DbError = { message: string } | null;
 
-type VelocityTable = SyncTable & {
-  select(columns?: string): {
-    eq(column: string, value: string): {
-      maybeSingle(): PromiseLike<{ data: unknown; error: DbError }>;
+/**
+ * The read seam for `replenishment_policy`, kept OUT of the public `admin`
+ * type on purpose.
+ *
+ * Every other sync module writes through the shared structural `SyncWriter`
+ * (`from().insert/update/upsert`). This one additionally reads. Declaring that
+ * read in the dep type would force TypeScript to structurally check Supabase's
+ * generic `select()` builder against this shape wherever a real client is
+ * passed in (`app/api/cron/sync/route.ts`), which exceeds the instantiation
+ * depth limit and fails `next build`. So the dep stays `SyncWriter` and the
+ * read is narrowed at its single point of use below.
+ */
+type PolicyDb = {
+  from(table: string): {
+    select(columns?: string): {
+      eq(column: string, value: string): {
+        maybeSingle(): PromiseLike<{ data: unknown; error: DbError }>;
+      };
     };
   };
-};
-
-type VelocityDb = {
-  from(table: string): VelocityTable;
 };
 
 export interface SyncFbaLedgerVelocityDeps {
@@ -35,7 +45,7 @@ export interface SyncFbaLedgerVelocityDeps {
     AmazonClient,
     'createLedgerReport' | 'getReportUntilDone' | 'downloadReportDocument'
   >;
-  admin: VelocityDb;
+  admin: SyncWriter;
   marketplace?: Marketplace;
   now?: Date;
 }
@@ -69,7 +79,8 @@ export async function syncFbaLedgerVelocity(
   });
 
   try {
-    const policyRes = await deps.admin
+    // Narrowed here rather than in the dep type — see PolicyDb above.
+    const policyRes = await (deps.admin as unknown as PolicyDb)
       .from('replenishment_policy')
       .select('*')
       .eq('marketplace_id', marketplace.id)

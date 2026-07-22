@@ -4,7 +4,7 @@ import { FakeAmazonClient } from '@/lib/amazon/fake-client';
 import { FakeAdsClient } from '@/lib/ads/fake-client';
 
 // The scheduled full-sync orchestration: SP-API + Advertising sources -> all
-// four mirror upserts. We inject FakeAmazonClient + FakeAdsClient and a mocked
+// mirror upserts. We inject FakeAmazonClient + FakeAdsClient and a mocked
 // admin client so there is no live network or DB. The mock records which tables
 // were written so we can prove the orchestration covers catalog, inventory AND
 // ads (the A3 regression guard).
@@ -13,7 +13,15 @@ import { FakeAdsClient } from '@/lib/ads/fake-client';
 // '@/lib/ads' barrels, which pull the real clients -> 'server-only'.
 
 /** A mock admin client exposing the write methods used by the sync chain. */
-function makeAdminMock() {
+function makePolicySelect() {
+  return {
+    eq: vi.fn().mockReturnValue({
+      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+    }),
+  };
+}
+
+function makeAdminMock(failTable?: string) {
   const upsert = vi.fn().mockResolvedValue({ data: null, error: null });
   const sourceRunInsert = vi.fn().mockReturnValue({
     select: vi.fn().mockReturnValue({
@@ -27,6 +35,16 @@ function makeAdminMock() {
     if (table === 'source_sync_runs') {
       return { insert: sourceRunInsert, update: sourceRunUpdate };
     }
+    if (table === 'replenishment_policy') {
+      return { select: vi.fn().mockReturnValue(makePolicySelect()) };
+    }
+    if (table === failTable) {
+      return {
+        upsert: vi
+          .fn()
+          .mockResolvedValue({ data: null, error: { message: 'boom' } }),
+      };
+    }
     return { upsert };
   });
   return {
@@ -37,7 +55,7 @@ function makeAdminMock() {
 }
 
 describe('runFullSync', () => {
-  it('refreshes catalog, inventory AND ads mirrors in one run', async () => {
+  it('refreshes catalog, FBA inventory, AWD inventory, velocity, and ads mirrors in one run', async () => {
     const { admin, from } = makeAdminMock();
 
     const counts = await runFullSync({
@@ -52,6 +70,9 @@ describe('runFullSync', () => {
       expect.arrayContaining([
         'catalog_items',
         'inventory_levels',
+        'awd_inventory_levels',
+        'fba_daily_velocity_inputs',
+        'sales_velocity',
         'source_sync_runs',
         'source_sync_state',
         'ads_campaigns',
@@ -59,10 +80,13 @@ describe('runFullSync', () => {
       ]),
     );
 
-    // Counts reflect the seeded fakes: 2 catalog + 2 inventory, 3 + 3 ads.
+    // Counts reflect the seeded fakes.
     expect(counts).toEqual({
       catalog: 2,
       inventory: 2,
+      awdInventory: 1,
+      fbaLedgerRows: 3,
+      salesVelocity: 2,
       adsCampaigns: 3,
       adsCampaignMetrics: 3,
     });
@@ -71,31 +95,7 @@ describe('runFullSync', () => {
   it('runs the syncs in order and stops at the first failure', async () => {
     // Fail on the ads_campaigns write to prove ads is wired into the chain and
     // that a downstream failure aborts the rest (no metrics write after it).
-    const upsert = vi.fn().mockImplementation((_rows, _opts) => {
-      return Promise.resolve({ data: null, error: null });
-    });
-    const sourceRunInsert = vi.fn().mockReturnValue({
-      select: vi.fn().mockReturnValue({
-        single: vi.fn().mockResolvedValue({ data: { id: 'run-1' }, error: null }),
-      }),
-    });
-    const sourceRunUpdate = vi.fn().mockReturnValue({
-      eq: vi.fn().mockResolvedValue({ error: null }),
-    });
-    const from = vi.fn().mockImplementation((table: string) => {
-      if (table === 'source_sync_runs') {
-        return { insert: sourceRunInsert, update: sourceRunUpdate };
-      }
-      if (table === 'ads_campaigns') {
-        return {
-          upsert: vi
-            .fn()
-            .mockResolvedValue({ data: null, error: { message: 'boom' } }),
-        };
-      }
-      return { upsert };
-    });
-    const admin = { from } as unknown as RunFullSyncDeps['admin'];
+    const { admin, from } = makeAdminMock('ads_campaigns');
 
     await expect(
       runFullSync({
@@ -107,7 +107,46 @@ describe('runFullSync', () => {
 
     // Reached ads_campaigns but never ads_campaign_metrics (chain aborted).
     const tables = from.mock.calls.map((c) => c[0]);
+    expect(tables).toContain('sales_velocity');
     expect(tables).toContain('ads_campaigns');
     expect(tables).not.toContain('ads_campaign_metrics');
+  });
+
+  // The abort guard above fails at an ads write, which was already wired before
+  // the reorder sources existed. These two prove the same fail-fast contract
+  // holds for the syncs added here: a failure in AWD or velocity must abort the
+  // chain BEFORE the ads mirrors are touched, so a partial cron tick can never
+  // leave ads refreshed while reorder inputs are stale.
+  it('aborts the chain when the AWD inventory write fails', async () => {
+    const { admin, from } = makeAdminMock('awd_inventory_levels');
+
+    await expect(
+      runFullSync({
+        amazonClient: new FakeAmazonClient(),
+        adsClient: new FakeAdsClient(),
+        admin,
+      }),
+    ).rejects.toThrow();
+
+    const tables = from.mock.calls.map((c) => c[0]);
+    expect(tables).toContain('awd_inventory_levels');
+    expect(tables).not.toContain('sales_velocity');
+    expect(tables).not.toContain('ads_campaigns');
+  });
+
+  it('aborts the chain when the sales velocity write fails', async () => {
+    const { admin, from } = makeAdminMock('sales_velocity');
+
+    await expect(
+      runFullSync({
+        amazonClient: new FakeAmazonClient(),
+        adsClient: new FakeAdsClient(),
+        admin,
+      }),
+    ).rejects.toThrow();
+
+    const tables = from.mock.calls.map((c) => c[0]);
+    expect(tables).toContain('sales_velocity');
+    expect(tables).not.toContain('ads_campaigns');
   });
 });

@@ -8,10 +8,13 @@ import { syncInventory } from '@/lib/inventory/sync';
 import { requireUser } from '@/lib/auth/guard';
 
 /**
- * Server action that triggers a full Module 1 sync from the /catalog page.
+ * Server action that triggers the catalog sync from the /catalog page.
  *
- * One "Sync now" refreshes both synced mirrors: the catalog and inventory
- * levels. Wires the real dependencies — the configured AmazonClient
+ * One "Sync now" refreshes exactly two synced mirrors: the catalog and FBA
+ * inventory levels. It deliberately does NOT refresh the other reorder
+ * sources — AWD inventory and FBA ledger velocity refresh on the scheduled
+ * cron (`runFullSync`), and SVD inventory refreshes only from the owner-gated
+ * button on /reorder. Wires the real dependencies — the configured AmazonClient
  * (FakeAmazonClient when AMAZON_USE_FAKE=true) and the service-role admin
  * client — into the injectable `syncCatalog` and `syncInventory`
  * orchestrations, then revalidates the page so the freshly-mirrored rows

@@ -1,5 +1,10 @@
 import { syncCatalog, type SyncCatalogDeps } from '@/lib/catalog/sync';
+import { syncAwdInventory, type SyncAwdInventoryDeps } from '@/lib/awd/sync';
 import { syncInventory, type SyncInventoryDeps } from '@/lib/inventory/sync';
+import {
+  syncFbaLedgerVelocity,
+  type SyncFbaLedgerVelocityDeps,
+} from '@/lib/velocity/sync';
 import {
   syncCampaigns,
   syncCampaignMetrics,
@@ -9,8 +14,8 @@ import {
 
 /**
  * Single orchestration for the scheduled full sync: refresh ALL synced mirrors
- * (catalog + inventory from SP-API, campaigns + campaign metrics from the
- * Advertising API) from one entry point.
+ * (catalog + FBA inventory + AWD inventory + sales velocity from SP-API,
+ * campaigns + campaign metrics from the Advertising API) from one entry point.
  *
  * This is the scheduled counterpart to the manual page actions — the catalog
  * page's "Sync now" and the /ads "Sync now" (`syncAdsAction`) — collapsed into
@@ -34,13 +39,25 @@ import {
  * lockstep with them: widen a sub-sync's needs and this widens automatically.
  */
 type FullSyncAmazonClient = SyncCatalogDeps['client'] &
-  SyncInventoryDeps['client'];
+  SyncInventoryDeps['client'] &
+  SyncAwdInventoryDeps['client'] &
+  SyncFbaLedgerVelocityDeps['client'];
 
 /** The Advertising client surface the full sync needs (campaigns + metrics). */
 type FullSyncAdsClient = SyncCampaignsDeps['client'] &
   SyncCampaignMetricsDeps['client'];
 
-/** Service-role Supabase client slice used by every mirror write. */
+/**
+ * Service-role Supabase client slice used by every mirror write.
+ *
+ * Unlike the client surfaces above, this is NOT an intersection of the
+ * per-sync `admin` types. All six syncs deliberately declare the same
+ * structural `SyncWriter` seam, so one member covers them all. That is
+ * load-bearing: each extra intersection member makes TypeScript re-instantiate
+ * Supabase's generic `from()` when the real client is passed in at
+ * `app/api/cron/sync/route.ts`, and four members exceeds the
+ * instantiation-depth limit that `next build` type-checks against.
+ */
 type FullSyncWriter = SyncCatalogDeps['admin'];
 
 export interface RunFullSyncDeps {
@@ -57,6 +74,12 @@ export interface FullSyncCounts {
   catalog: number;
   /** Inventory mirror rows upserted. */
   inventory: number;
+  /** AWD inventory mirror rows upserted. */
+  awdInventory: number;
+  /** FBA ledger daily rows upserted. */
+  fbaLedgerRows: number;
+  /** Sales velocity rows upserted. */
+  salesVelocity: number;
   /** Ads campaign mirror rows upserted. */
   adsCampaigns: number;
   /** Ads campaign-metrics mirror rows upserted. */
@@ -82,6 +105,11 @@ export async function runFullSync(
 
   const catalog = await syncCatalog({ client: amazonClient, admin });
   const inventory = await syncInventory({ client: amazonClient, admin });
+  const awdInventory = await syncAwdInventory({ client: amazonClient, admin });
+  const velocity = await syncFbaLedgerVelocity({
+    client: amazonClient,
+    admin,
+  });
   const adsCampaigns = await syncCampaigns({ client: adsClient, admin });
   const adsCampaignMetrics = await syncCampaignMetrics({
     client: adsClient,
@@ -91,6 +119,9 @@ export async function runFullSync(
   return {
     catalog: catalog.count,
     inventory: inventory.count,
+    awdInventory: awdInventory.count,
+    fbaLedgerRows: velocity.ledgerRows,
+    salesVelocity: velocity.velocityRows,
     adsCampaigns: adsCampaigns.count,
     adsCampaignMetrics: adsCampaignMetrics.count,
   };

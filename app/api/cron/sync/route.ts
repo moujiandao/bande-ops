@@ -8,10 +8,14 @@ import { isAuthorizedCronRequest } from '@/lib/cron/auth';
 /**
  * Scheduled full sync endpoint (Vercel Cron — see `vercel.json`).
  *
- * The same orchestration the page "Sync now" actions run, but driven on a
- * schedule instead of a click: refresh every synced mirror — catalog + inventory
- * (from SP-API) AND ads campaigns + campaign metrics (from the Advertising API)
- * — via the service-role admin client. One scheduled tick refreshes all four.
+ * Driven on a schedule instead of a click: refresh every synced mirror — from
+ * SP-API, catalog + FBA inventory + AWD inventory + FBA daily ledger rows +
+ * calculated sales velocity; from the Advertising API, campaigns + campaign
+ * metrics — via the service-role admin client. This is a superset of what the
+ * page "Sync now" actions cover: /catalog refreshes only catalog + FBA
+ * inventory, /ads only the two ads mirrors, and SVD inventory is NOT refreshed
+ * here at all (it is owner-triggered from /reorder).
+ *
  * Unlike the page actions there is no logged-in user here, so auth is a
  * shared-secret / platform-header check (`isAuthorizedCronRequest`) rather than
  * `requireUser()`.

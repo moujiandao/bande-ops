@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { SyncWriter } from '@/lib/sync/run';
 import type { AdsClient } from './client';
 import { mapCampaignsToRows } from './mapping';
 import { mapMetricsToRows } from './metrics-mapping';
@@ -18,7 +18,7 @@ import { DEFAULT_MARKETPLACE, type Marketplace } from './types';
  */
 
 /** The slice of the admin client this orchestration actually uses. */
-type AdsWriter = Pick<SupabaseClient, 'from'>;
+type AdsWriter = SyncWriter;
 
 export interface SyncCampaignsDeps {
   /** Source of truth. In tests, a FakeAdsClient. */
