@@ -1,12 +1,17 @@
 import { createClient } from '@/lib/supabase/server';
 import { Badge } from '@/components/ui/badge';
-import { saveDefaultsAction, saveSkuOverrideAction } from '@/lib/settings/settings-actions';
+import {
+  saveDefaultsAction,
+  savePolicyAction,
+  saveSkuOverrideAction,
+} from '@/lib/settings/settings-actions';
+import { mapPolicyRow, type ReplenishmentPolicyRow } from '@/lib/settings/policy';
 
 /**
- * Replenishment settings — the operational layer behind the reorder math.
+ * Replenishment settings, the operational layer behind the reorder math.
  *
  * Server component. Reads `replenishment_settings` through the authenticated
- * Supabase server client (RLS grants authenticated SELECT/INSERT/UPDATE — these
+ * Supabase server client (RLS grants authenticated SELECT/INSERT/UPDATE; these
  * rows are ours, user-authored, not a synced mirror). Renders a form to edit the
  * single global default (the row where `sku IS NULL`) and a section to set or
  * edit per-SKU overrides, which win over the default for that SKU.
@@ -37,14 +42,24 @@ const primaryButtonClass =
 export default async function SettingsPage() {
   const supabase = await createClient();
 
-  const { data, error } = await supabase
-    .from('replenishment_settings')
-    .select('id, marketplace_id, sku, lead_time_days, safety_stock, updated_at')
-    .order('sku', { ascending: true, nullsFirst: true });
+  const [settingsRes, policyRes] = await Promise.all([
+    supabase
+      .from('replenishment_settings')
+      .select('id, marketplace_id, sku, lead_time_days, safety_stock, updated_at')
+      .order('sku', { ascending: true, nullsFirst: true }),
+    supabase
+      .from('replenishment_policy')
+      .select('*')
+      .eq('marketplace_id', 'ATVPDKIKX0DER')
+      .maybeSingle(),
+  ]);
 
-  const rows = (data ?? []) as SettingRow[];
+  const rows = (settingsRes.data ?? []) as SettingRow[];
   const defaultRow = rows.find((r) => r.sku === null) ?? null;
   const overrides = rows.filter((r) => r.sku !== null);
+  const policy = mapPolicyRow(
+    (policyRes.data ?? null) as ReplenishmentPolicyRow | null,
+  );
 
   return (
     <div className="flex flex-col gap-8">
@@ -54,17 +69,101 @@ export default async function SettingsPage() {
         </h1>
         <p className="max-w-prose text-sm text-muted">
           The inputs to the reorder math. The global default applies to every
-          SKU; a per-SKU override wins for that SKU. Decision-support only —
+          SKU; a per-SKU override wins for that SKU. Decision support only,
           nothing here writes back to Amazon.
         </p>
       </header>
 
-      {error ? (
+      {settingsRes.error || policyRes.error ? (
         <div className="rounded-panel border border-border bg-panel-muted p-3 text-xs text-foreground">
-          ⚠ Couldn&apos;t load settings ({error.message}). The forms below still
-          submit, but current values may be missing.
+          ⚠ Couldn&apos;t load settings
+          {settingsRes.error ? ` (${settingsRes.error.message})` : ''}
+          {policyRes.error ? ` (${policyRes.error.message})` : ''}. The forms
+          below still submit, but current values may be missing.
         </div>
       ) : null}
+
+      <section className="flex flex-col gap-3">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="text-sm font-semibold text-foreground">
+            Global reorder policy
+          </h2>
+          <Badge className="border-border bg-panel-muted text-muted">
+            Applies globally
+          </Badge>
+        </div>
+
+        <form
+          action={savePolicyAction}
+          className="flex flex-col gap-4 rounded-panel border border-border bg-panel p-5"
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="flex flex-col gap-1.5">
+              <span className={labelClass}>Velocity sample (in-stock days)</span>
+              <input
+                type="number"
+                name="velocitySampleInStockDays"
+                min={1}
+                step={1}
+                required
+                defaultValue={policy.velocitySampleInStockDays}
+                className={fieldClass}
+              />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className={labelClass}>Velocity max lookback (days)</span>
+              <input
+                type="number"
+                name="velocityMaxLookbackDays"
+                min={1}
+                step={1}
+                required
+                defaultValue={policy.velocityMaxLookbackDays}
+                className={fieldClass}
+              />
+            </label>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <label className="flex items-center gap-2 rounded-md border border-border bg-panel-muted px-3 py-2 text-xs text-muted">
+              <input
+                type="checkbox"
+                name="countInboundWorking"
+                defaultChecked={policy.countInboundWorking}
+              />
+              Count FBA inbound working
+            </label>
+            <label className="flex items-center gap-2 rounded-md border border-border bg-panel-muted px-3 py-2 text-xs text-muted">
+              <input
+                type="checkbox"
+                name="countInboundShipped"
+                defaultChecked={policy.countInboundShipped}
+              />
+              Count FBA inbound shipped
+            </label>
+            <label className="flex items-center gap-2 rounded-md border border-border bg-panel-muted px-3 py-2 text-xs text-muted">
+              <input
+                type="checkbox"
+                name="countInboundReceiving"
+                defaultChecked={policy.countInboundReceiving}
+              />
+              Count FBA inbound receiving
+            </label>
+          </div>
+
+          <div className="grid gap-2 text-xs text-muted sm:grid-cols-3">
+            <span>Fulfillment: FBA only</span>
+            <span>SVD: replenishment warehouse only</span>
+            <span>Unknown/stale data: needs review</span>
+          </div>
+
+          <div className="flex justify-end">
+            <button type="submit" className={primaryButtonClass}>
+              Save policy
+            </button>
+          </div>
+        </form>
+      </section>
 
       {/* Global default */}
       <section className="flex flex-col gap-3">
@@ -184,7 +283,7 @@ export default async function SettingsPage() {
           className="grid items-end gap-3 rounded-panel border border-dashed border-border bg-panel p-4 sm:grid-cols-[minmax(0,1fr)_7rem_7rem_auto]"
         >
           <label className="flex flex-col gap-1.5">
-            <span className={labelClass}>New override — SKU</span>
+            <span className={labelClass}>New override: SKU</span>
             <input
               type="text"
               name="sku"

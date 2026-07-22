@@ -3,11 +3,12 @@
 import { revalidatePath } from 'next/cache';
 import { requireUser } from '@/lib/auth/guard';
 import { createClient } from '@/lib/supabase/server';
+import { validatePolicyInput } from './policy';
 
 /**
  * Server actions for the replenishment settings page.
  *
- * These persist OUR operational layer (lead time + safety stock) — authoritative
+ * These persist OUR operational layer (lead time + safety stock), authoritative
  * rows the user authors directly, not a synced mirror. There are two write
  * paths: the single global default (the row where `sku IS NULL`) and per-SKU
  * overrides.
@@ -19,7 +20,7 @@ import { createClient } from '@/lib/supabase/server';
  * UPDATE accordingly. RLS already grants authenticated SELECT/INSERT/UPDATE, so
  * these run on the ordinary authenticated server client (no service role).
  *
- * Server Actions are public endpoints — each re-checks auth via requireUser().
+ * Server Actions are public endpoints. Each re-checks auth via requireUser().
  */
 
 const DEFAULT_MARKETPLACE_ID = 'ATVPDKIKX0DER';
@@ -31,6 +32,18 @@ function parseNonNegativeInt(value: FormDataEntryValue | null, field: string): n
     throw new Error(`${field} must be a non-negative whole number.`);
   }
   return n;
+}
+
+function parsePositiveInt(value: FormDataEntryValue | null, field: string): number {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new Error(`${field} must be a positive whole number.`);
+  }
+  return n;
+}
+
+function checkbox(formData: FormData, field: string): boolean {
+  return formData.get(field) === 'on';
 }
 
 /**
@@ -82,6 +95,7 @@ async function writeSetting(params: {
   }
 
   revalidatePath('/settings');
+  revalidatePath('/reorder');
 }
 
 /** Save the global default (lead time + safety stock) for all SKUs. */
@@ -109,4 +123,45 @@ export async function saveSkuOverrideAction(formData: FormData): Promise<void> {
     leadTimeDays: parseNonNegativeInt(formData.get('leadTimeDays'), 'Lead time'),
     safetyStock: parseNonNegativeInt(formData.get('safetyStock'), 'Safety stock'),
   });
+}
+
+/** Save the global replenishment policy that controls velocity and supply rules. */
+export async function savePolicyAction(formData: FormData): Promise<void> {
+  await requireUser();
+
+  const policy = validatePolicyInput({
+    velocitySampleInStockDays: parsePositiveInt(
+      formData.get('velocitySampleInStockDays'),
+      'Velocity sample days',
+    ),
+    velocityMaxLookbackDays: parsePositiveInt(
+      formData.get('velocityMaxLookbackDays'),
+      'Velocity max lookback days',
+    ),
+    countInboundWorking: checkbox(formData, 'countInboundWorking'),
+    countInboundShipped: checkbox(formData, 'countInboundShipped'),
+    countInboundReceiving: checkbox(formData, 'countInboundReceiving'),
+  });
+
+  const supabase = await createClient();
+  const { error } = await supabase.from('replenishment_policy').upsert(
+    {
+      marketplace_id: DEFAULT_MARKETPLACE_ID,
+      velocity_sample_in_stock_days: policy.velocitySampleInStockDays,
+      velocity_max_lookback_days: policy.velocityMaxLookbackDays,
+      fulfillment_mode: policy.fulfillmentMode,
+      svd_mode: policy.svdMode,
+      unknown_stock_mode: policy.unknownStockMode,
+      stale_source_mode: policy.staleSourceMode,
+      count_inbound_working: policy.countInboundWorking,
+      count_inbound_shipped: policy.countInboundShipped,
+      count_inbound_receiving: policy.countInboundReceiving,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'marketplace_id' },
+  );
+  if (error) throw new Error(`Could not save replenishment policy: ${error.message}`);
+
+  revalidatePath('/settings');
+  revalidatePath('/reorder');
 }
