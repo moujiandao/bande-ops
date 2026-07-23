@@ -7,33 +7,11 @@ function reorderQty(row: RecommendationRow): number {
   return row.recommendation.status === 'ok' ? row.recommendation.recommendedQty : 0;
 }
 
-const REVIEW_REASON_LABELS: Record<string, string> = {
-  'unknown-usable-supply': 'Usable supply is Unknown',
-  'missing-fba-inventory': 'Missing FBA inventory snapshot',
-  'unknown-fba-fulfillable': 'FBA fulfillable quantity is Unknown',
-  'unknown-fba-inbound-working': 'FBA inbound working quantity is Unknown',
-  'unknown-fba-inbound-shipped': 'FBA inbound shipped quantity is Unknown',
-  'unknown-fba-inbound-receiving': 'FBA inbound receiving quantity is Unknown',
-  'unknown-awd-replenishment': 'AWD replenishment inventory is Unknown',
-  'unknown-svd-inventory': 'SVD inventory is Unknown',
-  'missing-svd-mapping': 'No SVD mapping found',
-  'unknown-demand': 'Sales velocity is Unknown',
-  'invalid-usable-supply': 'Usable supply value is invalid',
-  'invalid-demand': 'Sales velocity value is invalid',
-  'invalid-lead-time': 'Lead time is invalid',
-  'invalid-safety-stock': 'Safety stock is invalid',
-};
 
 const refreshButtonClass =
   'rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-panel-muted';
 
-function fmtNumber(n: number): string {
-  return Number.isInteger(n) ? String(n) : n.toFixed(2);
-}
 
-function fmtMaybeNumber(n: number | null): string {
-  return n === null ? 'Unknown' : fmtNumber(n);
-}
 
 function formatTimestamp(iso: string): string {
   return new Intl.DateTimeFormat('en-US', {
@@ -42,59 +20,26 @@ function formatTimestamp(iso: string): string {
   }).format(new Date(iso));
 }
 
-function reasonLabel(row: RecommendationRow): string {
-  if (row.recommendation.status !== 'needs-review') return '';
-  if (row.recommendation.reason.startsWith('stale-source-')) {
-    const source = row.recommendation.reason
-      .replace('stale-source-', '')
-      .replaceAll('_', ' ');
-    return `Refresh needed: ${source} is not fresh`;
-  }
-  return REVIEW_REASON_LABELS[row.recommendation.reason] ?? row.recommendation.reason;
-}
 
-function RowFacts({ row }: { row: RecommendationRow }) {
-  const rec = row.recommendation;
-  const sample =
-    row.velocitySampleDays === null ? '' : ` · sample ${row.velocitySampleDays} in-stock days`;
-
-  if (rec.status === 'ok') {
-    const r = rec.reasoning;
-    const coverageTargetMonths = Math.round((r.coverageDays / 30) * 10) / 10;
-    // Months of stock currently on hand at the measured velocity (∞ when demand is 0).
-    const monthsOnHand =
-      r.dailyDemand > 0
-        ? `~${(r.usableSupply / r.dailyDemand / 30).toFixed(1)}mo on hand`
-        : 'no demand';
-    return (
-      <span className="text-xs text-faint">
-        usable supply {fmtNumber(r.usableSupply)} · velocity{' '}
-        {fmtNumber(r.dailyDemand)}/day{sample} · lead {r.leadTimeDays}d · safety{' '}
-        {r.safetyStock} · reorder point {fmtNumber(r.reorderPoint)} · coverage target{' '}
-        {coverageTargetMonths}mo · {monthsOnHand}
-      </span>
-    );
-  }
-
-  return (
-    <span className="text-xs text-faint">
-      {reasonLabel(row)} · usable supply {fmtMaybeNumber(row.usableSupply)} · velocity{' '}
-      {fmtMaybeNumber(row.dailyDemand)}/day{sample}
-    </span>
-  );
-}
 
 export default async function ReorderPage() {
   const supabase = await createClient();
   const { rows, errors, sourceHealth } = await assembleRecommendations({ supabase });
 
-  const toReorder = rows
+  // Legacy SKUs are excluded from every working list. They stay reachable in a
+  // collapsed section so an excluded SKU is never silently invisible.
+  const legacy = rows.filter((row) => row.isLegacy);
+  const active = rows.filter((row) => !row.isLegacy);
+
+  const toReorder = active
     .filter((row) => row.recommendation.status === 'ok' && reorderQty(row) > 0)
     .sort((a, b) => reorderQty(b) - reorderQty(a));
-  const wellStocked = rows.filter(
+  const wellStocked = active.filter(
     (row) => row.recommendation.status === 'ok' && reorderQty(row) === 0,
   );
-  const needsReview = rows.filter((row) => row.recommendation.status === 'needs-review');
+  const needsReview = active.filter(
+    (row) => row.recommendation.status === 'needs-review',
+  );
 
   const loadErrors = Object.entries(errors).filter(([, message]) => Boolean(message));
 
@@ -196,15 +141,12 @@ export default async function ReorderPage() {
                       key={`${row.marketplaceId}:${row.sku}`}
                       className="flex flex-wrap items-center justify-between gap-4 rounded-panel border border-accent-soft bg-panel p-4"
                     >
-                      <div className="flex min-w-0 flex-col gap-1">
-                        <span className="truncate text-sm font-medium text-foreground">
-                          {row.title}
-                        </span>
-                        <span className="truncate font-mono text-xs text-muted">
-                          {row.sku}
-                        </span>
-                        <RowFacts row={row} />
-                      </div>
+                      <span
+                        className="truncate font-mono text-sm text-foreground"
+                        title={`${row.title} — ${row.sku}`}
+                      >
+                        {row.fnSku ?? row.sku}
+                      </span>
                       <div className="flex flex-col items-end">
                         <span className="text-2xl font-semibold tabular-nums text-accent-strong">
                           {rec.recommendedQty}
@@ -238,15 +180,12 @@ export default async function ReorderPage() {
                     key={`${row.marketplaceId}:${row.sku}`}
                     className="flex flex-wrap items-center justify-between gap-4 rounded-panel border border-border bg-panel p-4"
                   >
-                    <div className="flex min-w-0 flex-col gap-1">
-                      <span className="truncate text-sm font-medium text-foreground">
-                        {row.title}
-                      </span>
-                      <span className="truncate font-mono text-xs text-muted">
-                        {row.sku}
-                      </span>
-                      <RowFacts row={row} />
-                    </div>
+                    <span
+                      className="truncate font-mono text-sm text-foreground"
+                      title={`${row.title} — ${row.sku}`}
+                    >
+                      {row.fnSku ?? row.sku}
+                    </span>
                     <Badge className="border-border bg-panel-muted text-muted">
                       Needs review
                     </Badge>
@@ -274,15 +213,12 @@ export default async function ReorderPage() {
                     key={`${row.marketplaceId}:${row.sku}`}
                     className="flex flex-wrap items-center justify-between gap-4 rounded-panel border border-border bg-panel p-4"
                   >
-                    <div className="flex min-w-0 flex-col gap-1">
-                      <span className="truncate text-sm font-medium text-foreground">
-                        {row.title}
-                      </span>
-                      <span className="truncate font-mono text-xs text-muted">
-                        {row.sku}
-                      </span>
-                      <RowFacts row={row} />
-                    </div>
+                    <span
+                      className="truncate font-mono text-sm text-foreground"
+                      title={`${row.title} — ${row.sku}`}
+                    >
+                      {row.fnSku ?? row.sku}
+                    </span>
                     <span className="text-xs font-medium text-muted">No reorder</span>
                   </li>
                 ))}
@@ -291,6 +227,33 @@ export default async function ReorderPage() {
           </section>
         </div>
       )}
+
+      {legacy.length > 0 ? (
+        <details className="rounded-panel border border-border bg-panel p-4">
+          <summary className="cursor-pointer text-sm font-semibold text-foreground">
+            Legacy{' '}
+            <span className="font-normal text-muted">
+              ({legacy.length} SKUs with no sales in ~18 months)
+            </span>
+          </summary>
+          <p className="mt-2 text-xs text-muted">
+            Excluded from the lists above. A listing created in the last 12
+            months is never treated as legacy, and a SKU with no known listing
+            date is left in the lists rather than hidden.
+          </p>
+          <ul className="mt-3 flex flex-col gap-1">
+            {legacy.map((row) => (
+              <li
+                key={`${row.marketplaceId}:${row.sku}`}
+                className="truncate font-mono text-xs text-muted"
+                title={`${row.title} — ${row.sku}`}
+              >
+                {row.fnSku ?? row.sku}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
     </div>
   );
 }
