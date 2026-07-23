@@ -75,7 +75,9 @@ export class FakeAmazonClient implements AmazonClient {
         marketplaceId,
         fnSku: 'X000111AAA',
         replenishmentQuantity: 25,
-        totalQuantity: 25,
+        availableDistributableQuantity: 100,
+        totalQuantity: 125,
+        inboundQuantity: 0,
       },
     ];
   }

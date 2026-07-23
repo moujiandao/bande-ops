@@ -463,11 +463,21 @@ interface AwdInventoryResponse {
   nextToken?: string;
 }
 
+/**
+ * Shape confirmed against the live AWD API. The quantities that matter are
+ * NESTED under inventoryDetails; only the on-hand and inbound totals are
+ * top-level, and neither is named `totalQuantity`.
+ */
 interface RawAwdInventorySummary {
   sku?: string;
   fnSku?: string;
-  replenishmentQuantity?: unknown;
-  totalQuantity?: unknown;
+  totalOnhandQuantity?: unknown;
+  totalInboundQuantity?: unknown;
+  inventoryDetails?: {
+    availableDistributableQuantity?: unknown;
+    replenishmentQuantity?: unknown;
+    reservedDistributableQuantity?: unknown;
+  };
 }
 
 function mapCatalogItem(raw: RawCatalogItem): CatalogItem {
@@ -514,11 +524,16 @@ function mapAwdInventorySummary(
   raw: RawAwdInventorySummary,
   marketplaceId: MarketplaceId,
 ): AwdInventorySummary {
+  const details = raw.inventoryDetails;
   return {
     sku: raw.sku ?? '',
     marketplaceId,
     ...(raw.fnSku ? { fnSku: raw.fnSku } : {}),
-    replenishmentQuantity: toQuantity(raw.replenishmentQuantity),
-    totalQuantity: toQuantity(raw.totalQuantity),
+    replenishmentQuantity: toQuantity(details?.replenishmentQuantity),
+    availableDistributableQuantity: toQuantity(
+      details?.availableDistributableQuantity,
+    ),
+    totalQuantity: toQuantity(raw.totalOnhandQuantity),
+    inboundQuantity: toQuantity(raw.totalInboundQuantity),
   };
 }

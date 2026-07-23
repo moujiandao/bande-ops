@@ -77,6 +77,12 @@ export interface AwdInventorySummary {
   sku: string;
   marketplaceId: MarketplaceId;
   fnSku?: string;
+  /** Nested under inventoryDetails: units already allocated to replenish FBA. */
   replenishmentQuantity: number | null;
+  /** Nested under inventoryDetails: units at AWD free to send to FBA. */
+  availableDistributableQuantity: number | null;
+  /** Top-level totalOnhandQuantity: everything at AWD, reserved included. */
   totalQuantity: number | null;
+  /** Top-level totalInboundQuantity: units on their way into AWD. */
+  inboundQuantity: number | null;
 }
