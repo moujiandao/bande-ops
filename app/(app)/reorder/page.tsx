@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { assembleRecommendations, type RecommendationRow } from '@/lib/reorder/service';
 import { refreshSvdInventoryAction } from '@/lib/svd/actions';
@@ -21,6 +22,89 @@ function formatTimestamp(iso: string): string {
 }
 
 
+
+/** Compact number, or an em dash when the value is UNKNOWN (never 0). */
+function num(value: number | null | undefined): string {
+  return value === null || value === undefined ? '—' : String(Math.round(value));
+}
+
+/**
+ * How many days the usable supply covers at current demand. The single most
+ * useful derived figure on this page: it puts every SKU on one scale
+ * regardless of size or velocity. Unknown demand yields no answer rather than
+ * a misleading Infinity.
+ */
+function daysOfCover(supply: number | null, demand: number | null): string {
+  if (supply === null || demand === null || demand <= 0) return '—';
+  return String(Math.floor(supply / demand));
+}
+
+/** Shared column set for every reorder list. */
+function RowTable({
+  rows,
+  trailingHeader,
+  trailing,
+}: {
+  rows: RecommendationRow[];
+  trailingHeader: string;
+  trailing: (row: RecommendationRow) => ReactNode;
+}) {
+  return (
+    <div className="overflow-x-auto rounded-panel border border-border bg-panel">
+      <table className="w-full min-w-[720px] text-xs">
+        <thead className="border-b border-border text-faint">
+          <tr className="text-left">
+            <th className="px-3 py-2 font-medium">SKU</th>
+            <th className="px-3 py-2 text-right font-medium" title="Fulfillable units at FBA">FBA</th>
+            <th className="px-3 py-2 text-right font-medium" title="Units at AWD counted as supply">AWD</th>
+            <th className="px-3 py-2 text-right font-medium" title="Units available at SVD">SVD</th>
+            <th className="px-3 py-2 text-right font-medium" title="Total usable supply across all sources">Total</th>
+            <th className="px-3 py-2 text-right font-medium" title="Units sold per day (90 in-stock days)">Per day</th>
+            <th className="px-3 py-2 text-right font-medium" title="Days the total supply covers at current demand">Cover</th>
+            <th className="px-3 py-2 text-right font-medium">{trailingHeader}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const b = row.supplyBreakdown;
+            return (
+              <tr
+                key={`${row.marketplaceId}:${row.sku}`}
+                className="border-b border-border/50 last:border-0"
+              >
+                <td
+                  className="max-w-[260px] truncate px-3 py-2 font-mono text-foreground"
+                  title={`${row.title} — FNSKU ${row.fnSku ?? 'unknown'}`}
+                >
+                  {row.sku}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums text-muted">
+                  {num(b?.fbaFulfillable)}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums text-muted">
+                  {num(b ? b.awdAvailable + b.awdReplenishment : null)}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums text-muted">
+                  {num(b?.svdAvailable)}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums text-foreground">
+                  {num(row.usableSupply)}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums text-muted">
+                  {row.dailyDemand === null ? '—' : row.dailyDemand.toFixed(1)}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums text-muted">
+                  {daysOfCover(row.usableSupply, row.dailyDemand)}
+                </td>
+                <td className="px-3 py-2 text-right">{trailing(row)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 export default async function ReorderPage() {
   const supabase = await createClient();
@@ -132,33 +216,17 @@ export default async function ReorderPage() {
                 No SKUs are at or below their reorder point.
               </p>
             ) : (
-              <ul className="flex flex-col gap-3">
-                {toReorder.map((row) => {
-                  const rec = row.recommendation;
-                  if (rec.status !== 'ok') return null;
-                  return (
-                    <li
-                      key={`${row.marketplaceId}:${row.sku}`}
-                      className="flex flex-wrap items-center justify-between gap-4 rounded-panel border border-accent-soft bg-panel p-4"
-                    >
-                      <span
-                        className="truncate font-mono text-sm text-foreground"
-                        title={`${row.title} — FNSKU ${row.fnSku ?? 'unknown'}`}
-                      >
-                        {row.sku}
-                      </span>
-                      <div className="flex flex-col items-end">
-                        <span className="text-2xl font-semibold tabular-nums text-accent-strong">
-                          {rec.recommendedQty}
-                        </span>
-                        <span className="text-[11px] uppercase tracking-wide text-faint">
-                          units to order
-                        </span>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
+              <RowTable
+                rows={toReorder}
+                trailingHeader="Order"
+                trailing={(row) => (
+                  <span className="text-sm font-semibold tabular-nums text-accent-strong">
+                    {row.recommendation.status === 'ok'
+                      ? row.recommendation.recommendedQty
+                      : '—'}
+                  </span>
+                )}
+              />
             )}
           </section>
 
@@ -174,24 +242,24 @@ export default async function ReorderPage() {
                 Every SKU has usable supply, SVD mapping, and velocity.
               </p>
             ) : (
-              <ul className="flex flex-col gap-2">
-                {needsReview.map((row) => (
-                  <li
-                    key={`${row.marketplaceId}:${row.sku}`}
-                    className="flex flex-wrap items-center justify-between gap-4 rounded-panel border border-border bg-panel p-4"
+              <RowTable
+                rows={needsReview}
+                trailingHeader="Status"
+                trailing={(row) => (
+                  <span
+                    className="text-[11px] text-muted"
+                    title={
+                      row.recommendation.status === 'needs-review'
+                        ? row.recommendation.reason
+                        : undefined
+                    }
                   >
-                    <span
-                      className="truncate font-mono text-sm text-foreground"
-                      title={`${row.title} — FNSKU ${row.fnSku ?? 'unknown'}`}
-                    >
-                      {row.sku}
-                    </span>
-                    <Badge className="border-border bg-panel-muted text-muted">
-                      Needs review
-                    </Badge>
-                  </li>
-                ))}
-              </ul>
+                    {row.recommendation.status === 'needs-review'
+                      ? row.recommendation.reason.replaceAll('-', ' ')
+                      : 'Needs review'}
+                  </span>
+                )}
+              />
             )}
           </section>
 
@@ -207,22 +275,13 @@ export default async function ReorderPage() {
                 No SKUs are above their reorder point yet.
               </p>
             ) : (
-              <ul className="flex flex-col gap-2">
-                {wellStocked.map((row) => (
-                  <li
-                    key={`${row.marketplaceId}:${row.sku}`}
-                    className="flex flex-wrap items-center justify-between gap-4 rounded-panel border border-border bg-panel p-4"
-                  >
-                    <span
-                      className="truncate font-mono text-sm text-foreground"
-                      title={`${row.title} — FNSKU ${row.fnSku ?? 'unknown'}`}
-                    >
-                      {row.sku}
-                    </span>
-                    <span className="text-xs font-medium text-muted">No reorder</span>
-                  </li>
-                ))}
-              </ul>
+              <RowTable
+                rows={wellStocked}
+                trailingHeader="Status"
+                trailing={() => (
+                  <span className="text-[11px] text-muted">No reorder</span>
+                )}
+              />
             )}
           </section>
         </div>
