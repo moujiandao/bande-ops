@@ -5,9 +5,11 @@ import {
   savePolicyAction,
   saveSkuOverrideAction,
   saveSourceMappingAction,
+  saveSvdUnitsPerBoxAction,
   deleteSourceMappingAction,
 } from '@/lib/settings/settings-actions';
 import { mapPolicyRow, type ReplenishmentPolicyRow } from '@/lib/settings/policy';
+import { assembleRecommendations } from '@/lib/reorder/service';
 
 /**
  * Replenishment settings, the operational layer behind the reorder math.
@@ -23,8 +25,10 @@ type SettingRow = {
   id: string;
   marketplace_id: string;
   sku: string | null;
-  lead_time_days: number;
-  safety_stock: number;
+  // Nullable on per-SKU rows (migration 0016): a row may exist to carry only a
+  // box size, with lead time and safety stock inherited from the global default.
+  lead_time_days: number | null;
+  safety_stock: number | null;
   target_coverage_days: number | null;
   updated_at: string;
 };
@@ -78,10 +82,40 @@ export default async function SettingsPage() {
 
   const rows = (settingsRes.data ?? []) as SettingRow[];
   const defaultRow = rows.find((r) => r.sku === null) ?? null;
-  const overrides = rows.filter((r) => r.sku !== null);
+  // A per-SKU row is a lead-time/safety-stock override only when it actually
+  // sets those. Rows that carry only an svd_units_per_box (created by the SVD
+  // box section) are not overrides and belong in that section, not here.
+  const overrides = rows.filter(
+    (r) =>
+      r.sku !== null &&
+      (r.lead_time_days !== null ||
+        r.safety_stock !== null ||
+        r.target_coverage_days !== null),
+  );
   const policy = mapPolicyRow(
     (policyRes.data ?? null) as ReplenishmentPolicyRow | null,
   );
+
+  // SVD box configuration reuses the reorder assembly, which already resolves
+  // each SKU's SVD box count and its configured pack size — no need to re-derive
+  // SVD stock or mapping logic here. Only SKUs actually carried at SVD need a
+  // pack size, so those are all that's shown; unset-with-stock float to the top
+  // because they are the rows currently blocking a recommendation.
+  const { rows: reorderRows } = await assembleRecommendations({ supabase });
+  const svdBoxRows = reorderRows
+    .filter((r) => r.svdBoxes !== null && r.svdBoxes > 0)
+    .map((r) => ({
+      sku: r.sku,
+      boxes: r.svdBoxes as number,
+      unitsPerBox: r.svdUnitsPerBox,
+    }))
+    .sort((a, b) => {
+      const aUnset = a.unitsPerBox === null ? 0 : 1;
+      const bUnset = b.unitsPerBox === null ? 0 : 1;
+      if (aUnset !== bUnset) return aUnset - bUnset;
+      return a.sku.localeCompare(b.sku);
+    });
+  const svdUnsetCount = svdBoxRows.filter((r) => r.unitsPerBox === null).length;
 
   return (
     <div className="flex flex-col gap-8">
@@ -305,7 +339,7 @@ export default async function SettingsPage() {
                       min={0}
                       step={1}
                       required
-                      defaultValue={row.lead_time_days}
+                      defaultValue={row.lead_time_days ?? undefined}
                       className={fieldClass}
                     />
                   </label>
@@ -317,7 +351,7 @@ export default async function SettingsPage() {
                       min={0}
                       step={1}
                       required
-                      defaultValue={row.safety_stock}
+                      defaultValue={row.safety_stock ?? undefined}
                       className={fieldClass}
                     />
                   </label>
@@ -400,6 +434,74 @@ export default async function SettingsPage() {
             Add
           </button>
         </form>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="text-sm font-semibold text-foreground">
+            SVD box configuration
+          </h2>
+          <Badge className="border-border bg-panel-muted text-muted">
+            {svdUnsetCount > 0
+              ? `${svdUnsetCount} need a size`
+              : `${svdBoxRows.length} configured`}
+          </Badge>
+        </div>
+        <p className="max-w-prose text-xs text-muted">
+          SVD reports stock in <strong className="text-foreground">boxes</strong>;
+          FBA and AWD report units. Set the units per box for each SKU so its SVD
+          stock is counted correctly. A SKU with SVD stock but no size set can&apos;t
+          be given a recommendation — it shows as{' '}
+          <span className="font-mono">unknown svd units per box</span> on the
+          reorder page until you fill it in. Only SKUs currently carried at SVD are
+          listed.
+        </p>
+
+        {svdBoxRows.length > 0 ? (
+          <ul className="flex flex-col gap-2">
+            {svdBoxRows.map((r) => (
+              <li
+                key={r.sku}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-panel border border-border bg-panel px-4 py-3"
+              >
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-mono text-xs text-foreground">{r.sku}</span>
+                  <span className="text-[11px] text-muted">
+                    {r.boxes} boxes at SVD
+                    {r.unitsPerBox !== null
+                      ? ` → ${r.boxes * r.unitsPerBox} units`
+                      : ' → needs a box size'}
+                  </span>
+                </div>
+                <form
+                  action={saveSvdUnitsPerBoxAction}
+                  className="flex items-center gap-2"
+                >
+                  <input type="hidden" name="sku" value={r.sku} />
+                  <label className="flex items-center gap-2">
+                    <span className={labelClass}>Units / box</span>
+                    <input
+                      type="number"
+                      name="svdUnitsPerBox"
+                      min={1}
+                      step={1}
+                      defaultValue={r.unitsPerBox ?? ''}
+                      placeholder="unset"
+                      className={`${fieldClass} w-24`}
+                    />
+                  </label>
+                  <button type="submit" className={primaryButtonClass}>
+                    Save
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="rounded-panel border border-dashed border-border bg-panel p-4 text-xs text-muted">
+            No SKUs currently have SVD stock.
+          </p>
+        )}
       </section>
 
       <section className="flex flex-col gap-3">
