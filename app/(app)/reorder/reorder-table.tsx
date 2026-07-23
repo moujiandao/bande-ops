@@ -14,7 +14,35 @@ import type { RecommendationRow } from '@/lib/reorder/service';
 
 type SortKey = 'sku' | 'fba' | 'awd' | 'svd' | 'total' | 'perDay' | 'cover' | 'trailing';
 
-export type ReorderTableVariant = 'order' | 'status' | 'legacy';
+export type ReorderTableVariant = 'order' | 'status' | 'legacy' | 'replenish';
+
+/** Days of cover counting only stock at or heading to Amazon (FBA + AWD). */
+export function amazonSideCover(row: RecommendationRow): number | null {
+  if (row.dailyDemand === null || row.dailyDemand <= 0) return null;
+  if (row.sources.fba === null && row.sources.awd === null) return null;
+  const onAmazonSide = (row.sources.fba ?? 0) + (row.sources.awd ?? 0);
+  return Math.floor(onAmazonSide / row.dailyDemand);
+}
+
+/**
+ * Units to send from SVD to reach the coverage target, capped by what SVD
+ * actually has. Never suggests shipping stock that is not there.
+ */
+export function suggestedShipQty(
+  row: RecommendationRow,
+  targetDays: number,
+): number | null {
+  if (row.dailyDemand === null || row.dailyDemand <= 0) return null;
+  const svd = row.sources.svd;
+  if (svd === null || svd <= 0) return null;
+  const onAmazonSide = (row.sources.fba ?? 0) + (row.sources.awd ?? 0);
+  const shortfall = Math.ceil(row.dailyDemand * targetDays - onAmazonSide);
+  if (shortfall <= 0) return null;
+  return Math.min(shortfall, svd);
+}
+
+/** Coverage target that defines "low" for the SVD→FBA replenish list. */
+export const REPLENISH_TARGET_DAYS = 30;
 
 function num(value: number | null | undefined): string {
   return value === null || value === undefined ? '—' : String(Math.round(value));
@@ -59,7 +87,9 @@ function sortValue(
     case 'cover':
       return coverDays(row.usableSupply, row.dailyDemand);
     case 'trailing':
-      return variant === 'order' ? orderQty(row) : statusText(row, variant);
+      if (variant === 'order') return orderQty(row);
+      if (variant === 'replenish') return suggestedShipQty(row, REPLENISH_TARGET_DAYS);
+      return statusText(row, variant);
   }
 }
 
@@ -84,9 +114,11 @@ export function ReorderTable({
 }) {
   // Default: biggest order first on the reorder list, else by SKU.
   const [sortKey, setSortKey] = useState<SortKey>(
-    variant === 'order' ? 'trailing' : 'sku',
+    variant === 'order' || variant === 'replenish' ? 'trailing' : 'sku',
   );
-  const [descending, setDescending] = useState(variant === 'order');
+  const [descending, setDescending] = useState(
+    variant === 'order' || variant === 'replenish',
+  );
 
   const sorted = useMemo(() => {
     return [...rows].sort((a, b) => {
@@ -180,9 +212,13 @@ export function ReorderTable({
                 {num(coverDays(row.usableSupply, row.dailyDemand))}
               </td>
               <td className="px-3 py-2 text-right">
-                {variant === 'order' ? (
+                {variant === 'order' || variant === 'replenish' ? (
                   <span className="text-sm font-semibold tabular-nums text-accent-strong">
-                    {num(orderQty(row))}
+                    {num(
+                      variant === 'order'
+                        ? orderQty(row)
+                        : suggestedShipQty(row, REPLENISH_TARGET_DAYS),
+                    )}
                   </span>
                 ) : (
                   <span className="text-[11px] text-muted">
