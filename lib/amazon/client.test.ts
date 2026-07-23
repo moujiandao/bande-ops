@@ -152,13 +152,20 @@ describe('SpApiClient', () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
+        // Real AWD shape: quantities nested under inventoryDetails, with the
+        // on-hand total named totalOnhandQuantity, not totalQuantity.
         response({
           inventory: [
             {
               sku: 'SKU-1',
               fnSku: 'FNSKU-1',
-              replenishmentQuantity: 25,
-              totalQuantity: 40,
+              totalOnhandQuantity: 500,
+              totalInboundQuantity: 10,
+              inventoryDetails: {
+                availableDistributableQuantity: 450,
+                replenishmentQuantity: 25,
+                reservedDistributableQuantity: 25,
+              },
             },
           ],
           nextToken: 'awd-next',
@@ -166,13 +173,7 @@ describe('SpApiClient', () => {
       )
       .mockResolvedValueOnce(
         response({
-          inventory: [
-            {
-              sku: 'SKU-2',
-              replenishmentQuantity: null,
-              totalQuantity: null,
-            },
-          ],
+          inventory: [{ sku: 'SKU-2' }],
         }),
       );
     vi.stubGlobal('fetch', fetchMock);
@@ -180,8 +181,20 @@ describe('SpApiClient', () => {
     const summaries = await new SpApiClient().listAwdInventory();
 
     expect(summaries).toMatchObject([
-      { sku: 'SKU-1', replenishmentQuantity: 25, totalQuantity: 40 },
-      { sku: 'SKU-2', replenishmentQuantity: null, totalQuantity: null },
+      {
+        sku: 'SKU-1',
+        replenishmentQuantity: 25,
+        availableDistributableQuantity: 450,
+        totalQuantity: 500,
+        inboundQuantity: 10,
+      },
+      // Absent quantities stay UNKNOWN, never 0.
+      {
+        sku: 'SKU-2',
+        replenishmentQuantity: null,
+        availableDistributableQuantity: null,
+        totalQuantity: null,
+      },
     ]);
     expect(String(fetchMock.mock.calls[0][0])).toContain('/awd/2024-05-09/inventory');
     expect(String(fetchMock.mock.calls[0][0])).toContain('details=SHOW');
