@@ -84,6 +84,7 @@ type AwdRow = {
   sku: string;
   fn_sku: string | null;
   replenishment_quantity: number | null;
+  available_distributable_quantity: number | null;
 };
 type SvdRow = {
   svd_item_id: string;
@@ -204,7 +205,9 @@ export async function assembleRecommendations(
       .eq('marketplace_id', marketplace.id),
     deps.supabase
       .from('awd_inventory_levels')
-      .select('marketplace_id, sku, fn_sku, replenishment_quantity')
+      .select(
+        'marketplace_id, sku, fn_sku, replenishment_quantity, available_distributable_quantity',
+      )
       .eq('marketplace_id', marketplace.id),
     deps.supabase
       .from('svd_inventory_levels')
@@ -344,7 +347,12 @@ export async function assembleRecommendations(
             inboundReceivingQuantity: fba.inbound_receiving_quantity,
           }
         : null,
-      awd: awd ? { replenishmentQuantity: awd.replenishment_quantity } : null,
+      awd: awd
+        ? {
+            availableQuantity: awd.available_distributable_quantity,
+            replenishmentQuantity: awd.replenishment_quantity,
+          }
+        : null,
       svd: svd ? { quantity: svd.quantity } : null,
       policy,
     });

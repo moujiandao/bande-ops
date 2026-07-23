@@ -12,6 +12,8 @@ export interface ReplenishmentPolicy {
   svdMode: SvdMode;
   unknownStockMode: ReviewMode;
   staleSourceMode: ReviewMode;
+  countAwdAvailable: boolean;
+  countAwdReplenishment: boolean;
   countInboundWorking: boolean;
   countInboundShipped: boolean;
   countInboundReceiving: boolean;
@@ -20,6 +22,8 @@ export interface ReplenishmentPolicy {
 export interface ReplenishmentPolicyInput {
   velocitySampleInStockDays: number;
   velocityMaxLookbackDays: number;
+  countAwdAvailable: boolean;
+  countAwdReplenishment: boolean;
   countInboundWorking: boolean;
   countInboundShipped: boolean;
   countInboundReceiving: boolean;
@@ -33,6 +37,8 @@ export interface ReplenishmentPolicyRow {
   svd_mode: SvdMode;
   unknown_stock_mode: ReviewMode;
   stale_source_mode: ReviewMode;
+  count_awd_available: boolean | null;
+  count_awd_replenishment: boolean | null;
   count_inbound_working: boolean;
   count_inbound_shipped: boolean;
   count_inbound_receiving: boolean;
@@ -46,6 +52,10 @@ export const REPLENISHMENT_POLICY_DEFAULTS: ReplenishmentPolicy = {
   svdMode: 'replenishment_only',
   unknownStockMode: 'needs_review',
   staleSourceMode: 'needs_review',
+  // AWD stock free to send to FBA is stock you own, so it counts. Units already
+  // in transit to FBA do not, because FBA inbound may already report them.
+  countAwdAvailable: true,
+  countAwdReplenishment: false,
   countInboundWorking: false,
   countInboundShipped: true,
   countInboundReceiving: true,
@@ -80,6 +90,8 @@ export function mapPolicyRow(
     svdMode: row.svd_mode,
     unknownStockMode: row.unknown_stock_mode,
     staleSourceMode: row.stale_source_mode,
+    countAwdAvailable: row.count_awd_available ?? true,
+    countAwdReplenishment: row.count_awd_replenishment ?? false,
     countInboundWorking: row.count_inbound_working,
     countInboundShipped: row.count_inbound_shipped,
     countInboundReceiving: row.count_inbound_receiving,

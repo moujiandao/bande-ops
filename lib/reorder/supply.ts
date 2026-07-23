@@ -2,6 +2,14 @@ export interface SupplyPolicy {
   countInboundWorking: boolean;
   countInboundShipped: boolean;
   countInboundReceiving: boolean;
+  /** Stock at AWD free to send to FBA. On by default: it is stock you own. */
+  countAwdAvailable: boolean;
+  /**
+   * Stock already in transit from AWD to FBA. Off by default: FBA's own inbound
+   * buckets may already report these units, and counting both double-counts
+   * them, inflating supply and under-ordering.
+   */
+  countAwdReplenishment: boolean;
 }
 
 export interface SupplyInput {
@@ -11,7 +19,10 @@ export interface SupplyInput {
     inboundShippedQuantity: number | null;
     inboundReceivingQuantity: number | null;
   } | null;
-  awd: { replenishmentQuantity: number | null } | null;
+  awd: {
+    availableQuantity: number | null;
+    replenishmentQuantity: number | null;
+  } | null;
   svd: { quantity: number | null } | null;
   policy: SupplyPolicy;
 }
@@ -25,6 +36,7 @@ export type UsableSupplyResult =
         fbaInboundWorking: number;
         fbaInboundShipped: number;
         fbaInboundReceiving: number;
+        awdAvailable: number;
         awdReplenishment: number;
         svdAvailable: number;
       };
@@ -70,9 +82,18 @@ export function calculateUsableSupply(input: SupplyInput): UsableSupplyResult {
     return { status: 'needs-review', reason: fbaInboundReceiving };
   }
 
-  const awdReplenishment = input.awd?.replenishmentQuantity;
-  if (awdReplenishment === null || awdReplenishment === undefined) {
-    return { status: 'needs-review', reason: 'unknown-awd-replenishment' };
+  const awdAvailable = input.policy.countAwdAvailable
+    ? required(input.awd?.availableQuantity, 'unknown-awd-available')
+    : 0;
+  if (typeof awdAvailable === 'string') {
+    return { status: 'needs-review', reason: awdAvailable };
+  }
+
+  const awdReplenishment = input.policy.countAwdReplenishment
+    ? required(input.awd?.replenishmentQuantity, 'unknown-awd-replenishment')
+    : 0;
+  if (typeof awdReplenishment === 'string') {
+    return { status: 'needs-review', reason: awdReplenishment };
   }
 
   const svdAvailable = input.svd?.quantity;
@@ -85,6 +106,7 @@ export function calculateUsableSupply(input: SupplyInput): UsableSupplyResult {
     fbaInboundWorking,
     fbaInboundShipped,
     fbaInboundReceiving,
+    awdAvailable,
     awdReplenishment,
     svdAvailable,
   };
