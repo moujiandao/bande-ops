@@ -1,10 +1,10 @@
 /**
  * Pure resolution of the *effective* replenishment setting for a SKU.
  *
- * Replenishment inputs (lead time, safety stock) come in two layers: a single
- * global default and an optional per-SKU override. This helper collapses the
- * two into the values the reorder math should actually use, with the per-SKU
- * value winning field-by-field when present.
+ * Replenishment inputs (lead time, safety stock, coverage target) come in two
+ * layers: a single global default and an optional per-SKU override. This helper
+ * collapses the two into the values the reorder math should actually use, with
+ * the per-SKU value winning field-by-field when present.
  *
  * Kept pure (no I/O) so it can be unit-tested in isolation and reused anywhere
  * the effective setting is needed.
@@ -13,6 +13,8 @@
 export type ReplenishmentValues = {
   leadTimeDays: number;
   safetyStock: number;
+  /** Target days of coverage to order up to (the S in the (s,S) reorder policy). */
+  coverageDays: number;
 };
 
 /**
@@ -36,5 +38,6 @@ export function effectiveSetting(
   return {
     leadTimeDays: perSku?.leadTimeDays ?? defaults.leadTimeDays,
     safetyStock: perSku?.safetyStock ?? defaults.safetyStock,
+    coverageDays: perSku?.coverageDays ?? defaults.coverageDays,
   };
 }

@@ -5,7 +5,11 @@ import {
   type ReplenishmentPolicy,
   type ReplenishmentPolicyRow,
 } from '@/lib/settings/policy';
-import { effectiveSetting, type ReplenishmentValues } from '@/lib/settings/resolve';
+import {
+  effectiveSetting,
+  type PartialReplenishment,
+  type ReplenishmentValues,
+} from '@/lib/settings/resolve';
 import { recommend, type Recommendation } from './recommend';
 import { resolveSourceMapping } from './mappings';
 import { calculateUsableSupply, type UsableSupplyResult } from './supply';
@@ -58,7 +62,12 @@ export interface AssembleRecommendationsResult {
   };
 }
 
-const FALLBACK_DEFAULTS: ReplenishmentValues = { leadTimeDays: 14, safetyStock: 0 };
+const FALLBACK_DEFAULTS: ReplenishmentValues = {
+  leadTimeDays: 14,
+  safetyStock: 0,
+  // 3 months of coverage when no policy/default row exists yet.
+  coverageDays: 90,
+};
 
 type CatalogRow = { marketplace_id: string; sku: string; title: string };
 type FbaRow = {
@@ -100,6 +109,8 @@ type SettingRow = {
   sku: string | null;
   lead_time_days: number;
   safety_stock: number;
+  /** Nullable: a row may predate the coverage column or leave it unset (falls back to default). */
+  target_coverage_days: number | null;
 };
 type SourceStateDbRow = {
   source: string;
@@ -208,7 +219,7 @@ export async function assembleRecommendations(
       .eq('marketplace_id', marketplace.id),
     deps.supabase
       .from('replenishment_settings')
-      .select('marketplace_id, sku, lead_time_days, safety_stock')
+      .select('marketplace_id, sku, lead_time_days, safety_stock, target_coverage_days')
       .eq('marketplace_id', marketplace.id),
     deps.supabase.from('replenishment_policy').select('*').eq('marketplace_id', marketplace.id),
     deps.supabase
@@ -242,14 +253,29 @@ export async function assembleRecommendations(
 
   const defaultRow = settingRows.find((row) => row.sku === null) ?? null;
   const defaults: ReplenishmentValues = defaultRow
-    ? { leadTimeDays: defaultRow.lead_time_days, safetyStock: defaultRow.safety_stock }
+    ? {
+        leadTimeDays: defaultRow.lead_time_days,
+        safetyStock: defaultRow.safety_stock,
+        // A null coverage on the global default row (e.g. pre-migration) falls
+        // back to the app default, never to 0 (which would disable coverage).
+        coverageDays: defaultRow.target_coverage_days ?? FALLBACK_DEFAULTS.coverageDays,
+      }
     : FALLBACK_DEFAULTS;
-  const overrideBySku = new Map<string, ReplenishmentValues>(
+  // Per-SKU overrides carry lead time + safety always, but coverage only when
+  // set — a null coverage override means "use the global default", so it is
+  // omitted here and effectiveSetting fills it from `defaults`.
+  const overrideBySku = new Map<string, PartialReplenishment>(
     settingRows
       .filter((row): row is SettingRow & { sku: string } => row.sku !== null)
       .map((row) => [
         row.sku,
-        { leadTimeDays: row.lead_time_days, safetyStock: row.safety_stock },
+        {
+          leadTimeDays: row.lead_time_days,
+          safetyStock: row.safety_stock,
+          ...(row.target_coverage_days !== null
+            ? { coverageDays: row.target_coverage_days }
+            : {}),
+        },
       ]),
   );
 
@@ -332,6 +358,7 @@ export async function assembleRecommendations(
             dailyDemand,
             leadTimeDays: setting.leadTimeDays,
             safetyStock: setting.safetyStock,
+            coverageDays: setting.coverageDays,
           });
 
     return {

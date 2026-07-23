@@ -126,7 +126,15 @@ function baseTables(): Record<string, TableData> {
       error: null,
     },
     replenishment_settings: {
-      data: [{ marketplace_id: mkt, sku: null, lead_time_days: 10, safety_stock: 0 }],
+      data: [
+        {
+          marketplace_id: mkt,
+          sku: null,
+          lead_time_days: 10,
+          safety_stock: 0,
+          target_coverage_days: 30,
+        },
+      ],
       error: null,
     },
     replenishment_policy: {
@@ -201,8 +209,13 @@ describe('assembleRecommendations', () => {
     });
     expect(low!.recommendation.status).toBe('ok');
     if (low!.recommendation.status === 'ok') {
+      // (s,S): trigger s = 4*10 + 0 = 40; below it (supply 25), so reorder.
+      // Coverage target S = dailyDemand 4 * 30 days = 120; fill 120 - 25 = 95.
       expect(low!.recommendation.reasoning.reorderPoint).toBe(40);
-      expect(low!.recommendation.recommendedQty).toBe(15);
+      expect(low!.recommendation.reasoning.coverageDays).toBe(30);
+      expect(low!.recommendation.reasoning.targetStock).toBe(120);
+      expect(low!.recommendation.reasoning.orderUpToLevel).toBe(120);
+      expect(low!.recommendation.recommendedQty).toBe(95);
     }
   });
 

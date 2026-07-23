@@ -86,6 +86,83 @@ describe('recommend ok cases', () => {
   });
 });
 
+type CoverageCase = {
+  name: string;
+  input: RecommendInput;
+  recommendedQty: number;
+  reorderPoint: number;
+  targetStock: number;
+  orderUpToLevel: number;
+};
+
+// (s,S) coverage cases. s = reorder point (WHEN to order); S = coverage target
+// (order-up-to). We only reorder once usable supply <= s, then fill to
+// max(S, s) so we never order below the trigger.
+const coverageCases: CoverageCase[] = [
+  {
+    name: 'below trigger fills up to the coverage target',
+    input: { usableSupply: 50, dailyDemand: 2, leadTimeDays: 30, safetyStock: 20, coverageDays: 90 },
+    recommendedQty: 130,
+    reorderPoint: 80,
+    targetStock: 180,
+    orderUpToLevel: 180,
+  },
+  {
+    name: 'above trigger does NOT reorder even when below the coverage target',
+    input: { usableSupply: 100, dailyDemand: 2, leadTimeDays: 7, safetyStock: 5, coverageDays: 90 },
+    recommendedQty: 0,
+    reorderPoint: 19,
+    targetStock: 180,
+    orderUpToLevel: 180,
+  },
+  {
+    name: 'just below trigger fills to coverage',
+    input: { usableSupply: 18, dailyDemand: 2, leadTimeDays: 7, safetyStock: 5, coverageDays: 90 },
+    recommendedQty: 162,
+    reorderPoint: 19,
+    targetStock: 180,
+    orderUpToLevel: 180,
+  },
+  {
+    name: 'short coverage vs long lead: floors at the trigger (S < s)',
+    input: { usableSupply: 40, dailyDemand: 1, leadTimeDays: 100, safetyStock: 0, coverageDays: 30 },
+    recommendedQty: 60,
+    reorderPoint: 100,
+    targetStock: 30,
+    orderUpToLevel: 100,
+  },
+  {
+    name: 'fractional demand rounds the coverage order up',
+    input: { usableSupply: 3, dailyDemand: 2.5, leadTimeDays: 10, safetyStock: 0, coverageDays: 30 },
+    recommendedQty: 72,
+    reorderPoint: 25,
+    targetStock: 75,
+    orderUpToLevel: 75,
+  },
+  {
+    name: 'coverageDays 0 behaves like the old reorder-point top-up',
+    input: { usableSupply: 12, dailyDemand: 5, leadTimeDays: 14, safetyStock: 10, coverageDays: 0 },
+    recommendedQty: 68,
+    reorderPoint: 80,
+    targetStock: 0,
+    orderUpToLevel: 80,
+  },
+];
+
+describe('recommend coverage (s,S) cases', () => {
+  it.each(coverageCases)('$name', ({ input, recommendedQty, reorderPoint, targetStock, orderUpToLevel }) => {
+    const out = recommend(input);
+    expect(out.status).toBe('ok');
+    if (out.status !== 'ok') return;
+    expect(out.recommendedQty).toBe(recommendedQty);
+    expect(out.recommendedQty).toBeGreaterThanOrEqual(0);
+    expect(out.reasoning.reorderPoint).toBeCloseTo(reorderPoint, 10);
+    expect(out.reasoning.targetStock).toBeCloseTo(targetStock, 10);
+    expect(out.reasoning.orderUpToLevel).toBeCloseTo(orderUpToLevel, 10);
+    expect(out.reasoning.coverageDays).toBe(input.coverageDays ?? 0);
+  });
+});
+
 type ReviewCase = {
   name: string;
   input: RecommendInput;
@@ -127,6 +204,16 @@ const reviewCases: ReviewCase[] = [
     name: 'Infinite safety stock',
     input: { usableSupply: 10, dailyDemand: 5, leadTimeDays: 14, safetyStock: Infinity },
     reason: 'invalid-safety-stock',
+  },
+  {
+    name: 'negative coverage days',
+    input: { usableSupply: 10, dailyDemand: 5, leadTimeDays: 14, safetyStock: 10, coverageDays: -1 },
+    reason: 'invalid-coverage',
+  },
+  {
+    name: 'NaN coverage days',
+    input: { usableSupply: 10, dailyDemand: 5, leadTimeDays: 14, safetyStock: 10, coverageDays: NaN },
+    reason: 'invalid-coverage',
   },
 ];
 
