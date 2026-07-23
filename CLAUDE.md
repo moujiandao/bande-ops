@@ -37,6 +37,7 @@ scattering of one-off legacy tools (`listing-editor`, `supplier-reorder`).
 
 - Build on official SP-API, do **not** port the Playwright `listing-editor`. See ADR-0002.
 - Replenishment is **decision-support only** (recommend + reasoning; no auto-PO/FBA writes).
+- Reorder math is a classic **(s,S) policy** (`lib/reorder/recommend.ts`): trigger at the lead-time reorder point `s = dailyDemand*leadTime + safetyStock`, then fill to the coverage target `S = dailyDemand*coverageDays` (order up to `max(S,s)`). `coverageDays` is per-SKU with a global default in `replenishment_settings`; `coverageDays=0` reduces to a plain reorder-point top-up.
 - Unknown/unavailable stock parses to UNKNOWN and is flagged for review — never folded in as 0 (carried from `supplier-reorder`). Any unknown, stale, failed, or unmapped reorder source yields `Needs review`, not a numeric recommendation.
 - Sales velocity is the most recent 90 **in-stock** FBA days (search back ≤365 calendar days); FBA out-of-stock days are excluded from numerator and denominator, and zero in-stock days returns `Unknown`. Only FBA fulfillable inventory decides the in-stock flag — AWD and SVD reduce reorder need but never set it.
 - Sandbox-first for SP-API, then flip to production.
@@ -77,7 +78,7 @@ Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/do
 
 The app is built on **fake** Amazon data; the next session is about making it real. In priority order:
 
-1. **Apply migrations `0006`–`0010`** to Supabase (`0006`–`0009` Ads tables; `0010` live-reorder mirrors + policy) and **browser-E2E Module 2** (`/ads`) and the live `/reorder` sources — Module 1 is E2E-verified; Module 2 and the multi-source reorder path are only verified on fakes + by review.
+1. **Apply migrations `0006`–`0011`** to Supabase (`0006`–`0009` Ads tables; `0010` live-reorder mirrors + policy; `0011` per-SKU coverage target) and **browser-E2E Module 2** (`/ads`) and the live `/reorder` sources — Module 1 is E2E-verified; Module 2 and the multi-source coverage reorder path are only verified on fakes + by review.
 2. **Generate Ads API creds** (approved) and the **SP-API secret** (pending approval), add **`SPAPI_SELLER_ID`** (required in live mode) and **`SVD_USERNAME`/`SVD_PASSWORD`** → put in Vercel + `.env.local` (see `.env.example`).
 3. **Work the `[go-live]` tickets** (#25 SP-API correctness, #27 batched FBA-ledger demand, #28 sandbox-flip safety, #33 Ads write-path hardening), verifying each against the **sandbox** before flipping `AMAZON_USE_FAKE=false`. See `docs/go-live-readiness.md`.
 4. **Then** Modules 3/4 (Product Launch, Research) — still backlog.

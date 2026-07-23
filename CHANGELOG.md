@@ -1,5 +1,14 @@
 # Changelog
 
+## [2026-07-22] Coverage-based reorder
+
+### Added
+- Add `target_coverage_days` to `replenishment_settings` (`supabase/migrations/0011_replenishment_coverage.sql`), per-SKU with a global default; editable in `/settings` (entered in months, stored as days).
+- Add `lib/velocity/reconcile-sku.ts`: reconcile truncated FBA-ledger MSKUs to canonical catalog SKUs (exact → unique-prefix; ambiguous/no-match left raw → Needs review), wired into `lib/velocity/sync.ts`. Closes the last piece of #27.
+
+### Changed
+- Change the reorder math from a reorder-point top-up to a classic (s,S) policy in `lib/reorder/recommend.ts`: trigger at `s = dailyDemand*leadTime + safetyStock`, then fill to `S = dailyDemand*coverageDays` (order up to `max(S,s)`). `coverageDays` 0/omitted reduces to the old behavior. `lib/settings/resolve.ts` + `lib/reorder/service.ts` thread coverage through; `/reorder` shows each row's coverage target and months-on-hand.
+
 ## [2026-07-22]
 
 ### Added
