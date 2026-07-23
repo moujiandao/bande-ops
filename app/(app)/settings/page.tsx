@@ -4,6 +4,8 @@ import {
   saveDefaultsAction,
   savePolicyAction,
   saveSkuOverrideAction,
+  saveSourceMappingAction,
+  deleteSourceMappingAction,
 } from '@/lib/settings/settings-actions';
 import { mapPolicyRow, type ReplenishmentPolicyRow } from '@/lib/settings/policy';
 
@@ -48,7 +50,7 @@ const primaryButtonClass =
 export default async function SettingsPage() {
   const supabase = await createClient();
 
-  const [settingsRes, policyRes] = await Promise.all([
+  const [settingsRes, policyRes, mappingsRes] = await Promise.all([
     supabase
       .from('replenishment_settings')
       .select(
@@ -60,7 +62,19 @@ export default async function SettingsPage() {
       .select('*')
       .eq('marketplace_id', 'ATVPDKIKX0DER')
       .maybeSingle(),
+    supabase
+      .from('inventory_source_mappings')
+      .select('id, amazon_sku, svd_item_id, status')
+      .eq('marketplace_id', 'ATVPDKIKX0DER')
+      .order('amazon_sku', { ascending: true }),
   ]);
+
+  const mappings = (mappingsRes.data ?? []) as {
+    id: string;
+    amazon_sku: string;
+    svd_item_id: string;
+    status: string;
+  }[];
 
   const rows = (settingsRes.data ?? []) as SettingRow[];
   const defaultRow = rows.find((r) => r.sku === null) ?? null;
@@ -386,6 +400,87 @@ export default async function SettingsPage() {
             Add
           </button>
         </form>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="text-sm font-semibold text-foreground">
+            SVD item mappings
+          </h2>
+          <Badge className="border-border bg-panel-muted text-muted">
+            {mappings.length} mapped
+          </Badge>
+        </div>
+        <p className="max-w-prose text-xs text-muted">
+          SVD item ids are matched to Amazon SKUs by name automatically. Add a
+          mapping here only where the two systems disagree — for example SVD
+          calls it <code className="font-mono">babyboy</code> while Amazon calls
+          it <code className="font-mono">babytracker_notebook_boy_g2</code>. A
+          mapping saved here always wins over the automatic match.
+        </p>
+
+        <form
+          action={saveSourceMappingAction}
+          className="flex flex-col gap-4 rounded-panel border border-border bg-panel p-5"
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="flex flex-col gap-1.5">
+              <span className={labelClass}>Amazon SKU</span>
+              <input
+                type="text"
+                name="amazonSku"
+                required
+                placeholder="babytracker_notebook_boy_g2"
+                className={fieldClass}
+              />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className={labelClass}>SVD item id</span>
+              <input
+                type="text"
+                name="svdItemId"
+                required
+                placeholder="babyboy"
+                className={fieldClass}
+              />
+            </label>
+          </div>
+          <div>
+            <button type="submit" className={primaryButtonClass}>
+              Save mapping
+            </button>
+          </div>
+        </form>
+
+        {mappings.length > 0 ? (
+          <ul className="flex flex-col gap-2">
+            {mappings.map((m) => (
+              <li
+                key={m.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-panel border border-border bg-panel px-4 py-3"
+              >
+                <span className="font-mono text-xs text-foreground">
+                  {m.amazon_sku}{' '}
+                  <span className="text-faint">←</span>{' '}
+                  <span className="text-muted">{m.svd_item_id}</span>
+                </span>
+                <form action={deleteSourceMappingAction}>
+                  <input type="hidden" name="id" value={m.id} />
+                  <button
+                    type="submit"
+                    className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted transition-colors hover:bg-panel-muted hover:text-foreground"
+                  >
+                    Remove
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="rounded-panel border border-dashed border-border bg-panel p-4 text-xs text-muted">
+            No manual mappings. Every SVD item is matched by name.
+          </p>
+        )}
       </section>
     </div>
   );
