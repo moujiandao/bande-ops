@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
+import { ReorderTable } from './reorder-table';
 import { assembleRecommendations, type RecommendationRow } from '@/lib/reorder/service';
 import { refreshSvdInventoryAction } from '@/lib/svd/actions';
 import { createClient } from '@/lib/supabase/server';
@@ -22,88 +22,6 @@ function formatTimestamp(iso: string): string {
 }
 
 
-
-/** Compact number, or an em dash when the value is UNKNOWN (never 0). */
-function num(value: number | null | undefined): string {
-  return value === null || value === undefined ? '—' : String(Math.round(value));
-}
-
-/**
- * How many days the usable supply covers at current demand. The single most
- * useful derived figure on this page: it puts every SKU on one scale
- * regardless of size or velocity. Unknown demand yields no answer rather than
- * a misleading Infinity.
- */
-function daysOfCover(supply: number | null, demand: number | null): string {
-  if (supply === null || demand === null || demand <= 0) return '—';
-  return String(Math.floor(supply / demand));
-}
-
-/** Shared column set for every reorder list. */
-function RowTable({
-  rows,
-  trailingHeader,
-  trailing,
-}: {
-  rows: RecommendationRow[];
-  trailingHeader: string;
-  trailing: (row: RecommendationRow) => ReactNode;
-}) {
-  return (
-    <div className="overflow-x-auto rounded-panel border border-border bg-panel">
-      <table className="w-full min-w-[720px] text-xs">
-        <thead className="border-b border-border text-faint">
-          <tr className="text-left">
-            <th className="px-3 py-2 font-medium">SKU</th>
-            <th className="px-3 py-2 text-right font-medium" title="Fulfillable units at FBA">FBA</th>
-            <th className="px-3 py-2 text-right font-medium" title="Units at AWD counted as supply">AWD</th>
-            <th className="px-3 py-2 text-right font-medium" title="Units available at SVD">SVD</th>
-            <th className="px-3 py-2 text-right font-medium" title="Total usable supply across all sources">Total</th>
-            <th className="px-3 py-2 text-right font-medium" title="Units sold per day (90 in-stock days)">Per day</th>
-            <th className="px-3 py-2 text-right font-medium" title="Days the total supply covers at current demand">Cover</th>
-            <th className="px-3 py-2 text-right font-medium">{trailingHeader}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => {
-            return (
-              <tr
-                key={`${row.marketplaceId}:${row.sku}`}
-                className="border-b border-border/50 last:border-0"
-              >
-                <td
-                  className="max-w-[260px] truncate px-3 py-2 font-mono text-foreground"
-                  title={`${row.title} — FNSKU ${row.fnSku ?? 'unknown'}`}
-                >
-                  {row.sku}
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums text-muted">
-                  {num(row.sources.fba)}
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums text-muted">
-                  {num(row.sources.awd)}
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums text-muted">
-                  {num(row.sources.svd)}
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums text-foreground">
-                  {num(row.usableSupply)}
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums text-muted">
-                  {row.dailyDemand === null ? '—' : row.dailyDemand.toFixed(1)}
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums text-muted">
-                  {daysOfCover(row.usableSupply, row.dailyDemand)}
-                </td>
-                <td className="px-3 py-2 text-right">{trailing(row)}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
 
 export default async function ReorderPage() {
   const supabase = await createClient();
@@ -215,17 +133,7 @@ export default async function ReorderPage() {
                 No SKUs are at or below their reorder point.
               </p>
             ) : (
-              <RowTable
-                rows={toReorder}
-                trailingHeader="Order"
-                trailing={(row) => (
-                  <span className="text-sm font-semibold tabular-nums text-accent-strong">
-                    {row.recommendation.status === 'ok'
-                      ? row.recommendation.recommendedQty
-                      : '—'}
-                  </span>
-                )}
-              />
+              <ReorderTable rows={toReorder} trailingHeader="Order" variant="order" />
             )}
           </section>
 
@@ -241,24 +149,7 @@ export default async function ReorderPage() {
                 Every SKU has usable supply, SVD mapping, and velocity.
               </p>
             ) : (
-              <RowTable
-                rows={needsReview}
-                trailingHeader="Status"
-                trailing={(row) => (
-                  <span
-                    className="text-[11px] text-muted"
-                    title={
-                      row.recommendation.status === 'needs-review'
-                        ? row.recommendation.reason
-                        : undefined
-                    }
-                  >
-                    {row.recommendation.status === 'needs-review'
-                      ? row.recommendation.reason.replaceAll('-', ' ')
-                      : 'Needs review'}
-                  </span>
-                )}
-              />
+              <ReorderTable rows={needsReview} trailingHeader="Status" variant="status" />
             )}
           </section>
 
@@ -274,13 +165,7 @@ export default async function ReorderPage() {
                 No SKUs are above their reorder point yet.
               </p>
             ) : (
-              <RowTable
-                rows={wellStocked}
-                trailingHeader="Status"
-                trailing={() => (
-                  <span className="text-[11px] text-muted">No reorder</span>
-                )}
-              />
+              <ReorderTable rows={wellStocked} trailingHeader="Status" variant="status" />
             )}
           </section>
         </div>
@@ -300,13 +185,7 @@ export default async function ReorderPage() {
             date is left in the lists rather than hidden.
           </p>
           <div className="mt-3">
-            <RowTable
-              rows={legacy}
-              trailingHeader="Status"
-              trailing={() => (
-                <span className="text-[11px] text-muted">Legacy</span>
-              )}
-            />
+            <ReorderTable rows={legacy} trailingHeader="Status" variant="legacy" />
           </div>
         </details>
       ) : null}
