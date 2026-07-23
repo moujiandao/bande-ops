@@ -42,6 +42,18 @@ Section 2 below is the original 2026-06-26 audit and is now **substantially out 
 - Catalog `summaries[0]` / `images[0]` are still unfiltered by marketplace and do not prefer `variant === 'MAIN'`.
 - Nothing below has been exercised against real credentials. Every "done" above is verified by unit tests against fakes and by code read only.
 
+### 1c. The fake → sandbox → production flip order
+
+Never flip more than one stage at a time, and never flip two APIs at once. SP-API and Ads have separate credentials and separate sandbox switches precisely so they can be promoted independently.
+
+The app tells you where it is: `lib/env/mode.ts` resolves the same flags the clients do, and `components/data-source-banner.tsx` shows a banner on every page whenever the data is not fully live — amber normally, red when the *production* deploy is not serving live data. A correct production deploy shows no banner at all. Trust the banner over your memory of what you set.
+
+1. **Fake** (`AMAZON_USE_FAKE=true`) — where the app is today. No creds needed.
+2. **Sandbox** (`AMAZON_USE_FAKE=false`, `AMAZON_USE_SANDBOX=true`): needs real LWA creds + refresh tokens. Amazon returns canned fixtures keyed to each operation, so this proves *auth, headers, routing, and parsing* — never data correctness. Do not judge numbers here.
+3. **Production, one API at a time** (`AMAZON_USE_SANDBOX=false` / `ADS_USE_SANDBOX=false`): requires `SPAPI_SELLER_ID`; `getAmazonConfig` throws without it once sandbox is off. Promote SP-API first (read-only), verify the reorder numbers against Seller Central by hand, then promote Ads.
+
+Rollback at any stage is a single env var back to its previous value plus a redeploy. SVD has no sandbox — it is a live read-only scrape, gated behind the owner-triggered refresh button, so it is either configured or it throws.
+
 ### 2. Per-integration changes
 
 #### SP-API — Catalog & Inventory (`lib/amazon/`)

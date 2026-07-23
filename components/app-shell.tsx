@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { DataSourceBanner } from "@/components/data-source-banner";
 import { Nav } from "@/components/nav";
 import { Badge } from "@/components/ui/badge";
 import { signOut } from "@/lib/auth/actions";
@@ -96,6 +97,8 @@ export function AppShell({
             </form>
           </div>
         </header>
+
+        <DataSourceBanner />
 
         <main className="flex-1 px-4 py-6 md:px-6 lg:px-8">
           <div className="mx-auto w-full max-w-[1600px]">{children}</div>

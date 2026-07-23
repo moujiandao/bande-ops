@@ -12,6 +12,13 @@
 - Both clients take an optional `onRetryDelay` observability seam so throttling is visible to tests and sync logs without stubbing timers.
 - Refresh `docs/go-live-readiness.md` with a 2026-07-22 status recheck; the 2026-06-26 audit body was substantially stale (most SP-API blockers and the whole Ads v2→v3 migration have since landed).
 
+## [2026-07-22] Sandbox-flip safety
+
+### Added
+- Add `lib/env/mode.ts`: resolve which data each Amazon client is actually serving (`fake` / `sandbox` / `production` per API, independently) using the same flag precedence as the clients themselves, and flag a production deploy that is not fully live.
+- Add `components/data-source-banner.tsx`, rendered in `AppShell`: a persistent banner whenever data is not fully live — amber normally, red on a production deploy — and nothing at all once both APIs are on production. Fake and sandbox modes otherwise fail silently, with every page rendering fiction. Closes #28.
+- Document the fake → sandbox → production flip order in `docs/go-live-readiness.md`: one stage and one API at a time, sandbox proves auth/parsing but never data correctness, rollback is one env var.
+
 ## [2026-07-22] Coverage-based reorder
 
 ### Added
