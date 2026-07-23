@@ -118,6 +118,10 @@ export class FakeAmazonClient implements AmazonClient {
     return 'fake-ledger-report';
   }
 
+  async createMerchantListingsReport(): Promise<string> {
+    return 'fake-listings-report';
+  }
+
   async getReportUntilDone(
     _opts: GetReportUntilDoneOptions,
   ): Promise<CompletedReport> {
