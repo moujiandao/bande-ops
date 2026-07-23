@@ -299,17 +299,15 @@ export default async function ReorderPage() {
             months is never treated as legacy, and a SKU with no known listing
             date is left in the lists rather than hidden.
           </p>
-          <ul className="mt-3 flex flex-col gap-1">
-            {legacy.map((row) => (
-              <li
-                key={`${row.marketplaceId}:${row.sku}`}
-                className="truncate font-mono text-xs text-muted"
-                title={`${row.title} — FNSKU ${row.fnSku ?? 'unknown'}`}
-              >
-                {row.sku}
-              </li>
-            ))}
-          </ul>
+          <div className="mt-3">
+            <RowTable
+              rows={legacy}
+              trailingHeader="Status"
+              trailing={() => (
+                <span className="text-[11px] text-muted">Legacy</span>
+              )}
+            />
+          </div>
         </details>
       ) : null}
     </div>
