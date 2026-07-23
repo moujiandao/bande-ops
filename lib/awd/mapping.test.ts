@@ -24,6 +24,8 @@ describe('mapAwdInventoryToRows', () => {
         sku: 'SKU-1',
         fn_sku: 'FNSKU-1',
         replenishment_quantity: 12,
+        available_distributable_quantity: null,
+        inbound_quantity: null,
         total_quantity: null,
         synced_at: '2026-07-21T00:00:00.000Z',
         sync_run_id: 'run-1',

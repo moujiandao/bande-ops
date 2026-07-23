@@ -77,13 +77,15 @@ function baseTables(): Record<string, TableData> {
           marketplace_id: mkt,
           sku: 'SKU-LOW',
           fn_sku: 'FNSKU-LOW',
-          replenishment_quantity: 8,
+          replenishment_quantity: 0,
+          available_distributable_quantity: 8,
         },
         {
           marketplace_id: mkt,
           sku: 'SKU-HIGH',
           fn_sku: 'FNSKU-HIGH',
-          replenishment_quantity: 50,
+          replenishment_quantity: 0,
+          available_distributable_quantity: 50,
         },
       ],
       error: null,
@@ -204,7 +206,8 @@ describe('assembleRecommendations', () => {
       fbaInboundWorking: 0,
       fbaInboundShipped: 3,
       fbaInboundReceiving: 2,
-      awdReplenishment: 8,
+      awdAvailable: 8,
+      awdReplenishment: 0,
       svdAvailable: 7,
     });
     expect(low!.recommendation.status).toBe('ok');

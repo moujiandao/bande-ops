@@ -15,6 +15,8 @@ describe('replenishment policy', () => {
       svdMode: 'replenishment_only',
       unknownStockMode: 'needs_review',
       staleSourceMode: 'needs_review',
+      countAwdAvailable: true,
+      countAwdReplenishment: false,
       countInboundWorking: false,
       countInboundShipped: true,
       countInboundReceiving: true,
@@ -30,6 +32,8 @@ describe('replenishment policy', () => {
       validatePolicyInput({
         velocitySampleInStockDays: 366,
         velocityMaxLookbackDays: 365,
+        countAwdAvailable: true,
+        countAwdReplenishment: false,
         countInboundWorking: false,
         countInboundShipped: true,
         countInboundReceiving: true,

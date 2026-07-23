@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { calculateUsableSupply } from './supply';
 
 const policy = {
+  countAwdAvailable: true,
+  countAwdReplenishment: false,
   countInboundWorking: false,
   countInboundShipped: true,
   countInboundReceiving: true,
@@ -17,7 +19,7 @@ describe('calculateUsableSupply', () => {
           inboundShippedQuantity: 3,
           inboundReceivingQuantity: 2,
         },
-        awd: { replenishmentQuantity: 8 },
+        awd: { availableQuantity: 8, replenishmentQuantity: 0 },
         svd: { quantity: 7 },
         policy,
       }),
@@ -36,7 +38,7 @@ describe('calculateUsableSupply', () => {
           inboundShippedQuantity: 0,
           inboundReceivingQuantity: 0,
         },
-        awd: { replenishmentQuantity: 0 },
+        awd: { availableQuantity: 0, replenishmentQuantity: 0 },
         svd: { quantity: 0 },
         policy,
       }),

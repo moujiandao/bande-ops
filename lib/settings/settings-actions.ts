@@ -171,6 +171,8 @@ export async function savePolicyAction(formData: FormData): Promise<void> {
     countInboundWorking: checkbox(formData, 'countInboundWorking'),
     countInboundShipped: checkbox(formData, 'countInboundShipped'),
     countInboundReceiving: checkbox(formData, 'countInboundReceiving'),
+    countAwdAvailable: checkbox(formData, 'countAwdAvailable'),
+    countAwdReplenishment: checkbox(formData, 'countAwdReplenishment'),
   });
 
   const supabase = await createClient();
@@ -186,6 +188,8 @@ export async function savePolicyAction(formData: FormData): Promise<void> {
       count_inbound_working: policy.countInboundWorking,
       count_inbound_shipped: policy.countInboundShipped,
       count_inbound_receiving: policy.countInboundReceiving,
+      count_awd_available: policy.countAwdAvailable,
+      count_awd_replenishment: policy.countAwdReplenishment,
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'marketplace_id' },

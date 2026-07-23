@@ -157,6 +157,25 @@ export default async function SettingsPage() {
               />
               Count FBA inbound receiving
             </label>
+            <label className="flex items-center gap-2 rounded-md border border-border bg-panel-muted px-3 py-2 text-xs text-muted">
+              <input
+                type="checkbox"
+                name="countAwdAvailable"
+                defaultChecked={policy.countAwdAvailable}
+              />
+              Count AWD available to send
+            </label>
+            <label
+              className="flex items-center gap-2 rounded-md border border-border bg-panel-muted px-3 py-2 text-xs text-muted"
+              title="Units already in transit from AWD to FBA. Leave off unless FBA inbound excludes them — counting both double-counts the same units."
+            >
+              <input
+                type="checkbox"
+                name="countAwdReplenishment"
+                defaultChecked={policy.countAwdReplenishment}
+              />
+              Count AWD in transit to FBA
+            </label>
           </div>
 
           <div className="grid gap-2 text-xs text-muted sm:grid-cols-3">
