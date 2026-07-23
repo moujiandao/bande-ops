@@ -41,10 +41,14 @@ describe('refreshSvdInventory', () => {
     const result = await refreshSvdInventory({
       admin,
       client: {
+        // Real offer-list cell markup: keyed by id/class, not cell position.
         fetchInventoryHtml: vi.fn().mockResolvedValue(`
           <table>
-            <tr><th>Item ID:</th><th>Description:</th><th>Availability:</th></tr>
-            <tr><td>svd-1</td><td>Item 1</td><td>4</td></tr>
+            <tr>
+              <td id='IDData1' class='clsOffData clsIDData'>svd-1</td>
+              <td id='DESCData1' class='clsOffData clsDESCData'>Item 1</td>
+              <td id='AvailData1' class='clsOffData clsAvailData'>4</td>
+            </tr>
           </table>
         `),
       },
