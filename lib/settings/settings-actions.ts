@@ -199,3 +199,74 @@ export async function savePolicyAction(formData: FormData): Promise<void> {
   revalidatePath('/settings');
   revalidatePath('/reorder');
 }
+
+/**
+ * Save a manual SVD → Amazon SKU mapping.
+ *
+ * The SVD page exposes no Amazon SKU or FNSKU, so mappings are resolved by
+ * matching its item id against the Amazon SKU. That works for most items but
+ * not where the two systems simply use different names — SVD "babyboy" versus
+ * Amazon "babytracker_notebook_boy_g2". These rows cover that gap and win over
+ * the name-matching heuristic.
+ */
+export async function saveSourceMappingAction(formData: FormData): Promise<void> {
+  await requireUser();
+
+  const amazonSku = String(formData.get('amazonSku') ?? '').trim();
+  const svdItemId = String(formData.get('svdItemId') ?? '').trim();
+
+  if (!amazonSku || !svdItemId) {
+    throw new Error('Both the Amazon SKU and the SVD item id are required.');
+  }
+
+  const supabase = await createClient();
+  const marketplaceId = DEFAULT_MARKETPLACE_ID;
+
+  // One mapping per Amazon SKU: re-saving replaces the previous target.
+  const { data: existing } = await supabase
+    .from('inventory_source_mappings')
+    .select('id')
+    .eq('marketplace_id', marketplaceId)
+    .eq('amazon_sku', amazonSku)
+    .maybeSingle();
+
+  const { error } = existing
+    ? await supabase
+        .from('inventory_source_mappings')
+        .update({ svd_item_id: svdItemId, status: 'active' })
+        .eq('id', existing.id)
+    : await supabase.from('inventory_source_mappings').insert({
+        marketplace_id: marketplaceId,
+        amazon_sku: amazonSku,
+        svd_item_id: svdItemId,
+        status: 'active',
+      });
+
+  if (error) {
+    throw new Error(`Could not save the mapping: ${error.message}`);
+  }
+
+  revalidatePath('/settings');
+  revalidatePath('/reorder');
+}
+
+/** Remove a manual mapping, falling back to automatic matching. */
+export async function deleteSourceMappingAction(formData: FormData): Promise<void> {
+  await requireUser();
+
+  const id = String(formData.get('id') ?? '').trim();
+  if (!id) throw new Error('Missing mapping id.');
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('inventory_source_mappings')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    throw new Error(`Could not delete the mapping: ${error.message}`);
+  }
+
+  revalidatePath('/settings');
+  revalidatePath('/reorder');
+}
