@@ -200,11 +200,12 @@ Verification beyond the suite, which this project has learned not to skip:
 
 ## Seed Data
 
-Pack sizes for 67 SKUs were supplied directly and are seeded once, after the
-migration, through the same server action the settings form uses — not by raw
-SQL. Routing the seed through the application path exercises the write before the
-UI depends on it, which is how the `mapping_source` NOT NULL failure would have
-been caught.
+Pack sizes for the supplied SKUs are seeded once, after the migration, through
+the same server-action write path the settings form uses — not by raw SQL.
+Routing the seed through the application path exercises the write before the UI
+depends on it, which is how the `mapping_source` NOT NULL failure would have been
+caught. (The list was estimated here at 67; the live seed wrote 68 — a corrected
+duplicate resolved to a value rather than a blank.)
 
 Cross-checked against live data on 2026-07-23, four SKUs with SVD stock remain
 without a value and will correctly appear in `Needs review` until set:

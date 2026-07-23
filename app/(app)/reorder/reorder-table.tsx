@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import type { RecommendationRow } from '@/lib/reorder/service';
 import {
@@ -35,7 +36,11 @@ function svdCellTitle(row: RecommendationRow): string {
   if (row.svdUnitsPerBox === null) {
     return `${row.svdBoxes} boxes — set units per box in Settings to convert to units`;
   }
-  const units = row.svdBoxes * row.svdUnitsPerBox;
+  // Read the already-converted figure rather than multiplying again: the
+  // conversion lives in one place (lib/reorder), and this cell must not become a
+  // second site that could silently diverge if that math ever changes.
+  const units = row.sources.svd;
+  if (units === null) return `${row.svdBoxes} boxes`;
   return `${units} units — ${row.svdBoxes} boxes × ${row.svdUnitsPerBox}`;
 }
 
@@ -219,6 +224,17 @@ export function ReorderTable({
                         : suggestedShipQty(row, REPLENISH_TARGET_DAYS),
                     )}
                   </span>
+                ) : variant !== 'legacy' &&
+                  row.recommendation.status === 'needs-review' &&
+                  row.recommendation.reason === 'unknown-svd-units-per-box' ? (
+                  // The one needs-review reason with a direct fix: link straight
+                  // to where the box size is set, per the design spec.
+                  <Link
+                    href="/settings"
+                    className="text-[11px] text-accent underline underline-offset-2 hover:text-accent-strong"
+                  >
+                    set SVD box size
+                  </Link>
                 ) : (
                   <span className="text-[11px] text-muted">
                     {statusText(row, variant)}
