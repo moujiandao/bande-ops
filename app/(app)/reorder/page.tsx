@@ -1,10 +1,10 @@
 import { Badge } from '@/components/ui/badge';
+import { ReorderTable } from './reorder-table';
 import {
-  ReorderTable,
   amazonSideCover,
   suggestedShipQty,
   REPLENISH_TARGET_DAYS,
-} from './reorder-table';
+} from '@/lib/reorder/replenish';
 import { assembleRecommendations, type RecommendationRow } from '@/lib/reorder/service';
 import { refreshSvdInventoryAction } from '@/lib/svd/actions';
 import { createClient } from '@/lib/supabase/server';
