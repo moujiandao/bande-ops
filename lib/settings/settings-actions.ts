@@ -47,6 +47,29 @@ function checkbox(formData: FormData, field: string): boolean {
 }
 
 /**
+ * Parse the coverage target, entered in MONTHS in the UI, into stored DAYS
+ * (× 30). Required on the global default; optional on a per-SKU override where a
+ * blank field means "fall back to the default" and is stored as NULL.
+ */
+function parseCoverageMonthsToDays(
+  value: FormDataEntryValue | null,
+  opts: { required: boolean },
+): number | null {
+  const raw = String(value ?? '').trim();
+  if (raw === '') {
+    if (opts.required) {
+      throw new Error('Coverage (months) is required.');
+    }
+    return null;
+  }
+  const months = Number(raw);
+  if (!Number.isFinite(months) || months <= 0) {
+    throw new Error('Coverage (months) must be a positive number.');
+  }
+  return Math.round(months * 30);
+}
+
+/**
  * Upsert a single settings row, keyed by (marketplace_id, sku) where a NULL sku
  * is the global default. Resolves any existing row first, then UPDATEs it or
  * INSERTs a new one.
@@ -55,6 +78,8 @@ async function writeSetting(params: {
   sku: string | null;
   leadTimeDays: number;
   safetyStock: number;
+  /** Coverage target in days, or null to leave unset (per-SKU falls back to default). */
+  coverageDays: number | null;
 }): Promise<void> {
   const supabase = await createClient();
   const marketplaceId = DEFAULT_MARKETPLACE_ID;
@@ -76,6 +101,7 @@ async function writeSetting(params: {
   const values = {
     lead_time_days: params.leadTimeDays,
     safety_stock: params.safetyStock,
+    target_coverage_days: params.coverageDays,
     updated_at: new Date().toISOString(),
   };
 
@@ -106,6 +132,8 @@ export async function saveDefaultsAction(formData: FormData): Promise<void> {
     sku: null,
     leadTimeDays: parseNonNegativeInt(formData.get('leadTimeDays'), 'Lead time'),
     safetyStock: parseNonNegativeInt(formData.get('safetyStock'), 'Safety stock'),
+    // The global default coverage is required — it's the fallback every SKU uses.
+    coverageDays: parseCoverageMonthsToDays(formData.get('coverageMonths'), { required: true }),
   });
 }
 
@@ -122,6 +150,8 @@ export async function saveSkuOverrideAction(formData: FormData): Promise<void> {
     sku,
     leadTimeDays: parseNonNegativeInt(formData.get('leadTimeDays'), 'Lead time'),
     safetyStock: parseNonNegativeInt(formData.get('safetyStock'), 'Safety stock'),
+    // Per-SKU coverage is optional — blank falls back to the global default.
+    coverageDays: parseCoverageMonthsToDays(formData.get('coverageMonths'), { required: false }),
   });
 }
 

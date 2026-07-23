@@ -23,6 +23,7 @@ type SettingRow = {
   sku: string | null;
   lead_time_days: number;
   safety_stock: number;
+  target_coverage_days: number | null;
   updated_at: string;
 };
 
@@ -31,6 +32,11 @@ function formatTimestamp(iso: string): string {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(new Date(iso));
+}
+
+/** Stored coverage is days; the UI works in months. Empty when unset. */
+function coverageMonths(days: number | null): number | '' {
+  return days === null ? '' : Math.round((days / 30) * 100) / 100;
 }
 
 const fieldClass =
@@ -45,7 +51,9 @@ export default async function SettingsPage() {
   const [settingsRes, policyRes] = await Promise.all([
     supabase
       .from('replenishment_settings')
-      .select('id, marketplace_id, sku, lead_time_days, safety_stock, updated_at')
+      .select(
+        'id, marketplace_id, sku, lead_time_days, safety_stock, target_coverage_days, updated_at',
+      )
       .order('sku', { ascending: true, nullsFirst: true }),
     supabase
       .from('replenishment_policy')
@@ -182,7 +190,7 @@ export default async function SettingsPage() {
           action={saveDefaultsAction}
           className="flex flex-col gap-4 rounded-panel border border-border bg-panel p-5"
         >
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-3">
             <label className="flex flex-col gap-1.5">
               <span className={labelClass}>Lead time (days)</span>
               <input
@@ -207,7 +215,23 @@ export default async function SettingsPage() {
                 className={fieldClass}
               />
             </label>
+            <label className="flex flex-col gap-1.5">
+              <span className={labelClass}>Target coverage (months)</span>
+              <input
+                type="number"
+                name="coverageMonths"
+                min={0.5}
+                step={0.5}
+                required
+                defaultValue={coverageMonths(defaultRow?.target_coverage_days ?? 90) || 3}
+                className={fieldClass}
+              />
+            </label>
           </div>
+          <p className="text-[11px] text-faint">
+            Coverage is how much stock to reorder up to once a SKU drops below its
+            lead-time reorder point (e.g. 3 months of expected sales).
+          </p>
           <div className="flex justify-end">
             <button type="submit" className={primaryButtonClass}>
               Save default
@@ -231,7 +255,7 @@ export default async function SettingsPage() {
               <li key={row.id}>
                 <form
                   action={saveSkuOverrideAction}
-                  className="grid items-end gap-3 rounded-panel border border-border bg-panel p-4 sm:grid-cols-[minmax(0,1fr)_7rem_7rem_auto]"
+                  className="grid items-end gap-3 rounded-panel border border-border bg-panel p-4 sm:grid-cols-[minmax(0,1fr)_7rem_7rem_8rem_auto]"
                 >
                   <input type="hidden" name="sku" value={row.sku ?? ''} />
                   <div className="flex flex-col gap-1.5">
@@ -264,6 +288,18 @@ export default async function SettingsPage() {
                       className={fieldClass}
                     />
                   </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className={labelClass}>Coverage (mo)</span>
+                    <input
+                      type="number"
+                      name="coverageMonths"
+                      min={0.5}
+                      step={0.5}
+                      placeholder="default"
+                      defaultValue={coverageMonths(row.target_coverage_days)}
+                      className={fieldClass}
+                    />
+                  </label>
                   <button type="submit" className={primaryButtonClass}>
                     Save
                   </button>
@@ -280,7 +316,7 @@ export default async function SettingsPage() {
         {/* Add a new override */}
         <form
           action={saveSkuOverrideAction}
-          className="grid items-end gap-3 rounded-panel border border-dashed border-border bg-panel p-4 sm:grid-cols-[minmax(0,1fr)_7rem_7rem_auto]"
+          className="grid items-end gap-3 rounded-panel border border-dashed border-border bg-panel p-4 sm:grid-cols-[minmax(0,1fr)_7rem_7rem_8rem_auto]"
         >
           <label className="flex flex-col gap-1.5">
             <span className={labelClass}>New override: SKU</span>
@@ -313,6 +349,17 @@ export default async function SettingsPage() {
               step={1}
               required
               defaultValue={defaultRow?.safety_stock ?? 0}
+              className={fieldClass}
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className={labelClass}>Coverage (mo)</span>
+            <input
+              type="number"
+              name="coverageMonths"
+              min={0.5}
+              step={0.5}
+              placeholder="default"
               className={fieldClass}
             />
           </label>

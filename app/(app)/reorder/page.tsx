@@ -60,11 +60,18 @@ function RowFacts({ row }: { row: RecommendationRow }) {
 
   if (rec.status === 'ok') {
     const r = rec.reasoning;
+    const coverageTargetMonths = Math.round((r.coverageDays / 30) * 10) / 10;
+    // Months of stock currently on hand at the measured velocity (∞ when demand is 0).
+    const monthsOnHand =
+      r.dailyDemand > 0
+        ? `~${(r.usableSupply / r.dailyDemand / 30).toFixed(1)}mo on hand`
+        : 'no demand';
     return (
       <span className="text-xs text-faint">
         usable supply {fmtNumber(r.usableSupply)} · velocity{' '}
         {fmtNumber(r.dailyDemand)}/day{sample} · lead {r.leadTimeDays}d · safety{' '}
-        {r.safetyStock} · reorder point {fmtNumber(r.reorderPoint)}
+        {r.safetyStock} · reorder point {fmtNumber(r.reorderPoint)} · coverage target{' '}
+        {coverageTargetMonths}mo · {monthsOnHand}
       </span>
     );
   }
