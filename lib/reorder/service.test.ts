@@ -288,6 +288,45 @@ describe('assembleRecommendations', () => {
     expect(low!.sources.svd).toBeNull();
   });
 
+  it('inherits lead time and safety stock when a per-SKU row overrides only the box size', async () => {
+    // The seed writes rows carrying ONLY svd_units_per_box, with lead time and
+    // safety stock null. Those must fall back to the global default, not act as
+    // overrides pinned to null.
+    const { rows } = await assembleRecommendations(
+      makeDeps({
+        replenishment_settings: {
+          data: [
+            {
+              marketplace_id: mkt,
+              sku: null,
+              lead_time_days: 10,
+              safety_stock: 12,
+              target_coverage_days: 30,
+              svd_units_per_box: null,
+            },
+            {
+              marketplace_id: mkt,
+              sku: 'SKU-LOW',
+              lead_time_days: null,
+              safety_stock: null,
+              target_coverage_days: null,
+              svd_units_per_box: 2,
+            },
+          ],
+          error: null,
+        },
+      }),
+    );
+    const low = rows.find((row) => row.sku === 'SKU-LOW');
+
+    expect(low!.recommendation.status).toBe('ok');
+    if (low!.recommendation.status === 'ok') {
+      // s = dailyDemand 4 * leadTime 10 + safetyStock 12 = 52, both inherited
+      // from the default. A pinned-null override would have thrown or zeroed these.
+      expect(low!.recommendation.reasoning.reorderPoint).toBe(52);
+    }
+  });
+
   it('flags SKUs without an SVD mapping for review', async () => {
     const { rows } = await assembleRecommendations(makeDeps());
     const missing = rows.find((row) => row.sku === 'SKU-MISSING-MAP');

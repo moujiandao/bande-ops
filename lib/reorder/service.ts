@@ -137,8 +137,10 @@ type VelocityRow = {
 type SettingRow = {
   marketplace_id: string;
   sku: string | null;
-  lead_time_days: number;
-  safety_stock: number;
+  // Nullable on per-SKU rows (migration 0016): null means "inherit the default".
+  // Guaranteed non-null on the global default row by a check constraint.
+  lead_time_days: number | null;
+  safety_stock: number | null;
   /** Nullable: a row may predate the coverage column or leave it unset (falls back to default). */
   target_coverage_days: number | null;
   /**
@@ -295,24 +297,26 @@ export async function assembleRecommendations(
   const defaultRow = settingRows.find((row) => row.sku === null) ?? null;
   const defaults: ReplenishmentValues = defaultRow
     ? {
-        leadTimeDays: defaultRow.lead_time_days,
-        safetyStock: defaultRow.safety_stock,
-        // A null coverage on the global default row (e.g. pre-migration) falls
-        // back to the app default, never to 0 (which would disable coverage).
+        // A check constraint guarantees these are non-null on the default row,
+        // but coalesce defensively so a broken/missing default falls back to the
+        // app default rather than propagating null — same treatment as coverage.
+        leadTimeDays: defaultRow.lead_time_days ?? FALLBACK_DEFAULTS.leadTimeDays,
+        safetyStock: defaultRow.safety_stock ?? FALLBACK_DEFAULTS.safetyStock,
         coverageDays: defaultRow.target_coverage_days ?? FALLBACK_DEFAULTS.coverageDays,
       }
     : FALLBACK_DEFAULTS;
-  // Per-SKU overrides carry lead time + safety always, but coverage only when
-  // set — a null coverage override means "use the global default", so it is
-  // omitted here and effectiveSetting fills it from `defaults`.
+  // A per-SKU row overrides each field ONLY when that field is set; a null field
+  // means "use the global default", so it is omitted here and effectiveSetting
+  // fills it from `defaults`. This is what lets a row carry just an
+  // svd_units_per_box without pinning lead time and safety stock (migration 0016).
   const overrideBySku = new Map<string, PartialReplenishment>(
     settingRows
       .filter((row): row is SettingRow & { sku: string } => row.sku !== null)
       .map((row) => [
         row.sku,
         {
-          leadTimeDays: row.lead_time_days,
-          safetyStock: row.safety_stock,
+          ...(row.lead_time_days !== null ? { leadTimeDays: row.lead_time_days } : {}),
+          ...(row.safety_stock !== null ? { safetyStock: row.safety_stock } : {}),
           ...(row.target_coverage_days !== null
             ? { coverageDays: row.target_coverage_days }
             : {}),
