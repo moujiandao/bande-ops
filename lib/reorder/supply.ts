@@ -82,23 +82,36 @@ export function calculateUsableSupply(input: SupplyInput): UsableSupplyResult {
     return { status: 'needs-review', reason: fbaInboundReceiving };
   }
 
-  const awdAvailable = input.policy.countAwdAvailable
-    ? required(input.awd?.availableQuantity, 'unknown-awd-available')
-    : 0;
+  // A missing AWD row means the SKU simply is not stored at AWD — absence is a
+  // fact, so it contributes 0. A row that EXISTS with an unreadable quantity is
+  // genuinely UNKNOWN and must still block, per the unknown-vs-zero rule.
+  const awdAvailable = !input.policy.countAwdAvailable
+    ? 0
+    : input.awd === null
+      ? 0
+      : required(input.awd.availableQuantity, 'unknown-awd-available');
   if (typeof awdAvailable === 'string') {
     return { status: 'needs-review', reason: awdAvailable };
   }
 
-  const awdReplenishment = input.policy.countAwdReplenishment
-    ? required(input.awd?.replenishmentQuantity, 'unknown-awd-replenishment')
-    : 0;
+  const awdReplenishment = !input.policy.countAwdReplenishment
+    ? 0
+    : input.awd === null
+      ? 0
+      : required(input.awd.replenishmentQuantity, 'unknown-awd-replenishment');
   if (typeof awdReplenishment === 'string') {
     return { status: 'needs-review', reason: awdReplenishment };
   }
 
-  const svdAvailable = input.svd?.quantity;
-  if (svdAvailable === null || svdAvailable === undefined) {
-    return { status: 'needs-review', reason: 'unknown-svd-inventory' };
+  // Same distinction for SVD: the SKU mapped (a missing mapping is caught
+  // earlier) but the item is not carried there, so it contributes 0. A carried
+  // item with an unreadable quantity still blocks.
+  const svdAvailable =
+    input.svd === null
+      ? 0
+      : required(input.svd.quantity, 'unknown-svd-inventory');
+  if (typeof svdAvailable === 'string') {
+    return { status: 'needs-review', reason: svdAvailable };
   }
 
   const breakdown = {

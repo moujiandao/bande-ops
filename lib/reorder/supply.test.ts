@@ -45,3 +45,39 @@ describe('calculateUsableSupply', () => {
     ).toEqual({ status: 'needs-review', reason: 'unknown-fba-fulfillable' });
   });
 });
+
+describe('AWD absence vs unknown', () => {
+  const base = {
+    fba: {
+      fulfillableQuantity: 10,
+      inboundWorkingQuantity: 0,
+      inboundShippedQuantity: 0,
+      inboundReceivingQuantity: 0,
+    },
+    svd: { quantity: 0 },
+    policy,
+  };
+
+  it('treats a SKU with no AWD row as zero units at AWD', () => {
+    // AWD only lists what is stored there, so absence is a fact, not a gap.
+    const result = calculateUsableSupply({ ...base, awd: null });
+    expect(result.status).toBe('ok');
+    if (result.status === 'ok') {
+      expect(result.breakdown.awdAvailable).toBe(0);
+      expect(result.usableSupply).toBe(10);
+    }
+  });
+
+  it('still flags an AWD row whose quantity is unknown', () => {
+    // A row that exists but failed to parse is genuinely UNKNOWN and must not
+    // silently become 0 — that is the invariant this project is built on.
+    const result = calculateUsableSupply({
+      ...base,
+      awd: { availableQuantity: null, replenishmentQuantity: null },
+    });
+    expect(result).toEqual({
+      status: 'needs-review',
+      reason: 'unknown-awd-available',
+    });
+  });
+});
