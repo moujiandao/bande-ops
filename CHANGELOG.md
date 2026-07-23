@@ -1,5 +1,27 @@
 # Changelog
 
+## [2026-07-23] SVD box-to-unit conversion
+
+SVD reports inventory in boxes while FBA and AWD report units, so `/reorder` was
+summing incompatible quantities and understating supply for every SKU with SVD
+stock. An early magnitude check (a claimed 60 units/box made one SKU's 500 AWD
+boxes imply 30,000 units) falsified the original "AWD is also boxes" report, so
+the conversion is scoped to SVD alone.
+
+### Fixed
+- Convert SVD box counts to units before they enter reorder supply (`lib/reorder/supply.ts`, `service.ts`). `calculateUsableSupply` takes a per-SKU `svdUnitsPerBox` and owns a new `unknown-svd-units-per-box` block that fires **only** when a SKU has non-zero SVD boxes — zero boxes is zero units under any factor, so an un-stocked SKU never blocks. FBA and AWD are untouched.
+
+### Added
+- Add `svd_units_per_box` to `replenishment_settings` (migration `0015`): per-SKU pack size, deliberately with **no** global-default fallback. Lead time and safety stock are policy choices where one default applies broadly; a pack size is a physical per-product fact, so a default would fabricate rather than approximate. A missing value stays UNKNOWN and blocks rather than being guessed as 1.
+- Make `lead_time_days` and `safety_stock` nullable on per-SKU rows (migration `0016`), with a check constraint keeping them required on the global default row. A per-SKU row can now carry only an override (a box size, a coverage target) and inherit the rest, instead of being forced to pin lead time and safety stock.
+- Add `lib/reorder/replenish.ts` with `amazonSideCover` and `suggestedShipQty`, moved out of the reorder table component so the replenish math is unit-tested. `suggestedShipQty` had silently carried the box/unit defect there.
+- Add a `saveSvdUnitsPerBoxAction` server action and a "SVD box configuration" section on `/settings`: lists the SKUs currently carried at SVD, unset-with-stock first, one units-per-box input each. Blank clears back to UNKNOWN.
+
+### Changed
+- `/reorder` SVD column shows converted units, with a per-cell tooltip giving the derivation (`N units — B boxes × F`) and naming the reason when blank.
+- The per-SKU overrides list on `/settings` now shows a row only when it actually overrides lead time, safety stock, or coverage — box-only rows live in the box configuration section instead.
+- Seeded 68 supplied pack sizes through the real server-action write path (not raw SQL), so the DB constraints were exercised before the UI depended on them. Verified live: 42 SVD-stocked SKUs, 3 still awaiting a size.
+
 ## [2026-07-23] Go-live on real Amazon + SVD data
 
 Flipped to production (`AMAZON_USE_FAKE=false`, `AMAZON_USE_SANDBOX=false`) and fixed
