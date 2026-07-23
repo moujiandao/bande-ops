@@ -233,12 +233,19 @@ export async function saveSourceMappingAction(formData: FormData): Promise<void>
   const { error } = existing
     ? await supabase
         .from('inventory_source_mappings')
-        .update({ svd_item_id: svdItemId, status: 'active' })
+        .update({
+          svd_item_id: svdItemId,
+          mapping_source: 'manual',
+          status: 'active',
+        })
         .eq('id', existing.id)
     : await supabase.from('inventory_source_mappings').insert({
         marketplace_id: marketplaceId,
         amazon_sku: amazonSku,
         svd_item_id: svdItemId,
+        // NOT NULL, constrained to fn_sku | sku | manual. Rows written here are
+        // always hand-authored overrides.
+        mapping_source: 'manual',
         status: 'active',
       });
 
