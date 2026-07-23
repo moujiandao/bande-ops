@@ -325,11 +325,16 @@ export async function assembleRecommendations(
     });
     const sources = {
       fba: fba?.fulfillable_quantity ?? null,
+      // Absence means "not stored at AWD", which is 0 — matching the supply
+      // math. Only a row with unreadable quantities is UNKNOWN.
       awd:
         awd === null
-          ? null
-          : (awd.available_distributable_quantity ?? 0) +
-            (awd.replenishment_quantity ?? 0),
+          ? 0
+          : awd.available_distributable_quantity === null &&
+              awd.replenishment_quantity === null
+            ? null
+            : (awd.available_distributable_quantity ?? 0) +
+              (awd.replenishment_quantity ?? 0),
       svd: null as number | null,
     };
     const sourceMapping = resolveSourceMapping({
@@ -385,7 +390,9 @@ export async function assembleRecommendations(
     }
 
     const svd = svdById.get(sourceMapping.svdItemId) ?? null;
-    sources.svd = svd?.quantity ?? null;
+    // Mapped but not carried at SVD is 0; carried with an unreadable quantity
+    // stays UNKNOWN.
+    sources.svd = svd === null ? 0 : svd.quantity;
     const supply = calculateUsableSupply({
       fba: fba
         ? {
