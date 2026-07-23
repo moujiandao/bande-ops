@@ -155,6 +155,74 @@ export async function saveSkuOverrideAction(formData: FormData): Promise<void> {
   });
 }
 
+/**
+ * Set or clear a SKU's SVD pack size (units per box).
+ *
+ * SVD reports inventory in boxes; this is the per-SKU factor that converts it to
+ * units so it is comparable with FBA and AWD. Per-SKU only — it never falls back
+ * to the global default (a pack size is a physical fact, not a policy choice), so
+ * this only ever writes a row with a concrete sku, never the `sku IS NULL` row.
+ *
+ * A blank value clears it (stores NULL), which returns the SKU to the UNKNOWN /
+ * Needs-review state rather than guessing a factor. Writing to a SKU that has no
+ * settings row yet creates one carrying ONLY this field; lead time, safety stock,
+ * and coverage stay null and are inherited from the global default (migration
+ * 0016).
+ */
+export async function saveSvdUnitsPerBoxAction(formData: FormData): Promise<void> {
+  await requireUser();
+
+  const sku = String(formData.get('sku') ?? '').trim();
+  if (!sku) {
+    throw new Error('A SKU is required to set a box size.');
+  }
+
+  const raw = String(formData.get('svdUnitsPerBox') ?? '').trim();
+  let unitsPerBox: number | null;
+  if (raw === '') {
+    unitsPerBox = null;
+  } else {
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n <= 0) {
+      throw new Error('Units per box must be a positive whole number, or blank to clear.');
+    }
+    unitsPerBox = n;
+  }
+
+  const supabase = await createClient();
+  const marketplaceId = DEFAULT_MARKETPLACE_ID;
+
+  const { data: existing, error: lookupError } = await supabase
+    .from('replenishment_settings')
+    .select('id')
+    .eq('marketplace_id', marketplaceId)
+    .eq('sku', sku)
+    .maybeSingle();
+  if (lookupError) {
+    throw new Error(`Could not load existing setting: ${lookupError.message}`);
+  }
+
+  const { error } = existing
+    ? await supabase
+        .from('replenishment_settings')
+        .update({ svd_units_per_box: unitsPerBox, updated_at: new Date().toISOString() })
+        .eq('id', existing.id)
+    : await supabase.from('replenishment_settings').insert({
+        marketplace_id: marketplaceId,
+        sku,
+        // lead_time_days / safety_stock left null: this row overrides only the
+        // box size and inherits the rest from the global default. The default-row
+        // check constraint permits null here because sku is non-null.
+        svd_units_per_box: unitsPerBox,
+      });
+  if (error) {
+    throw new Error(`Could not save the box size: ${error.message}`);
+  }
+
+  revalidatePath('/settings');
+  revalidatePath('/reorder');
+}
+
 /** Save the global replenishment policy that controls velocity and supply rules. */
 export async function savePolicyAction(formData: FormData): Promise<void> {
   await requireUser();
