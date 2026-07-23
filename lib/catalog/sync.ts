@@ -28,7 +28,7 @@ type CatalogWriter = SyncWriter;
 
 export interface SyncCatalogDeps {
   /** Source of truth. In tests, a FakeAmazonClient. */
-  client: Pick<AmazonClient, 'listCatalogItems'>;
+  client: Pick<AmazonClient, 'listCatalogItems' | 'getInventorySummaries'>;
   /** Service-role Supabase client (bypasses RLS) for the mirror write. */
   admin: CatalogWriter;
   /** Marketplace to sync. Defaults to US. */
@@ -56,11 +56,37 @@ export async function syncCatalog(
 ): Promise<SyncCatalogResult> {
   const marketplace = deps.marketplace ?? DEFAULT_MARKETPLACE;
 
-  const items = await deps.client.listCatalogItems({ marketplace });
+  // Catalog Items (2022-04-01) is a search API and cannot enumerate a seller's
+  // products, so FBA inventory supplies the SKU universe and catalog only
+  // enriches it. A SKU never sent into FBA will not appear here by design.
+  const summaries = await deps.client.getInventorySummaries({ marketplace });
+  const skus = [...new Set(summaries.map((s) => s.sku).filter(Boolean))];
 
   // One timestamp for the whole batch.
   const syncedAt = new Date();
-  const rows = mapCatalogItemsToRows(items, {
+
+  if (skus.length === 0) {
+    return {
+      count: 0,
+      syncedAt: syncedAt.toISOString(),
+      marketplaceId: marketplace.id,
+    };
+  }
+
+  const items = await deps.client.listCatalogItems({
+    marketplace,
+    sellerSkus: skus,
+  });
+
+  // Amazon returns catalog data for only some SKUs. Keep a row for every SKU
+  // we know we stock — dropping the misses would silently remove them from
+  // /reorder rather than surfacing them for review.
+  const bySku = new Map(items.map((item) => [item.sku, item]));
+  const complete = skus.map(
+    (sku) => bySku.get(sku) ?? { sku, asin: '', title: '' },
+  );
+
+  const rows = mapCatalogItemsToRows(complete, {
     marketplaceId: marketplace.id,
     syncedAt,
   });

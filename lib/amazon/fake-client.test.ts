@@ -13,7 +13,11 @@ import { DEFAULT_MARKETPLACE } from './types';
 describe('FakeAmazonClient (test seam)', () => {
   it('lists catalog items with sku/asin/title', async () => {
     const client = new FakeAmazonClient();
-    const items = await client.listCatalogItems();
+    // Catalog Items is a search API — the fake requires identifiers just as
+    // the real one does.
+    const items = await client.listCatalogItems({
+      sellerSkus: ['BANDE-001', 'BANDE-002'],
+    });
 
     expect(items.length).toBeGreaterThan(0);
     for (const item of items) {

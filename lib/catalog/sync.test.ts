@@ -18,6 +18,66 @@ function makeAdminMock() {
   return { admin: { from } as unknown as SyncCatalogDeps['admin'], from, upsert };
 }
 
+describe('syncCatalog SKU sourcing', () => {
+  it('derives the SKU set from FBA inventory and looks up exactly those SKUs', async () => {
+    // Catalog Items cannot enumerate a seller's products, so the SKU universe
+    // comes from FBA inventory summaries.
+    const { admin } = makeAdminMock();
+    const listCatalogItems = vi.fn().mockResolvedValue([]);
+    const getInventorySummaries = vi
+      .fn()
+      .mockResolvedValue([
+        { sku: 'SKU-A', marketplaceId: 'ATVPDKIKX0DER', totalQuantity: 1 },
+        { sku: 'SKU-B', marketplaceId: 'ATVPDKIKX0DER', totalQuantity: 0 },
+      ]);
+
+    await syncCatalog({
+      client: { listCatalogItems, getInventorySummaries } as never,
+      admin,
+    });
+
+    expect(getInventorySummaries).toHaveBeenCalled();
+    expect(listCatalogItems).toHaveBeenCalledWith(
+      expect.objectContaining({ sellerSkus: ['SKU-A', 'SKU-B'] }),
+    );
+  });
+
+  it('keeps a row for every inventory SKU even when catalog returns nothing for it', async () => {
+    // Amazon returns catalog data for only some SKUs. Dropping the rest would
+    // silently remove them from /reorder instead of surfacing them for review.
+    const { admin, upsert } = makeAdminMock();
+    const listCatalogItems = vi
+      .fn()
+      .mockResolvedValue([{ sku: 'SKU-A', asin: 'ASIN-A', title: 'Item A' }]);
+    const getInventorySummaries = vi
+      .fn()
+      .mockResolvedValue([{ sku: 'SKU-A' }, { sku: 'SKU-B' }]);
+
+    await syncCatalog({
+      client: { listCatalogItems, getInventorySummaries } as never,
+      admin,
+    });
+
+    const [rows] = upsert.mock.calls[0];
+    expect(rows.map((r: { sku: string }) => r.sku)).toEqual(['SKU-A', 'SKU-B']);
+    expect(rows[1]).toMatchObject({ sku: 'SKU-B', asin: '', title: '' });
+  });
+
+  it('skips the catalog call entirely when inventory is empty', async () => {
+    const { admin } = makeAdminMock();
+    const listCatalogItems = vi.fn();
+    const getInventorySummaries = vi.fn().mockResolvedValue([]);
+
+    const result = await syncCatalog({
+      client: { listCatalogItems, getInventorySummaries } as never,
+      admin,
+    });
+
+    expect(listCatalogItems).not.toHaveBeenCalled();
+    expect(result.count).toBe(0);
+  });
+});
+
 describe('syncCatalog', () => {
   it('upserts the FakeAmazonClient catalog into catalog_items', async () => {
     const { admin, from, upsert } = makeAdminMock();
@@ -98,10 +158,17 @@ describe('syncCatalog', () => {
   it('passes the marketplace through to the Amazon client', async () => {
     const { admin } = makeAdminMock();
     const listSpy = vi.fn().mockResolvedValue([]);
-    const client = { listCatalogItems: listSpy };
+    const getInventorySummaries = vi.fn().mockResolvedValue([{ sku: 'SKU-A' }]);
+    const client = { listCatalogItems: listSpy, getInventorySummaries };
 
-    await syncCatalog({ client, admin });
+    await syncCatalog({ client: client as never, admin });
 
-    expect(listSpy).toHaveBeenCalledWith({ marketplace: DEFAULT_MARKETPLACE });
+    expect(getInventorySummaries).toHaveBeenCalledWith({
+      marketplace: DEFAULT_MARKETPLACE,
+    });
+    expect(listSpy).toHaveBeenCalledWith({
+      marketplace: DEFAULT_MARKETPLACE,
+      sellerSkus: ['SKU-A'],
+    });
   });
 });
