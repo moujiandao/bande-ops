@@ -1,5 +1,12 @@
 import 'server-only';
 
+import {
+  MAX_RETRIES,
+  USER_AGENT,
+  isRetryable,
+  waitBeforeRetry,
+  type RetryDelayReporter,
+} from '../http/retry';
 import { getAdsConfig } from './config';
 import type { Campaign, CampaignMetrics, CampaignState } from './types';
 import { parseV3Campaign } from './v3';
@@ -51,10 +58,7 @@ export interface GetCampaignMetricsOptions {
   endDate?: string;
 }
 
-/** Retry tuning for transient Advertising API failures (429 / 5xx). */
-const MAX_RETRIES = 3;
-const BASE_DELAY_MS = 500;
-const MAX_DELAY_MS = 8_000;
+// Transport policy (retry tuning, Retry-After, UA) is shared with lib/amazon.
 
 // LWA token exchange endpoint (same as SP-API uses; the creds differ).
 const LWA_TOKEN_URL = 'https://api.amazon.com/auth/o2/token';
@@ -156,20 +160,19 @@ function buildUrl(
   return url.toString();
 }
 
-const sleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms));
-
-/** Exponential backoff with full jitter, capped. */
-function backoffDelay(attempt: number): number {
-  const exp = Math.min(MAX_DELAY_MS, BASE_DELAY_MS * 2 ** attempt);
-  return Math.floor(Math.random() * exp);
-}
-
-function isRetryable(status: number): boolean {
-  return status === 429 || (status >= 500 && status <= 599);
+export interface AdsApiClientOptions {
+  /** Observability seam: called with each retry wait, so tests and sync logs
+   *  can see throttling without stubbing timers. */
+  onRetryDelay?: RetryDelayReporter;
 }
 
 export class AdsApiClient implements AdsClient {
+  private readonly onRetryDelay: RetryDelayReporter | undefined;
+
+  constructor(options: AdsApiClientOptions = {}) {
+    this.onRetryDelay = options.onRetryDelay;
+  }
+
   private cachedToken: CachedToken | null = null;
   /** Coalesce concurrent refreshes so we don't hammer LWA on a cold cache. */
   private inFlightToken: Promise<string> | null = null;
@@ -261,6 +264,7 @@ export class AdsApiClient implements AdsClient {
         'Amazon-Advertising-API-ClientId': config.clientId,
         'Amazon-Advertising-API-Scope': config.profileId,
         accept,
+        'user-agent': USER_AGENT,
       };
       // Only set Content-Type when we actually send a body.
       if (hasBody) {
@@ -279,7 +283,8 @@ export class AdsApiClient implements AdsClient {
         // Network/transport error: retry while attempts remain.
         lastError = err;
         if (attempt < MAX_RETRIES) {
-          await sleep(backoffDelay(attempt));
+          // No response, so no Retry-After to honor: plain jittered backoff.
+          await waitBeforeRetry(attempt, undefined, this.onRetryDelay);
           continue;
         }
         throw err;
@@ -289,9 +294,9 @@ export class AdsApiClient implements AdsClient {
         return (await res.json()) as T;
       }
 
-      // Transient HTTP failure: back off and retry.
+      // Transient HTTP failure: honor Amazon's Retry-After, else back off.
       if (isRetryable(res.status) && attempt < MAX_RETRIES) {
-        await sleep(backoffDelay(attempt));
+        await waitBeforeRetry(attempt, res.headers, this.onRetryDelay);
         continue;
       }
 

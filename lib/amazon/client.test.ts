@@ -253,4 +253,42 @@ describe('SpApiClient', () => {
     ).rejects.toThrow(`Report report-1 ended with ${processingStatus}.`);
     },
   );
+
+  it('sends a descriptive User-Agent', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response({ items: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await new SpApiClient().listCatalogItems();
+
+    const [, request] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = request.headers as Record<string, string>;
+    expect(headers['user-agent']).toMatch(/^bande-ops\/\d+\.\d+\.\d+ /);
+  });
+
+  it('waits the Retry-After interval before retrying a throttled request', async () => {
+    const throttled = new Response('slow down', {
+      status: 429,
+      headers: { 'retry-after': '2' },
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(throttled)
+      .mockResolvedValueOnce(response({ items: [] }));
+    const delays: number[] = [];
+    vi.stubGlobal('fetch', fetchMock);
+    vi.useFakeTimers();
+
+    try {
+      const pending = new SpApiClient({
+        onRetryDelay: (ms) => delays.push(ms),
+      }).listCatalogItems();
+      await vi.advanceTimersByTimeAsync(2000);
+      await pending;
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(delays).toEqual([2000]);
+  });
 });

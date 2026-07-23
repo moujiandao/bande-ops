@@ -1,5 +1,17 @@
 # Changelog
 
+## [2026-07-22] Amazon rate-limit compliance
+
+### Added
+- Add `lib/http/retry.ts`: one shared outbound-transport policy (retry tuning, jittered backoff, `Retry-After` handling, `User-Agent`) for both Amazon clients, which previously carried byte-identical copies of it. Pure and free of `server-only` — no credentials or API specifics belong there.
+- Add `lib/ads/client.test.ts`: first tests for the Advertising HTTP layer, which had none.
+
+### Changed
+- Honor Amazon's `Retry-After` header on 429/5xx in `lib/amazon/client.ts` and `lib/ads/client.ts` instead of always guessing with jittered backoff, capped at the existing 8s ceiling. Blind jitter can keep re-hitting a sustained 429 on the low-rate operations (FBA summaries is 2 rps). Closes the rate-limit item in `docs/go-live-readiness.md`.
+- Send a descriptive `User-Agent` on every SP-API and Advertising API request; Amazon deprioritizes unidentified clients.
+- Both clients take an optional `onRetryDelay` observability seam so throttling is visible to tests and sync logs without stubbing timers.
+- Refresh `docs/go-live-readiness.md` with a 2026-07-22 status recheck; the 2026-06-26 audit body was substantially stale (most SP-API blockers and the whole Ads v2→v3 migration have since landed).
+
 ## [2026-07-22] Coverage-based reorder
 
 ### Added

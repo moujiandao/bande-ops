@@ -21,6 +21,27 @@ The `feat/live-inventory-reorder` branch addresses the reorder-specific blockers
 
 Remaining go-live checks: apply migration `0010`, provide live Amazon and SVD env vars, verify the new SP-API/AWD/ledger/SVD paths against real credentials, and still migrate Advertising API to Sponsored Products v3 before trusting Ads live data.
 
+### 1b. 2026-07-22 status recheck (read this before trusting section 2)
+
+Section 2 below is the original 2026-06-26 audit and is now **substantially out of date**. Verified against the code on `main` at `f37da21` plus the rate-limit work:
+
+**Fixed since the audit:**
+- SP-API #1 `sellerId` on SKU lookups — done (`client.ts` `listCatalogItems`).
+- SP-API #2 `details=true` on FBA summaries — done; inbound/reserved/unfulfillable buckets are mapped.
+- SP-API #3 mapped `CatalogItem.sku` — done; SKU now carried from request input, not scanned out of `identifiers`.
+- SP-API #4 pagination — done on catalog (`pageToken`), FBA inventory, and AWD (`nextToken` loops).
+- SP-API #6 rate limits — **done**: `Retry-After` is now honored (`lib/http/retry.ts`), capped at the 8s backoff ceiling.
+- SP-API #7 superfluous `Authorization: Bearer` — done, dropped.
+- SP-API #8 `User-Agent` — **done**; marketplace/image filtering still open.
+- Reorder demand #1/#2 — done: one batched `GET_LEDGER_SUMMARY_VIEW_DATA` report per marketplace+window on the sync path, presigned-S3 gzip-TSV download, terminal `FATAL`/`CANCELLED` handling. Truncated ledger MSKUs are reconciled to canonical catalog SKUs (`lib/velocity/reconcile-sku.ts`).
+- Ads #1–#5 — done: migrated to Sponsored Products v3 (`POST /sp/campaigns/list`, vendored media type, `nextToken` pagination, nested `budget.budget`, uppercase state enum).
+
+**Still open:**
+- No *proactive* throttle. Retry-After is reactive only; a burst can still trip 429 before backing off. FBA summaries is 2 rps.
+- Sandbox-first defaults remain an ops footgun (SP-API #5, Ads #6) — see issue #28.
+- Catalog `summaries[0]` / `images[0]` are still unfiltered by marketplace and do not prefer `variant === 'MAIN'`.
+- Nothing below has been exercised against real credentials. Every "done" above is verified by unit tests against fakes and by code read only.
+
 ### 2. Per-integration changes
 
 #### SP-API — Catalog & Inventory (`lib/amazon/`)

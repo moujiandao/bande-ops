@@ -1,6 +1,14 @@
 import 'server-only';
 
 import { gunzipSync } from 'node:zlib';
+import {
+  MAX_RETRIES,
+  USER_AGENT,
+  isRetryable,
+  sleep,
+  waitBeforeRetry,
+  type RetryDelayReporter,
+} from '../http/retry';
 import { getAmazonConfig } from './config';
 import { getAccessToken } from './lwa';
 import {
@@ -76,10 +84,8 @@ export interface DownloadReportDocumentOptions {
   reportDocumentId: string;
 }
 
-/** Retry tuning for transient SP-API failures (429 / 5xx). */
-const MAX_RETRIES = 3;
-const BASE_DELAY_MS = 500;
-const MAX_DELAY_MS = 8_000;
+/** Transport policy (retry tuning, Retry-After, UA) is shared with lib/ads. */
+
 
 interface RequestOptions {
   method?: string;
@@ -101,19 +107,6 @@ function buildUrl(host: string, path: string, query?: RequestOptions['query']): 
   return url.toString();
 }
 
-const sleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms));
-
-/** Exponential backoff with full jitter, capped. */
-function backoffDelay(attempt: number): number {
-  const exp = Math.min(MAX_DELAY_MS, BASE_DELAY_MS * 2 ** attempt);
-  return Math.floor(Math.random() * exp);
-}
-
-function isRetryable(status: number): boolean {
-  return status === 429 || (status >= 500 && status <= 599);
-}
-
 /**
  * Coerce a possibly-non-numeric Amazon quantity into number | null.
  * UNKNOWN (non-numeric/unavailable) maps to null, never 0.
@@ -123,7 +116,24 @@ function toQuantity(raw: unknown): number | null {
   return null;
 }
 
+export interface SpApiClientOptions {
+  /** Observability seam: called with each retry wait, so tests and sync logs
+   *  can see throttling without stubbing timers. */
+  onRetryDelay?: RetryDelayReporter;
+}
+
 export class SpApiClient implements AmazonClient {
+  private readonly onRetryDelay: RetryDelayReporter | undefined;
+
+  constructor(options: SpApiClientOptions = {}) {
+    this.onRetryDelay = options.onRetryDelay;
+  }
+
+  /** Wait before a retry, reporting the delay through the observability seam. */
+  private waitBeforeRetry(attempt: number, headers?: Headers): Promise<void> {
+    return waitBeforeRetry(attempt, headers, this.onRetryDelay);
+  }
+
   /**
    * Signed, retrying request against the marketplace's SP-API host.
    * Adds the LWA token required by SP-API.
@@ -144,6 +154,7 @@ export class SpApiClient implements AmazonClient {
           headers: {
             'x-amz-access-token': accessToken,
             accept: 'application/json',
+            'user-agent': USER_AGENT,
             ...(opts.body ? { 'content-type': 'application/json' } : {}),
           },
           ...(opts.body ? { body: JSON.stringify(opts.body) } : {}),
@@ -153,7 +164,8 @@ export class SpApiClient implements AmazonClient {
         // Network/transport error: retry while attempts remain.
         lastError = err;
         if (attempt < MAX_RETRIES) {
-          await sleep(backoffDelay(attempt));
+          // No response, so no Retry-After to honor: plain jittered backoff.
+          await this.waitBeforeRetry(attempt);
           continue;
         }
         throw err;
@@ -163,9 +175,9 @@ export class SpApiClient implements AmazonClient {
         return (await res.json()) as T;
       }
 
-      // Transient HTTP failure: back off and retry.
+      // Transient HTTP failure: honor Amazon's Retry-After, else back off.
       if (isRetryable(res.status) && attempt < MAX_RETRIES) {
-        await sleep(backoffDelay(attempt));
+        await this.waitBeforeRetry(attempt, res.headers);
         continue;
       }
 
