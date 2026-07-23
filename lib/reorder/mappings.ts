@@ -13,7 +13,7 @@ export type SourceMappingResult =
   | {
       status: 'mapped';
       svdItemId: string;
-      mappingSource: 'fn_sku' | 'sku' | 'manual';
+      mappingSource: 'fn_sku' | 'sku' | 'svd_item_id' | 'manual';
     }
   | { status: 'needs-review'; reason: 'missing-svd-mapping' };
 
@@ -47,6 +47,19 @@ export function resolveSourceMapping(input: {
       status: 'mapped',
       svdItemId: manual.svdItemId,
       mappingSource: 'manual',
+    };
+  }
+
+  // The SVD page carries neither an FNSKU nor an Amazon SKU, so those columns
+  // are always null; its item id IS the Amazon SKU for the great majority of
+  // items. Checked LAST, so an explicit manual mapping always beats this
+  // name-matching heuristic.
+  const byItemId = input.svdRows.find((row) => row.svdItemId === input.amazonSku);
+  if (byItemId) {
+    return {
+      status: 'mapped',
+      svdItemId: byItemId.svdItemId,
+      mappingSource: 'svd_item_id',
     };
   }
 
