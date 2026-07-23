@@ -1,5 +1,36 @@
 # Changelog
 
+## [2026-07-23] Go-live on real Amazon + SVD data
+
+Flipped to production (`AMAZON_USE_FAKE=false`, `AMAZON_USE_SANDBOX=false`) and fixed
+every failure that surfaced. All five bugs below shared one root cause: test fixtures
+were **invented rather than captured**, so the suite was green against code that could
+not work against the real systems.
+
+### Fixed
+- Fix the SVD scraper against the real site (`lib/svd/client.ts`, `parse.ts`): the site allocates a `PmSess1` session id across two redirects and posts to `CustLoginSubmit.asp` with `username`/`password`, so the old direct post could never authenticate. Real offer rows are `[id, image, description, availability]`, so reading description from `cells[1]` dropped every row. Cells are now keyed by their `IDData`/`DESCData`/`AvailData` ids, surviving nested tables and inline script. A page that is not the offer list now throws instead of being returned as empty inventory. Verified live at 79/79 items.
+- Fix catalog SKU sourcing (`lib/catalog/sync.ts`): Catalog Items 2022-04-01 is a search API and 400s without identifiers, so `syncCatalog` could never have run in production. FBA inventory summaries now supply the SKU universe and catalog only enriches it, batched to the 20-identifier limit. A row is kept for every stocked SKU so catalog misses do not silently drop SKUs from `/reorder`.
+- Fix FBA ledger parsing (`lib/velocity/ledger-mapping.ts`): Amazon quotes every cell including headers, so no column ever matched and all 18k rows were skipped **without an error** — the sync reported success over an empty write. Also converts `MM/DD/YYYY` dates to ISO and takes the magnitude of the negative "Customer Shipments" column, and aggregates by `(marketplace, sku, date)` since one MSKU appears across several FNSKUs per day.
+- Fix AWD quantity mapping (`lib/amazon/client.ts`): quantities are nested under `inventoryDetails` and on-hand is `totalOnhandQuantity`, so every AWD row read UNKNOWN and ~12,000 real units were invisible to reorder.
+- Fix `mapping_source` omission when saving a manual SVD mapping (NOT NULL with a check constraint).
+- Treat an absent AWD/SVD row as 0 rather than UNKNOWN (`lib/reorder/supply.ts`): absence means the SKU is not stored there, which is a fact. A row that exists with an unreadable quantity still blocks.
+
+### Added
+- Add `lib/http/retry.ts`: one shared outbound transport policy for both Amazon clients (retry tuning, `Retry-After`, `User-Agent`, an `onRetryDelay` seam). Both previously carried byte-identical copies.
+- Add `lib/env/mode.ts` + `components/data-source-banner.tsx` (closes #28): report whether each API serves fake/sandbox/production data by calling each client's own `readUseSandbox()`, and warn on every page whenever data is not fully live.
+- Add `lib/listings/`: sync `GET_MERCHANT_LISTINGS_ALL_DATA` for per-SKU `open-date`, which is the only signal separating a dead SKU from a new one. Also fills in SKUs that Catalog Items search returns nothing for (46 → 21). Migration `0012`.
+- Add `lib/reorder/legacy.ts`: classify a SKU as legacy when it has not sold in ~550 days AND its listing is over a year old. An unknown open date is never legacy. Migration `0014` records `last_sold_date`.
+- Add configurable AWD supply buckets to the replenishment policy (`count_awd_available`, `count_awd_replenishment`), alongside the existing FBA inbound toggles. Migration `0013`.
+- Add a settings section to create and remove manual SVD → Amazon SKU mappings, the missing write path for `inventory_source_mappings`.
+- Add `lib/ads/client.test.ts` and `lib/svd/client.test.ts` — both HTTP layers previously had no tests.
+
+### Changed
+- Match SVD items by `svd_item_id` against the Amazon SKU (`lib/reorder/mappings.ts`). The SVD page exposes neither an FNSKU nor an Amazon SKU, so those columns are null on every row; its item id is the Amazon SKU for 72 of 79 items. Checked last, so manual mappings always win.
+- Rework `/reorder`: every list is a sortable table sharing one column set (SKU, FBA, AWD, SVD, Total, per-day, days of cover, order/status), with UNKNOWN rendered as an em dash and always sorted last. Legacy SKUs move to a collapsed section with a count rather than being hidden outright.
+- `FakeAmazonClient.listCatalogItems` now throws without `sellerSkus` and filters by them, mirroring the real API. A fake must never be more permissive than the thing it stands in for.
+- Widen the ledger fetch to the 550-day legacy window; `calculateSalesVelocity` self-limits to `velocityMaxLookbackDays`, so velocity is unchanged.
+
+
 ## [2026-07-22] Amazon rate-limit compliance
 
 ### Added
