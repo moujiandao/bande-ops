@@ -135,6 +135,25 @@ function baseTables(): Record<string, TableData> {
           lead_time_days: 10,
           safety_stock: 0,
           target_coverage_days: 30,
+          // The global default row never carries a pack size: it is a physical
+          // per-product fact, so it deliberately has no global fallback.
+          svd_units_per_box: null,
+        },
+        {
+          marketplace_id: mkt,
+          sku: 'SKU-LOW',
+          lead_time_days: 10,
+          safety_stock: 0,
+          target_coverage_days: null,
+          svd_units_per_box: 2,
+        },
+        {
+          marketplace_id: mkt,
+          sku: 'SKU-HIGH',
+          lead_time_days: 10,
+          safety_stock: 0,
+          target_coverage_days: null,
+          svd_units_per_box: 5,
         },
       ],
       error: null,
@@ -198,7 +217,11 @@ describe('assembleRecommendations', () => {
       svdItemId: 'svd-low',
       mappingSource: 'fn_sku',
     });
-    expect(low!.usableSupply).toBe(25);
+    // 7 SVD BOXES at 2 units per box = 14 units, not 7.
+    expect(low!.sources.svd).toBe(14);
+    expect(low!.svdBoxes).toBe(7);
+    expect(low!.svdUnitsPerBox).toBe(2);
+    expect(low!.usableSupply).toBe(32);
     expect(low!.dailyDemand).toBe(4);
     expect(low!.velocitySampleDays).toBe(90);
     expect(low!.supplyBreakdown).toEqual({
@@ -208,17 +231,17 @@ describe('assembleRecommendations', () => {
       fbaInboundReceiving: 2,
       awdAvailable: 8,
       awdReplenishment: 0,
-      svdAvailable: 7,
+      svdAvailable: 14,
     });
     expect(low!.recommendation.status).toBe('ok');
     if (low!.recommendation.status === 'ok') {
-      // (s,S): trigger s = 4*10 + 0 = 40; below it (supply 25), so reorder.
-      // Coverage target S = dailyDemand 4 * 30 days = 120; fill 120 - 25 = 95.
+      // (s,S): trigger s = 4*10 + 0 = 40; below it (supply 32), so reorder.
+      // Coverage target S = dailyDemand 4 * 30 days = 120; fill 120 - 32 = 88.
       expect(low!.recommendation.reasoning.reorderPoint).toBe(40);
       expect(low!.recommendation.reasoning.coverageDays).toBe(30);
       expect(low!.recommendation.reasoning.targetStock).toBe(120);
       expect(low!.recommendation.reasoning.orderUpToLevel).toBe(120);
-      expect(low!.recommendation.recommendedQty).toBe(95);
+      expect(low!.recommendation.recommendedQty).toBe(88);
     }
   });
 
@@ -226,11 +249,43 @@ describe('assembleRecommendations', () => {
     const { rows } = await assembleRecommendations(makeDeps());
     const high = rows.find((row) => row.sku === 'SKU-HIGH');
 
-    expect(high!.usableSupply).toBe(170);
+    // 20 SVD boxes at 5 units per box = 100 units, replacing the raw 20.
+    expect(high!.usableSupply).toBe(250);
     expect(high!.recommendation.status).toBe('ok');
     if (high!.recommendation.status === 'ok') {
       expect(high!.recommendation.recommendedQty).toBe(0);
     }
+  });
+
+  it('needs review when a SKU with SVD stock has no pack size', async () => {
+    const { rows } = await assembleRecommendations(
+      makeDeps({
+        replenishment_settings: {
+          data: [
+            {
+              marketplace_id: mkt,
+              sku: null,
+              lead_time_days: 10,
+              safety_stock: 0,
+              target_coverage_days: 30,
+              svd_units_per_box: null,
+            },
+          ],
+          error: null,
+        },
+      }),
+    );
+    const low = rows.find((row) => row.sku === 'SKU-LOW');
+
+    expect(low!.recommendation).toEqual({
+      status: 'needs-review',
+      reason: 'unknown-svd-units-per-box',
+    });
+    expect(low!.usableSupply).toBeNull();
+    // The box count is still known and still worth showing; only the unit
+    // conversion is unavailable.
+    expect(low!.svdBoxes).toBe(7);
+    expect(low!.sources.svd).toBeNull();
   });
 
   it('flags SKUs without an SVD mapping for review', async () => {

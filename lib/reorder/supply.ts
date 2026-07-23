@@ -23,7 +23,17 @@ export interface SupplyInput {
     availableQuantity: number | null;
     replenishmentQuantity: number | null;
   } | null;
+  /** SVD quantities are BOXES, not units. See `svdUnitsPerBox`. */
   svd: { quantity: number | null } | null;
+  /**
+   * Sellable units per SVD box for this SKU, or null when we do not know it.
+   *
+   * Required rather than optional on purpose: every caller must decide what to
+   * pass. An optional field would let a call site omit it and silently get the
+   * old, wrong behaviour — and vitest transpiles without typechecking, so only
+   * `npm run build` would ever notice.
+   */
+  svdUnitsPerBox: number | null;
   policy: SupplyPolicy;
 }
 
@@ -48,6 +58,16 @@ function required(
   reason: string,
 ): number | string {
   return value === null || value === undefined ? reason : value;
+}
+
+/**
+ * The single box-to-unit conversion in the codebase.
+ *
+ * SVD is the only box-denominated source; FBA and AWD already report units and
+ * must never be passed through here.
+ */
+export function toUnits(boxes: number, unitsPerBox: number): number {
+  return boxes * unitsPerBox;
 }
 
 export function calculateUsableSupply(input: SupplyInput): UsableSupplyResult {
@@ -106,12 +126,30 @@ export function calculateUsableSupply(input: SupplyInput): UsableSupplyResult {
   // Same distinction for SVD: the SKU mapped (a missing mapping is caught
   // earlier) but the item is not carried there, so it contributes 0. A carried
   // item with an unreadable quantity still blocks.
-  const svdAvailable =
+  const svdBoxes =
     input.svd === null
       ? 0
       : required(input.svd.quantity, 'unknown-svd-inventory');
-  if (typeof svdAvailable === 'string') {
-    return { status: 'needs-review', reason: svdAvailable };
+  if (typeof svdBoxes === 'string') {
+    return { status: 'needs-review', reason: svdBoxes };
+  }
+
+  // SVD counts BOXES. Converting needs a per-SKU pack size, and an unknown one
+  // must never default to 1 — that is precisely the bug this fixes.
+  //
+  // The factor only matters when there is stock to convert: zero boxes is zero
+  // units under every possible pack size, so a SKU not stocked at SVD passes
+  // through unblocked. That is exact, not a leniency.
+  let svdAvailable = 0;
+  if (svdBoxes > 0) {
+    const unitsPerBox = input.svdUnitsPerBox;
+    // Checks undefined as well as null. The type forbids undefined, but vitest
+    // transpiles without typechecking and a missed field would otherwise
+    // multiply into NaN and poison the supply total silently.
+    if (unitsPerBox === null || unitsPerBox === undefined) {
+      return { status: 'needs-review', reason: 'unknown-svd-units-per-box' };
+    }
+    svdAvailable = toUnits(svdBoxes, unitsPerBox);
   }
 
   const breakdown = {

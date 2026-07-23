@@ -12,7 +12,7 @@ import {
 } from '@/lib/settings/resolve';
 import { recommend, type Recommendation } from './recommend';
 import { resolveSourceMapping } from './mappings';
-import { calculateUsableSupply, type UsableSupplyResult } from './supply';
+import { calculateUsableSupply, toUnits, type UsableSupplyResult } from './supply';
 import { classifyLegacy } from './legacy';
 
 type ReorderReader = Pick<SupabaseClient, 'from'>;
@@ -54,8 +54,13 @@ export interface RecommendationRow {
   sources: {
     fba: number | null;
     awd: number | null;
+    /** UNITS, converted from SVD's boxes. Null when the units are unknowable. */
     svd: number | null;
   };
+  /** SVD's own denomination, kept for display. Null when unreadable. */
+  svdBoxes: number | null;
+  /** Units per SVD box for this SKU. Null when not configured. */
+  svdUnitsPerBox: number | null;
   fnSku: string | null;
   supplyBreakdown:
     | (Extract<UsableSupplyResult, { status: 'ok' }>['breakdown'])
@@ -136,6 +141,11 @@ type SettingRow = {
   safety_stock: number;
   /** Nullable: a row may predate the coverage column or leave it unset (falls back to default). */
   target_coverage_days: number | null;
+  /**
+   * Sellable units per SVD box. Per-SKU ONLY — unlike the fields above it has
+   * no global-default fallback, so a value on the `sku IS NULL` row is ignored.
+   */
+  svd_units_per_box: number | null;
 };
 type SourceStateDbRow = {
   source: string;
@@ -248,7 +258,9 @@ export async function assembleRecommendations(
       .eq('marketplace_id', marketplace.id),
     deps.supabase
       .from('replenishment_settings')
-      .select('marketplace_id, sku, lead_time_days, safety_stock, target_coverage_days')
+      .select(
+        'marketplace_id, sku, lead_time_days, safety_stock, target_coverage_days, svd_units_per_box',
+      )
       .eq('marketplace_id', marketplace.id),
     deps.supabase.from('replenishment_policy').select('*').eq('marketplace_id', marketplace.id),
     deps.supabase
@@ -308,6 +320,20 @@ export async function assembleRecommendations(
       ]),
   );
 
+  // Pack size is resolved separately from effectiveSetting on purpose. Lead
+  // time, safety stock, and coverage are policy choices where one global number
+  // sensibly applies to everything; a pack size is a physical per-product fact,
+  // so there is no default to fall back to and a missing value must stay
+  // UNKNOWN rather than be approximated.
+  const svdUnitsPerBoxBySku = new Map<string, number>(
+    settingRows
+      .filter(
+        (row): row is SettingRow & { sku: string; svd_units_per_box: number } =>
+          row.sku !== null && row.svd_units_per_box !== null,
+      )
+      .map((row) => [row.sku, row.svd_units_per_box]),
+  );
+
   const activeManualMappings = mappingRows
     .filter((row) => row.status === 'active' && row.svd_item_id)
     .map((row) => ({ amazonSku: row.amazon_sku, svdItemId: row.svd_item_id as string }));
@@ -352,6 +378,26 @@ export async function assembleRecommendations(
     const velocity = velocityByKey.get(key);
     const dailyDemand = velocityValue(velocity);
 
+    // Resolved before the early returns so the box count stays visible on rows
+    // that never reach the supply math — knowing "7 boxes, pack size unset"
+    // is more useful than a blank cell.
+    const svdUnitsPerBox = svdUnitsPerBoxBySku.get(item.sku) ?? null;
+    const svd =
+      sourceMapping.status === 'mapped'
+        ? (svdById.get(sourceMapping.svdItemId) ?? null)
+        : null;
+    // Mapped but not carried at SVD is 0 boxes; carried with an unreadable
+    // quantity stays UNKNOWN. An unmapped SKU has no box count at all.
+    const svdBoxes =
+      sourceMapping.status === 'mapped' ? (svd === null ? 0 : svd.quantity) : null;
+    // Zero boxes is zero units under any pack size, so it never needs a factor.
+    sources.svd =
+      svdBoxes === null || svdBoxes === 0
+        ? svdBoxes
+        : svdUnitsPerBox === null
+          ? null
+          : toUnits(svdBoxes, svdUnitsPerBox);
+
     if (staleSource) {
       return {
         marketplaceId: item.marketplace_id,
@@ -364,6 +410,8 @@ export async function assembleRecommendations(
         isLegacy,
         fnSku,
         sources,
+        svdBoxes,
+        svdUnitsPerBox,
         supplyBreakdown: null,
         recommendation: {
           status: 'needs-review',
@@ -384,15 +432,13 @@ export async function assembleRecommendations(
         isLegacy,
         fnSku,
         sources,
+        svdBoxes,
+        svdUnitsPerBox,
         supplyBreakdown: null,
         recommendation: { status: 'needs-review', reason: sourceMapping.reason },
       };
     }
 
-    const svd = svdById.get(sourceMapping.svdItemId) ?? null;
-    // Mapped but not carried at SVD is 0; carried with an unreadable quantity
-    // stays UNKNOWN.
-    sources.svd = svd === null ? 0 : svd.quantity;
     const supply = calculateUsableSupply({
       fba: fba
         ? {
@@ -409,6 +455,7 @@ export async function assembleRecommendations(
           }
         : null,
       svd: svd ? { quantity: svd.quantity } : null,
+      svdUnitsPerBox,
       policy,
     });
 
@@ -435,6 +482,8 @@ export async function assembleRecommendations(
       isLegacy,
       fnSku,
       sources,
+      svdBoxes,
+      svdUnitsPerBox,
       supplyBreakdown: supply.status === 'ok' ? supply.breakdown : null,
       recommendation,
     };
