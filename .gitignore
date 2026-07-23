@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Superpowers brainstorm scratch state (server pids, ports, generated html)
+.superpowers/
