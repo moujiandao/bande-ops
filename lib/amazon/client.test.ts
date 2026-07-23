@@ -210,6 +210,21 @@ describe('SpApiClient', () => {
     });
   });
 
+  it('creates a merchant listings report with no date range', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response({ reportId: 'report-9' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const reportId = await new SpApiClient().createMerchantListingsReport();
+
+    expect(reportId).toBe('report-9');
+    const [, request] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(request.body));
+    expect(body.reportType).toBe('GET_MERCHANT_LISTINGS_ALL_DATA');
+    // It is a snapshot of all listings, not a windowed report.
+    expect(body.dataStartTime).toBeUndefined();
+    expect(body.dataEndTime).toBeUndefined();
+  });
+
   it('downloads report documents without Amazon auth headers', async () => {
     const fetchMock = vi
       .fn()

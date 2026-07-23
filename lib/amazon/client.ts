@@ -13,6 +13,7 @@ import { getAmazonConfig } from './config';
 import { getAccessToken } from './lwa';
 import {
   buildLedgerReportBody,
+  buildMerchantListingsReportBody,
   type ReportDocument,
   type ReportStatus,
 } from './reports';
@@ -41,6 +42,9 @@ export interface AmazonClient {
     opts?: ListAwdInventoryOptions,
   ): Promise<AwdInventorySummary[]>;
   createLedgerReport(opts: CreateLedgerReportOptions): Promise<string>;
+  createMerchantListingsReport(opts?: {
+    marketplace?: Marketplace;
+  }): Promise<string>;
   getReportUntilDone(opts: GetReportUntilDoneOptions): Promise<CompletedReport>;
   downloadReportDocument(opts: DownloadReportDocumentOptions): Promise<string>;
 }
@@ -318,6 +322,25 @@ export class SpApiClient implements AmazonClient {
 
     if (!data.reportId) {
       throw new Error('createLedgerReport: SP-API did not return reportId.');
+    }
+    return data.reportId;
+  }
+
+  async createMerchantListingsReport(
+    opts: { marketplace?: Marketplace } = {},
+  ): Promise<string> {
+    const marketplace = opts.marketplace ?? DEFAULT_MARKETPLACE;
+    const data = await this.request<{ reportId?: string }>({
+      method: 'POST',
+      path: '/reports/2021-06-30/reports',
+      marketplace,
+      body: buildMerchantListingsReportBody({ marketplaceId: marketplace.id }),
+    });
+
+    if (!data.reportId) {
+      throw new Error(
+        'createMerchantListingsReport: SP-API did not return reportId.',
+      );
     }
     return data.reportId;
   }
