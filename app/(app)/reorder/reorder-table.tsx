@@ -25,6 +25,20 @@ function num(value: number | null | undefined): string {
   return value === null || value === undefined ? '—' : String(Math.round(value));
 }
 
+/**
+ * The SVD column shows UNITS, but SVD reports boxes. This tooltip exposes the
+ * derivation so the number is auditable, and names the reason when it is blank.
+ */
+function svdCellTitle(row: RecommendationRow): string {
+  if (row.svdBoxes === null) return 'SVD quantity unavailable';
+  if (row.svdBoxes === 0) return 'Not carried at SVD';
+  if (row.svdUnitsPerBox === null) {
+    return `${row.svdBoxes} boxes — set units per box in Settings to convert to units`;
+  }
+  const units = row.svdBoxes * row.svdUnitsPerBox;
+  return `${units} units — ${row.svdBoxes} boxes × ${row.svdUnitsPerBox}`;
+}
+
 function coverDays(supply: number | null, demand: number | null): number | null {
   if (supply === null || demand === null || demand <= 0) return null;
   return Math.floor(supply / demand);
@@ -74,7 +88,12 @@ const COLUMNS: { key: SortKey; label: string; title: string; numeric: boolean }[
   { key: 'sku', label: 'SKU', title: 'Seller SKU', numeric: false },
   { key: 'fba', label: 'FBA', title: 'Fulfillable units at FBA', numeric: true },
   { key: 'awd', label: 'AWD', title: 'Units at AWD counted as supply', numeric: true },
-  { key: 'svd', label: 'SVD', title: 'Units available at SVD', numeric: true },
+  {
+    key: 'svd',
+    label: 'SVD',
+    title: 'Units available at SVD (converted from boxes; hover a cell for the math)',
+    numeric: true,
+  },
   { key: 'total', label: 'Total', title: 'Total usable supply', numeric: true },
   { key: 'perDay', label: 'Per day', title: 'Units sold per day', numeric: true },
   { key: 'cover', label: 'Cover', title: 'Days of supply at current demand', numeric: true },
@@ -176,7 +195,10 @@ export function ReorderTable({
               <td className="px-3 py-2 text-right tabular-nums text-muted">
                 {num(row.sources.awd)}
               </td>
-              <td className="px-3 py-2 text-right tabular-nums text-muted">
+              <td
+                className="px-3 py-2 text-right tabular-nums text-muted"
+                title={svdCellTitle(row)}
+              >
                 {num(row.sources.svd)}
               </td>
               <td className="px-3 py-2 text-right tabular-nums text-foreground">
