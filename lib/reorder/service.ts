@@ -38,7 +38,11 @@ export interface RecommendationRow {
   dailyDemand: number | null;
   velocitySampleDays: number | null;
   sourceMapping:
-    | { status: 'mapped'; svdItemId: string; mappingSource: 'fn_sku' | 'sku' | 'manual' }
+    | {
+        status: 'mapped';
+        svdItemId: string;
+        mappingSource: 'fn_sku' | 'sku' | 'svd_item_id' | 'manual';
+      }
     | { status: 'needs-review'; reason: 'missing-svd-mapping' };
   /** Long-dead SKU: excluded from the reorder and review lists. */
   isLegacy: boolean;
