@@ -24,6 +24,7 @@ import {
   savePolicyAction,
   saveDefaultsAction,
   saveSkuOverrideAction,
+  saveSvdUnitsPerBoxAction,
 } from './settings-actions';
 
 function policyForm(overrides: Record<string, string> = {}): FormData {
@@ -205,5 +206,81 @@ describe('saveSkuOverrideAction coverage', () => {
     expect(insert).toHaveBeenCalledWith(
       expect.objectContaining({ sku: 'SKU-1', target_coverage_days: null }),
     );
+  });
+});
+
+describe('saveSvdUnitsPerBoxAction', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.requireUser.mockResolvedValue({ id: 'user-1' });
+  });
+
+  it('inserts a per-SKU row carrying only the box size when none exists', async () => {
+    const { client, insert } = makeSettingsClient(null);
+    mocks.createClient.mockResolvedValue(client);
+
+    const form = new FormData();
+    form.set('sku', 'SKU-1');
+    form.set('svdUnitsPerBox', '60');
+
+    await saveSvdUnitsPerBoxAction(form);
+
+    const payload = insert.mock.calls[0][0];
+    expect(payload).toMatchObject({ sku: 'SKU-1', svd_units_per_box: 60 });
+    // Lead time and safety stock must be absent, so the row inherits them from
+    // the global default rather than pinning them.
+    expect(payload).not.toHaveProperty('lead_time_days');
+    expect(payload).not.toHaveProperty('safety_stock');
+  });
+
+  it('updates the existing row without disturbing its other fields', async () => {
+    const { client, insert, update } = makeSettingsClient('row-9');
+    mocks.createClient.mockResolvedValue(client);
+
+    const form = new FormData();
+    form.set('sku', 'SKU-1');
+    form.set('svdUnitsPerBox', '30');
+
+    await saveSvdUnitsPerBoxAction(form);
+
+    expect(insert).not.toHaveBeenCalled();
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({ svd_units_per_box: 30 }),
+    );
+  });
+
+  it('stores NULL to clear the box size when the field is blank', async () => {
+    const { client, insert } = makeSettingsClient(null);
+    mocks.createClient.mockResolvedValue(client);
+
+    const form = new FormData();
+    form.set('sku', 'SKU-1');
+    form.set('svdUnitsPerBox', '');
+
+    await saveSvdUnitsPerBoxAction(form);
+
+    expect(insert).toHaveBeenCalledWith(
+      expect.objectContaining({ svd_units_per_box: null }),
+    );
+  });
+
+  it('rejects a zero or negative box size before writing', async () => {
+    const { client, insert } = makeSettingsClient(null);
+    mocks.createClient.mockResolvedValue(client);
+
+    const form = new FormData();
+    form.set('sku', 'SKU-1');
+    form.set('svdUnitsPerBox', '0');
+
+    await expect(saveSvdUnitsPerBoxAction(form)).rejects.toThrow('positive whole number');
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it('rejects a missing SKU', async () => {
+    const form = new FormData();
+    form.set('svdUnitsPerBox', '60');
+
+    await expect(saveSvdUnitsPerBoxAction(form)).rejects.toThrow('A SKU is required');
+    expect(mocks.createClient).not.toHaveBeenCalled();
   });
 });
