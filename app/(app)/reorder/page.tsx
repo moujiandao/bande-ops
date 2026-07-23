@@ -66,7 +66,6 @@ function RowTable({
         </thead>
         <tbody>
           {rows.map((row) => {
-            const b = row.supplyBreakdown;
             return (
               <tr
                 key={`${row.marketplaceId}:${row.sku}`}
@@ -79,13 +78,13 @@ function RowTable({
                   {row.sku}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums text-muted">
-                  {num(b?.fbaFulfillable)}
+                  {num(row.sources.fba)}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums text-muted">
-                  {num(b ? b.awdAvailable + b.awdReplenishment : null)}
+                  {num(row.sources.awd)}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums text-muted">
-                  {num(b?.svdAvailable)}
+                  {num(row.sources.svd)}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums text-foreground">
                   {num(row.usableSupply)}

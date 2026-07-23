@@ -42,6 +42,16 @@ export interface RecommendationRow {
     | { status: 'needs-review'; reason: 'missing-svd-mapping' };
   /** Long-dead SKU: excluded from the reorder and review lists. */
   isLegacy: boolean;
+  /**
+   * Per-source quantities, populated even when the recommendation fails.
+   * usableSupply/supplyBreakdown are null whenever anything blocks the math,
+   * but what we DO know about each source is still worth showing.
+   */
+  sources: {
+    fba: number | null;
+    awd: number | null;
+    svd: number | null;
+  };
   fnSku: string | null;
   supplyBreakdown:
     | (Extract<UsableSupplyResult, { status: 'ok' }>['breakdown'])
@@ -309,6 +319,15 @@ export async function assembleRecommendations(
       openDate: item.open_date,
       lastSoldDate: velocityByKey.get(key)?.last_sold_date ?? null,
     });
+    const sources = {
+      fba: fba?.fulfillable_quantity ?? null,
+      awd:
+        awd === null
+          ? null
+          : (awd.available_distributable_quantity ?? 0) +
+            (awd.replenishment_quantity ?? 0),
+      svd: null as number | null,
+    };
     const sourceMapping = resolveSourceMapping({
       amazonSku: item.sku,
       fnSku,
@@ -335,6 +354,7 @@ export async function assembleRecommendations(
         sourceMapping,
         isLegacy,
         fnSku,
+        sources,
         supplyBreakdown: null,
         recommendation: {
           status: 'needs-review',
@@ -354,12 +374,14 @@ export async function assembleRecommendations(
         sourceMapping,
         isLegacy,
         fnSku,
+        sources,
         supplyBreakdown: null,
         recommendation: { status: 'needs-review', reason: sourceMapping.reason },
       };
     }
 
     const svd = svdById.get(sourceMapping.svdItemId) ?? null;
+    sources.svd = svd?.quantity ?? null;
     const supply = calculateUsableSupply({
       fba: fba
         ? {
@@ -401,6 +423,7 @@ export async function assembleRecommendations(
       sourceMapping,
       isLegacy,
       fnSku,
+      sources,
       supplyBreakdown: supply.status === 'ok' ? supply.breakdown : null,
       recommendation,
     };
