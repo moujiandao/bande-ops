@@ -143,9 +143,9 @@ export default async function ReorderPage() {
                     >
                       <span
                         className="truncate font-mono text-sm text-foreground"
-                        title={`${row.title} — ${row.sku}`}
+                        title={`${row.title} — FNSKU ${row.fnSku ?? 'unknown'}`}
                       >
-                        {row.fnSku ?? row.sku}
+                        {row.sku}
                       </span>
                       <div className="flex flex-col items-end">
                         <span className="text-2xl font-semibold tabular-nums text-accent-strong">
@@ -182,9 +182,9 @@ export default async function ReorderPage() {
                   >
                     <span
                       className="truncate font-mono text-sm text-foreground"
-                      title={`${row.title} — ${row.sku}`}
+                      title={`${row.title} — FNSKU ${row.fnSku ?? 'unknown'}`}
                     >
-                      {row.fnSku ?? row.sku}
+                      {row.sku}
                     </span>
                     <Badge className="border-border bg-panel-muted text-muted">
                       Needs review
@@ -215,9 +215,9 @@ export default async function ReorderPage() {
                   >
                     <span
                       className="truncate font-mono text-sm text-foreground"
-                      title={`${row.title} — ${row.sku}`}
+                      title={`${row.title} — FNSKU ${row.fnSku ?? 'unknown'}`}
                     >
-                      {row.fnSku ?? row.sku}
+                      {row.sku}
                     </span>
                     <span className="text-xs font-medium text-muted">No reorder</span>
                   </li>
@@ -246,9 +246,9 @@ export default async function ReorderPage() {
               <li
                 key={`${row.marketplaceId}:${row.sku}`}
                 className="truncate font-mono text-xs text-muted"
-                title={`${row.title} — ${row.sku}`}
+                title={`${row.title} — FNSKU ${row.fnSku ?? 'unknown'}`}
               >
-                {row.fnSku ?? row.sku}
+                {row.sku}
               </li>
             ))}
           </ul>
