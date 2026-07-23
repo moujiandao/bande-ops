@@ -38,6 +38,17 @@ function makeAdminMock(failTable?: string) {
     if (table === 'replenishment_policy') {
       return { select: vi.fn().mockReturnValue(makePolicySelect()) };
     }
+    if (table === 'catalog_items') {
+      // Written by the catalog sync (upsert) AND read by the velocity sync's
+      // MSKU-truncation reconciliation (select().eq() -> rows). Empty rows keep
+      // reconciliation a no-op, so seeded fake counts are unchanged.
+      return {
+        upsert,
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+        }),
+      };
+    }
     if (table === failTable) {
       return {
         upsert: vi

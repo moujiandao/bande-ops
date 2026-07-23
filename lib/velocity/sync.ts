@@ -15,6 +15,7 @@ import {
   normalizeLedgerRows,
   type FbaDailyVelocityInputRow,
 } from './ledger-mapping';
+import { buildCatalogSkuIndex, reconcileVelocityRows } from './reconcile-sku';
 
 type DbError = { message: string } | null;
 
@@ -36,6 +37,24 @@ type PolicyDb = {
       eq(column: string, value: string): {
         maybeSingle(): PromiseLike<{ data: unknown; error: DbError }>;
       };
+    };
+  };
+};
+
+/**
+ * The read seam for `catalog_items`, narrowed here for the same reason as
+ * {@link PolicyDb}: the `admin` dep stays the shared `SyncWriter` seam (see the
+ * "Do not widen a sync module's admin dep" rule in CLAUDE.md) and the multi-row
+ * catalog read is narrowed only at its single point of use. `.eq()` resolves
+ * directly to `{ data, error }` (no `.single()`), yielding every matching row.
+ */
+type CatalogDb = {
+  from(table: string): {
+    select(columns?: string): {
+      eq(
+        column: string,
+        value: string,
+      ): PromiseLike<{ data: unknown; error: DbError }>;
     };
   };
 };
@@ -106,11 +125,31 @@ export async function syncFbaLedgerVelocity(
       marketplace,
       reportDocumentId: report.reportDocumentId,
     });
-    const ledgerRows = normalizeLedgerRows(tsv, {
+    const normalizedRows = normalizeLedgerRows(tsv, {
       marketplaceId: marketplace.id,
       reportId,
       syncRunId,
     });
+
+    // Reconcile Amazon-truncated ledger MSKUs back to canonical catalog SKUs
+    // before grouping, so `sales_velocity.sku` joins to `catalog_items` (#27).
+    // `catalog_items` has no fn_sku column, so we load only `sku` and the
+    // FNSKU cross-reference rule stays dormant (see reconcile-sku.ts).
+    const catalogRes = await (deps.admin as unknown as CatalogDb)
+      .from('catalog_items')
+      .select('sku')
+      .eq('marketplace_id', marketplace.id);
+    if (catalogRes.error) {
+      throw new Error(
+        `syncFbaLedgerVelocity: catalog read failed: ${catalogRes.error.message}`,
+      );
+    }
+    const catalogSkuIndex = buildCatalogSkuIndex(
+      ((catalogRes.data ?? []) as Array<{ sku?: string | null }>).map((row) => ({
+        sku: row.sku ?? '',
+      })),
+    );
+    const ledgerRows = reconcileVelocityRows(normalizedRows, catalogSkuIndex);
 
     const velocityRows = [...groupLedgerRows(ledgerRows).values()].map((rows) => {
       const first = rows[0];

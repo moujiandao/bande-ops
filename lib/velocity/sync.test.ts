@@ -5,10 +5,13 @@ import {
   type SyncFbaLedgerVelocityDeps,
 } from './sync';
 
-function makeAdminMock() {
+function makeAdminMock(catalogRows: Array<{ sku: string }> = []) {
   const ledgerUpsert = vi.fn().mockResolvedValue({ error: null });
   const velocityUpsert = vi.fn().mockResolvedValue({ error: null });
   const stateUpsert = vi.fn().mockResolvedValue({ error: null });
+  const catalogSelect = vi.fn().mockReturnValue({
+    eq: vi.fn().mockResolvedValue({ data: catalogRows, error: null }),
+  });
   const runInsert = vi.fn().mockReturnValue({
     select: vi.fn().mockReturnValue({
       single: vi.fn().mockResolvedValue({ data: { id: 'run-1' }, error: null }),
@@ -28,6 +31,7 @@ function makeAdminMock() {
     }
     if (table === 'source_sync_state') return { upsert: stateUpsert };
     if (table === 'replenishment_policy') return { select: policySelect };
+    if (table === 'catalog_items') return { select: catalogSelect };
     if (table === 'fba_daily_velocity_inputs') return { upsert: ledgerUpsert };
     if (table === 'sales_velocity') return { upsert: velocityUpsert };
     throw new Error(`Unexpected table: ${table}`);
@@ -104,6 +108,46 @@ describe('syncFbaLedgerVelocity', () => {
       velocityRows: 2,
       syncRunId: 'run-1',
     });
+  });
+
+  it('reconciles a truncated ledger MSKU to the canonical catalog SKU before upsert', async () => {
+    const { admin, ledgerUpsert, velocityUpsert } = makeAdminMock([
+      { sku: 'WIDGET-BLUE-LONG-CANONICAL-0001' },
+      { sku: 'GADGET-RED-0002' },
+    ]);
+    const client = {
+      createLedgerReport: vi.fn().mockResolvedValue('report-1'),
+      getReportUntilDone: vi
+        .fn()
+        .mockResolvedValue({ reportId: 'report-1', reportDocumentId: 'doc-1' }),
+      downloadReportDocument: vi.fn().mockResolvedValue(
+        [
+          'Date\tFNSKU\tMSKU\tDisposition\tCustomer Shipments\tEnding Warehouse Balance',
+          // Amazon truncated the long MSKU; unique catalog-SKU prefix match.
+          '2026-07-21\tFNSKU-1\tWIDGET-BLUE-LONG-CAN\tSELLABLE\t3\t7',
+          '2026-07-20\tFNSKU-1\tWIDGET-BLUE-LONG-CAN\tSELLABLE\t5\t2',
+        ].join('\n'),
+      ),
+    };
+
+    await syncFbaLedgerVelocity({
+      admin,
+      client,
+      now: new Date('2026-07-21T00:00:00.000Z'),
+    });
+
+    // sales_velocity receives the canonical catalog SKU, not the truncated MSKU.
+    expect(velocityUpsert).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ sku: 'WIDGET-BLUE-LONG-CANONICAL-0001' }),
+      ]),
+      { onConflict: 'marketplace_id,sku' },
+    );
+    // And the daily ledger inputs are keyed by the same canonical SKU.
+    const ledgerArg = ledgerUpsert.mock.calls[0][0] as Array<{ sku: string }>;
+    expect(ledgerArg.every((r) => r.sku === 'WIDGET-BLUE-LONG-CANONICAL-0001')).toBe(
+      true,
+    );
   });
 
   it('records sanitized failure state when report download fails', async () => {
