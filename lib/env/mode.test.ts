@@ -53,6 +53,20 @@ describe('getDataSourceMode', () => {
     expect(mode.ads).toBe('production');
   });
 
+  it('treats an empty ADS_USE_SANDBOX as set, never falling through to the shared flag', () => {
+    // lib/ads/config.ts resolves with ?? , so an empty-but-set ADS_USE_SANDBOX
+    // short-circuits and the real client stays on the sandbox host. If this
+    // module disagreed, the banner would vanish while Ads served fixtures.
+    vi.stubEnv('AMAZON_USE_FAKE', 'false');
+    vi.stubEnv('ADS_USE_SANDBOX', '');
+    vi.stubEnv('AMAZON_USE_SANDBOX', 'false');
+
+    const mode = getDataSourceMode();
+
+    expect(mode.amazon).toBe('production');
+    expect(mode.ads).toBe('sandbox');
+  });
+
   it('flags a production deploy that is not serving live data', () => {
     vi.stubEnv('VERCEL_ENV', 'production');
     vi.stubEnv('AMAZON_USE_FAKE', 'true');

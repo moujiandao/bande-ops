@@ -58,6 +58,30 @@ describe('AdsApiClient', () => {
     expect(headers['user-agent']).toMatch(/^bande-ops\/\d+\.\d+\.\d+ /);
   });
 
+  it('gives up after MAX_RETRIES and throws rather than swallowing the failure', async () => {
+    const fetchMock = vi.fn((url: string | URL) => {
+      if (String(url).includes('api.amazon.com')) {
+        return Promise.resolve(tokenResponse());
+      }
+      // retry-after: 0 keeps the waits instant while still exercising the loop.
+      return Promise.resolve(
+        new Response('still throttled', {
+          status: 429,
+          headers: { 'retry-after': '0' },
+        }),
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(new AdsApiClient().listCampaigns()).rejects.toThrow(/429/);
+
+    const apiCalls = fetchMock.mock.calls.filter(
+      (call) => !String(call[0]).includes('api.amazon.com'),
+    );
+    // One initial attempt plus MAX_RETRIES (3) retries.
+    expect(apiCalls).toHaveLength(4);
+  });
+
   it('waits the Retry-After interval before retrying a throttled request', async () => {
     const throttled = new Response('slow down', {
       status: 429,

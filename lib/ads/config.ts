@@ -36,7 +36,15 @@ const REQUIRED_ENV = [
 const PROD_HOST = 'advertising-api.amazon.com';
 const SANDBOX_HOST = 'advertising-api-test.amazon.com';
 
-function readUseSandbox(): boolean {
+/**
+ * Whether Advertising API calls target the sandbox host.
+ *
+ * Exported so `lib/env/mode.ts` can report what is actually live by calling
+ * this rather than reimplementing the precedence. Note the `??` chain below is
+ * load-bearing: an empty-but-set ADS_USE_SANDBOX short-circuits and keeps this
+ * client on the sandbox host, which a `||` chain would silently get wrong.
+ */
+export function readUseSandbox(): boolean {
   // Ads has its own sandbox switch so it can be promoted to production
   // independently of SP-API (separate creds, separate rollout). Falls back to
   // the shared AMAZON_USE_SANDBOX, then sandbox-first by default.

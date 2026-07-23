@@ -1,5 +1,8 @@
 import 'server-only';
 
+import { readUseSandbox as readAdsUseSandbox } from '../ads/config';
+import { readUseSandbox as readAmazonUseSandbox } from '../amazon/config';
+
 /**
  * Which data each Amazon-backed client is actually serving.
  *
@@ -10,9 +13,10 @@ import 'server-only';
  * numbers are fiction. This module makes the mode explicit so the UI can say so
  * out loud (issue #28).
  *
- * Mirrors the resolution order in `lib/amazon/index.ts`, `lib/amazon/config.ts`,
- * and `lib/ads/config.ts`. Kept in one place so the banner cannot disagree with
- * the clients about what is live.
+ * Delegates to each client's own `readUseSandbox()` rather than restating the
+ * flag precedence, because the two chains genuinely differ (SP-API reads one
+ * flag; Ads falls back through `??`, where an empty-but-set value still counts).
+ * A banner that disagrees with the clients is worse than no banner.
  */
 
 export type SourceMode = 'fake' | 'sandbox' | 'production';
@@ -33,26 +37,22 @@ function isFake(): boolean {
   return process.env.AMAZON_USE_FAKE === 'true';
 }
 
-/** Sandbox-first: anything other than an explicit 'false' means sandbox. */
-function isSandbox(raw: string | undefined, fallback: string | undefined): boolean {
-  const value = (raw?.trim() || fallback?.trim() || 'true').toLowerCase();
-  return value !== 'false';
-}
-
 export function getDataSourceMode(): DataSourceMode {
   const fake = isFake();
-  const sharedSandbox = process.env.AMAZON_USE_SANDBOX;
 
+  // Call each client's own sandbox resolver rather than reimplementing the
+  // precedence. These are cheap, throw nothing, and read no credentials — the
+  // throwing parts of getAmazonConfig/getAdsConfig are deliberately not used.
   const amazon: SourceMode = fake
     ? 'fake'
-    : isSandbox(sharedSandbox, undefined)
+    : readAmazonUseSandbox()
       ? 'sandbox'
       : 'production';
 
-  // Ads can be promoted independently, falling back to the shared flag.
+  // Ads can be promoted independently; its resolver owns that fallback chain.
   const ads: SourceMode = fake
     ? 'fake'
-    : isSandbox(process.env.ADS_USE_SANDBOX, sharedSandbox)
+    : readAdsUseSandbox()
       ? 'sandbox'
       : 'production';
 

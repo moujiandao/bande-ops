@@ -26,7 +26,14 @@ const REQUIRED_ENV = [
   'SPAPI_REFRESH_TOKEN',
 ] as const;
 
-function readUseSandbox(): boolean {
+/**
+ * Whether SP-API calls target the sandbox host.
+ *
+ * Exported so `lib/env/mode.ts` can report what is actually live by calling
+ * this rather than reimplementing the precedence — a banner that disagrees with
+ * the client is worse than no banner.
+ */
+export function readUseSandbox(): boolean {
   // Default to sandbox-first (see CLAUDE.md Non-Obvious Decisions).
   const raw = (process.env.AMAZON_USE_SANDBOX ?? 'true').trim().toLowerCase();
   return raw !== 'false';
