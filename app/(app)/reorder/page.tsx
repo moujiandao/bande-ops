@@ -1,5 +1,10 @@
 import { Badge } from '@/components/ui/badge';
-import { ReorderTable } from './reorder-table';
+import {
+  ReorderTable,
+  amazonSideCover,
+  suggestedShipQty,
+  REPLENISH_TARGET_DAYS,
+} from './reorder-table';
 import { assembleRecommendations, type RecommendationRow } from '@/lib/reorder/service';
 import { refreshSvdInventoryAction } from '@/lib/svd/actions';
 import { createClient } from '@/lib/supabase/server';
@@ -31,6 +36,18 @@ export default async function ReorderPage() {
   // collapsed section so an excluded SKU is never silently invisible.
   const legacy = rows.filter((row) => row.isLegacy);
   const active = rows.filter((row) => !row.isLegacy);
+
+  // Stock sitting at SVD that FBA needs now. Coverage here counts only what is
+  // already at or heading to Amazon (FBA + AWD) — including SVD would mask the
+  // very SKUs that need shipping, since their stock is what we are looking at.
+  const replenishFromSvd = active.filter((row) => {
+    const cover = amazonSideCover(row);
+    return (
+      cover !== null &&
+      cover < REPLENISH_TARGET_DAYS &&
+      suggestedShipQty(row, REPLENISH_TARGET_DAYS) !== null
+    );
+  });
 
   const toReorder = active
     .filter((row) => row.recommendation.status === 'ok' && reorderQty(row) > 0)
@@ -123,6 +140,29 @@ export default async function ReorderPage() {
         </div>
       ) : (
         <div className="flex flex-col gap-8">
+          {replenishFromSvd.length > 0 ? (
+            <section className="flex flex-col gap-3">
+              <div className="flex items-baseline justify-between gap-3">
+                <h2 className="text-sm font-semibold text-foreground">
+                  Replenish from SVD to FBA
+                </h2>
+                <Badge variant="accent">{replenishFromSvd.length}</Badge>
+              </div>
+              <p className="max-w-prose text-xs text-muted">
+                Under {REPLENISH_TARGET_DAYS} days of cover from stock already at
+                or heading to Amazon (FBA + AWD), with units available at SVD.
+                The quantity is what it takes to reach {REPLENISH_TARGET_DAYS}{' '}
+                days, capped at what SVD actually holds — no supplier order
+                needed.
+              </p>
+              <ReorderTable
+                rows={replenishFromSvd}
+                trailingHeader="Ship"
+                variant="replenish"
+              />
+            </section>
+          ) : null}
+
           <section className="flex flex-col gap-3">
             <div className="flex items-baseline justify-between gap-3">
               <h2 className="text-sm font-semibold text-foreground">Reorder now</h2>
