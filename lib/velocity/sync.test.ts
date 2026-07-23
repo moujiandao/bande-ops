@@ -70,7 +70,8 @@ describe('syncFbaLedgerVelocity', () => {
 
     expect(client.createLedgerReport).toHaveBeenCalledWith({
       marketplace: DEFAULT_MARKETPLACE,
-      dataStartTime: '2025-07-21T00:00:00.000Z',
+      // 550-day legacy window, wider than the 365-day velocity lookback.
+      dataStartTime: '2025-01-17T00:00:00.000Z',
       dataEndTime: '2026-07-21T00:00:00.000Z',
     });
     expect(ledgerUpsert).toHaveBeenCalledWith(expect.any(Array), {

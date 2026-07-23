@@ -10,6 +10,7 @@ import {
   recordSyncSuccess,
   type SyncWriter,
 } from '@/lib/sync/run';
+import { LEGACY_DEFAULTS } from '@/lib/reorder/legacy';
 import { calculateSalesVelocity } from './calculate';
 import {
   normalizeLedgerRows,
@@ -112,8 +113,14 @@ export async function syncFbaLedgerVelocity(
     );
 
     const now = deps.now ?? new Date();
+    // Fetch the wider of the velocity and legacy windows. calculateSalesVelocity
+    // self-limits to velocityMaxLookbackDays, so a longer fetch cannot change
+    // velocity — it only lets us see whether a SKU sold at all further back.
     const start = new Date(now);
-    start.setUTCDate(start.getUTCDate() - policy.velocityMaxLookbackDays);
+    start.setUTCDate(
+      start.getUTCDate() -
+        Math.max(policy.velocityMaxLookbackDays, LEGACY_DEFAULTS.lookbackDays),
+    );
 
     const reportId = await deps.client.createLedgerReport({
       marketplace,
@@ -173,6 +180,14 @@ export async function syncFbaLedgerVelocity(
         in_stock_sample_days: result.inStockSampleDays,
         lookback_days_used: result.lookbackDaysUsed,
         daily_velocity: result.dailyVelocity,
+        // Most recent day this SKU actually shipped, across the whole fetched
+        // window — null when it never sold in that period.
+        last_sold_date:
+          rows
+            .filter((row) => row.customer_shipments > 0)
+            .map((row) => row.activity_date)
+            .sort()
+            .at(-1) ?? null,
         status: result.status,
         calculated_at: new Date().toISOString(),
         sync_run_id: syncRunId,

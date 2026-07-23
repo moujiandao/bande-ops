@@ -13,6 +13,7 @@ import {
 import { recommend, type Recommendation } from './recommend';
 import { resolveSourceMapping } from './mappings';
 import { calculateUsableSupply, type UsableSupplyResult } from './supply';
+import { classifyLegacy } from './legacy';
 
 type ReorderReader = Pick<SupabaseClient, 'from'>;
 
@@ -39,6 +40,9 @@ export interface RecommendationRow {
   sourceMapping:
     | { status: 'mapped'; svdItemId: string; mappingSource: 'fn_sku' | 'sku' | 'manual' }
     | { status: 'needs-review'; reason: 'missing-svd-mapping' };
+  /** Long-dead SKU: excluded from the reorder and review lists. */
+  isLegacy: boolean;
+  fnSku: string | null;
   supplyBreakdown:
     | (Extract<UsableSupplyResult, { status: 'ok' }>['breakdown'])
     | null;
@@ -69,7 +73,12 @@ const FALLBACK_DEFAULTS: ReplenishmentValues = {
   coverageDays: 90,
 };
 
-type CatalogRow = { marketplace_id: string; sku: string; title: string };
+type CatalogRow = {
+  marketplace_id: string;
+  sku: string;
+  title: string;
+  open_date: string | null;
+};
 type FbaRow = {
   marketplace_id: string;
   sku: string;
@@ -104,6 +113,7 @@ type VelocityRow = {
   daily_velocity: number | string | null;
   status: string;
   in_stock_sample_days: number;
+  last_sold_date: string | null;
 };
 type SettingRow = {
   marketplace_id: string;
@@ -195,7 +205,7 @@ export async function assembleRecommendations(
   ] = await Promise.all([
     deps.supabase
       .from('catalog_items')
-      .select('marketplace_id, sku, title')
+      .select('marketplace_id, sku, title, open_date')
       .eq('marketplace_id', marketplace.id),
     deps.supabase
       .from('inventory_levels')
@@ -218,7 +228,9 @@ export async function assembleRecommendations(
       .eq('marketplace_id', marketplace.id),
     deps.supabase
       .from('sales_velocity')
-      .select('marketplace_id, sku, daily_velocity, status, in_stock_sample_days')
+      .select(
+        'marketplace_id, sku, daily_velocity, status, in_stock_sample_days, last_sold_date',
+      )
       .eq('marketplace_id', marketplace.id),
     deps.supabase
       .from('replenishment_settings')
@@ -291,6 +303,12 @@ export async function assembleRecommendations(
     const fba = fbaByKey.get(key) ?? null;
     const awd = awdByKey.get(key) ?? null;
     const fnSku = fba?.fn_sku ?? awd?.fn_sku ?? null;
+    // A SKU with no velocity row never sold inside the ledger window, which the
+    // classifier reads the same as a null last-sold date.
+    const isLegacy = classifyLegacy({
+      openDate: item.open_date,
+      lastSoldDate: velocityByKey.get(key)?.last_sold_date ?? null,
+    });
     const sourceMapping = resolveSourceMapping({
       amazonSku: item.sku,
       fnSku,
@@ -315,6 +333,8 @@ export async function assembleRecommendations(
         dailyDemand,
         velocitySampleDays: velocity?.in_stock_sample_days ?? null,
         sourceMapping,
+        isLegacy,
+        fnSku,
         supplyBreakdown: null,
         recommendation: {
           status: 'needs-review',
@@ -332,6 +352,8 @@ export async function assembleRecommendations(
         dailyDemand,
         velocitySampleDays: velocity?.in_stock_sample_days ?? null,
         sourceMapping,
+        isLegacy,
+        fnSku,
         supplyBreakdown: null,
         recommendation: { status: 'needs-review', reason: sourceMapping.reason },
       };
@@ -377,6 +399,8 @@ export async function assembleRecommendations(
       dailyDemand,
       velocitySampleDays: velocity?.in_stock_sample_days ?? null,
       sourceMapping,
+      isLegacy,
+      fnSku,
       supplyBreakdown: supply.status === 'ok' ? supply.breakdown : null,
       recommendation,
     };
