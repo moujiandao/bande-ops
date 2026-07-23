@@ -258,11 +258,42 @@ describe('SpApiClient', () => {
     const fetchMock = vi.fn().mockResolvedValue(response({ items: [] }));
     vi.stubGlobal('fetch', fetchMock);
 
-    await new SpApiClient().listCatalogItems();
+    await new SpApiClient().listCatalogItems({ sellerSkus: ['SKU-1'] });
 
     const [, request] = fetchMock.mock.calls[0] as [string, RequestInit];
     const headers = request.headers as Record<string, string>;
     expect(headers['user-agent']).toMatch(/^bande-ops\/\d+\.\d+\.\d+ /);
+  });
+
+  it('batches SKU lookups to the 20-identifier catalog limit', async () => {
+    // A fresh Response per call: a body can only be read once.
+    const fetchMock = vi.fn(async (_url: string | URL, _init?: RequestInit) =>
+      response({ items: [] }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const skus = Array.from({ length: 25 }, (_, i) => `SKU-${i}`);
+    await new SpApiClient().listCatalogItems({ sellerSkus: skus });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const first = new URL(String(fetchMock.mock.calls[0][0]));
+    const second = new URL(String(fetchMock.mock.calls[1][0]));
+    expect(first.searchParams.get('identifiers')?.split(',')).toHaveLength(20);
+    expect(second.searchParams.get('identifiers')?.split(',')).toHaveLength(5);
+    // Every batch must still carry sellerId, or SKU lookups 400.
+    expect(second.searchParams.get('sellerId')).toBe('seller-id');
+  });
+
+  it('refuses a catalog call with no identifiers instead of sending a doomed request', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    // Catalog Items is a search API: with neither identifiers nor keywords the
+    // real API returns 400 InvalidInput. Fail with a useful message instead.
+    await expect(new SpApiClient().listCatalogItems()).rejects.toThrow(
+      /sellerSkus/i,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('gives up after MAX_RETRIES and throws rather than swallowing the failure', async () => {
@@ -276,7 +307,7 @@ describe('SpApiClient', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(new SpApiClient().listCatalogItems()).rejects.toThrow(/429/);
+    await expect(new SpApiClient().listCatalogItems({ sellerSkus: ['SKU-1'] })).rejects.toThrow(/429/);
     // One initial attempt plus MAX_RETRIES (3) retries.
     expect(fetchMock).toHaveBeenCalledTimes(4);
   });
@@ -297,7 +328,7 @@ describe('SpApiClient', () => {
     try {
       const pending = new SpApiClient({
         onRetryDelay: (ms) => delays.push(ms),
-      }).listCatalogItems();
+      }).listCatalogItems({ sellerSkus: ['SKU-1'] });
       await vi.advanceTimersByTimeAsync(2000);
       await pending;
     } finally {

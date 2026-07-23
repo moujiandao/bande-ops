@@ -80,10 +80,24 @@ export class FakeAmazonClient implements AmazonClient {
     ];
   }
 
+  /**
+   * Mirrors the real API's constraint on purpose: Catalog Items is a search
+   * endpoint and 400s without identifiers. This fake previously accepted a
+   * no-arg call and returned the whole catalog, which is why `syncCatalog`
+   * passed every test while being impossible against production. A fake must
+   * never be more permissive than the thing it stands in for.
+   */
   async listCatalogItems(
-    _opts: ListCatalogItemsOptions = {},
+    opts: ListCatalogItemsOptions = {},
   ): Promise<CatalogItem[]> {
-    return this.catalog;
+    if (!opts.sellerSkus?.length) {
+      throw new Error(
+        'listCatalogItems requires sellerSkus — the Catalog Items API cannot ' +
+          'list a seller\'s products.',
+      );
+    }
+    const wanted = new Set(opts.sellerSkus);
+    return this.catalog.filter((item) => wanted.has(item.sku));
   }
 
   async getInventorySummaries(

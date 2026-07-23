@@ -86,6 +86,9 @@ export interface DownloadReportDocumentOptions {
 
 /** Transport policy (retry tuning, Retry-After, UA) is shared with lib/ads. */
 
+/** Catalog Items accepts at most 20 identifiers per search request. */
+const CATALOG_ID_LIMIT = 20;
+
 
 interface RequestOptions {
   method?: string;
@@ -199,27 +202,43 @@ export class SpApiClient implements AmazonClient {
     opts: ListCatalogItemsOptions = {},
   ): Promise<CatalogItem[]> {
     const marketplace = opts.marketplace ?? DEFAULT_MARKETPLACE;
-    // Catalog Items API (2022-04-01). TODO: verify against sandbox.
     const config = getAmazonConfig(marketplace);
-    const items: CatalogItem[] = [];
-    let nextToken: string | undefined;
 
-    do {
-      const data = await this.request<CatalogItemsResponse>({
-        path: '/catalog/2022-04-01/items',
-        marketplace,
-        query: {
-          marketplaceIds: marketplace.id,
-          includedData: 'identifiers,summaries,images',
-          identifiers: opts.sellerSkus,
-          identifiersType: opts.sellerSkus ? 'SKU' : undefined,
-          sellerId: opts.sellerSkus ? config.sellerId : undefined,
-          pageToken: nextToken,
-        },
-      });
-      items.push(...(data.items ?? []).map(mapCatalogItem));
-      nextToken = data.pagination?.nextToken;
-    } while (nextToken);
+    // Catalog Items (2022-04-01) is a SEARCH api: it cannot enumerate a
+    // seller's products. Without identifiers or keywords it returns 400
+    // InvalidInput, so refuse here with a message that names the fix.
+    if (!opts.sellerSkus?.length) {
+      throw new Error(
+        'listCatalogItems requires sellerSkus — the Catalog Items API cannot ' +
+          'list a seller\'s products. Source the SKU set from FBA inventory ' +
+          'summaries (see lib/catalog/sync.ts).',
+      );
+    }
+
+    const items: CatalogItem[] = [];
+
+    // Amazon accepts at most 20 identifiers per search.
+    for (let start = 0; start < opts.sellerSkus.length; start += CATALOG_ID_LIMIT) {
+      const batch = opts.sellerSkus.slice(start, start + CATALOG_ID_LIMIT);
+      let nextToken: string | undefined;
+
+      do {
+        const data = await this.request<CatalogItemsResponse>({
+          path: '/catalog/2022-04-01/items',
+          marketplace,
+          query: {
+            marketplaceIds: marketplace.id,
+            includedData: 'identifiers,summaries,images',
+            identifiers: batch,
+            identifiersType: 'SKU',
+            sellerId: config.sellerId,
+            pageToken: nextToken,
+          },
+        });
+        items.push(...(data.items ?? []).map(mapCatalogItem));
+        nextToken = data.pagination?.nextToken;
+      } while (nextToken);
+    }
 
     return items;
   }
