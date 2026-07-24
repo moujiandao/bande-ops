@@ -12,20 +12,19 @@ type RowOverrides = Omit<Partial<RecommendationRow>, 'sources'> & {
 
 function row(overrides: RowOverrides = {}): RecommendationRow {
   const { sources: sourceOverrides, ...rest } = overrides;
+  // `amazonSideCounted` is the ONLY quantity these pure functions read for the
+  // math; it is assembled (and policy-gated) in service.ts. Tests set it
+  // directly rather than reconstructing it from fba/awd here — reconstructing it
+  // was the very double-count bug this figure exists to prevent. fba/awd remain
+  // only because `amazonSideCover` reads them for its "both unknown" null guard.
   const sources = {
     fba: 10,
     awd: 0,
     svd: 0,
     fbaInbound: 0,
-    amazonSideCounted: 0,
+    amazonSideCounted: 10,
     ...sourceOverrides,
   };
-  // The counted amazon-side figure is derived in service.ts. Here it stands in
-  // as the sum of the fulfillable + counted inbound + AWD the test supplies,
-  // unless the case sets it explicitly. (The AWD-replenishment double-count that
-  // this figure exists to prevent is exercised at the service layer, not here.)
-  const amazonSideCounted = sourceOverrides?.amazonSideCounted ??
-    (sources.fba ?? 0) + (sources.fbaInbound ?? 0) + (sources.awd ?? 0);
   return {
     marketplaceId: 'ATVPDKIKX0DER',
     sku: 'SKU',
@@ -50,23 +49,23 @@ function row(overrides: RowOverrides = {}): RecommendationRow {
     supplyBreakdown: null,
     recommendation: { status: 'needs-review', reason: 'unknown-demand' },
     ...rest,
-    sources: { ...sources, amazonSideCounted },
+    sources,
   };
 }
 
 describe('amazonSideCover', () => {
-  it('counts only FBA and AWD, not SVD', () => {
-    // SVD stock cannot fulfil an order, so it must not extend Amazon-side cover.
+  it('derives days of cover from the counted amazon-side total', () => {
+    // 40 counted units at 4/day = 10 days.
     const result = amazonSideCover(
-      row({ sources: { fba: 10, awd: 30, svd: 9999, fbaInbound: 0 }, dailyDemand: 4 }),
+      row({ sources: { amazonSideCounted: 40 }, dailyDemand: 4 }),
     );
     expect(result).toBe(10);
   });
 
-  it('counts FBA incoming (fbaInbound) toward cover', () => {
-    // 10 fulfillable + 30 incoming + 0 AWD = 40 units; at 4/day that is 10 days.
+  it('ignores SVD, which cannot fulfil orders', () => {
+    // SVD is not part of the counted total and must not extend Amazon-side cover.
     const result = amazonSideCover(
-      row({ sources: { fba: 10, awd: 0, svd: 0, fbaInbound: 30 }, dailyDemand: 4 }),
+      row({ sources: { amazonSideCounted: 40, svd: 9999 }, dailyDemand: 4 }),
     );
     expect(result).toBe(10);
   });
@@ -76,10 +75,10 @@ describe('amazonSideCover', () => {
     expect(amazonSideCover(row({ dailyDemand: 0 }))).toBeNull();
   });
 
-  it('returns null when both Amazon-side sources are unknown', () => {
+  it('returns null when both FBA and AWD are unknown', () => {
     expect(
       amazonSideCover(
-        row({ sources: { fba: null, awd: null, svd: 100, fbaInbound: null } }),
+        row({ sources: { fba: null, awd: null, svd: 100, amazonSideCounted: 0 } }),
       ),
     ).toBeNull();
   });
@@ -87,18 +86,18 @@ describe('amazonSideCover', () => {
 
 describe('suggestedShipQty', () => {
   it('ships the shortfall to the coverage target', () => {
-    // Target 30 days at 4/day = 120 units; 20 on the Amazon side leaves 100.
+    // Target 30 days at 4/day = 120 units; 20 counted on the Amazon side leaves 100.
     const result = suggestedShipQty(
-      row({ sources: { fba: 20, awd: 0, svd: 500, fbaInbound: 0 }, dailyDemand: 4 }),
+      row({ sources: { amazonSideCounted: 20, svd: 500 }, dailyDemand: 4 }),
       30,
     );
     expect(result).toBe(100);
   });
 
-  it('credits FBA incoming so less is shipped from SVD', () => {
-    // Same as above but 50 units already inbound: shortfall 120 − 70 = 50.
+  it('ships less when the counted total is higher (e.g. FBA incoming credited)', () => {
+    // 70 counted (say 20 fulfillable + 50 inbound): shortfall 120 − 70 = 50.
     const result = suggestedShipQty(
-      row({ sources: { fba: 20, awd: 0, svd: 500, fbaInbound: 50 }, dailyDemand: 4 }),
+      row({ sources: { amazonSideCounted: 70, svd: 500 }, dailyDemand: 4 }),
       30,
     );
     expect(result).toBe(50);
@@ -106,24 +105,15 @@ describe('suggestedShipQty', () => {
 
   it('never suggests shipping more than SVD holds', () => {
     const result = suggestedShipQty(
-      row({ sources: { fba: 20, awd: 0, svd: 60, fbaInbound: 0 }, dailyDemand: 4 }),
+      row({ sources: { amazonSideCounted: 20, svd: 60 }, dailyDemand: 4 }),
       30,
     );
     expect(result).toBe(60);
   });
 
-  it('returns null when incoming alone already meets the target', () => {
-    // Fulfillable 20 + incoming 500 covers 30 days at 4/day; nothing to ship.
+  it('returns null when the counted total already meets the target', () => {
     const result = suggestedShipQty(
-      row({ sources: { fba: 20, awd: 0, svd: 500, fbaInbound: 500 }, dailyDemand: 4 }),
-      30,
-    );
-    expect(result).toBeNull();
-  });
-
-  it('returns null when the Amazon side already meets the target', () => {
-    const result = suggestedShipQty(
-      row({ sources: { fba: 500, awd: 0, svd: 500, fbaInbound: 0 }, dailyDemand: 4 }),
+      row({ sources: { amazonSideCounted: 500, svd: 500 }, dailyDemand: 4 }),
       30,
     );
     expect(result).toBeNull();
@@ -131,10 +121,7 @@ describe('suggestedShipQty', () => {
 
   it('returns null when SVD has nothing to send', () => {
     expect(
-      suggestedShipQty(
-        row({ sources: { fba: 0, awd: 0, svd: 0, fbaInbound: 0 } }),
-        30,
-      ),
+      suggestedShipQty(row({ sources: { amazonSideCounted: 0, svd: 0 } }), 30),
     ).toBeNull();
   });
 
@@ -142,10 +129,7 @@ describe('suggestedShipQty', () => {
     // Null here means the units could not be derived — an unset pack size, for
     // instance. Shipping off an unknown is exactly what must not happen.
     expect(
-      suggestedShipQty(
-        row({ sources: { fba: 0, awd: 0, svd: null, fbaInbound: 0 } }),
-        30,
-      ),
+      suggestedShipQty(row({ sources: { amazonSideCounted: 0, svd: null } }), 30),
     ).toBeNull();
   });
 });
