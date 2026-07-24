@@ -304,6 +304,35 @@ describe('assembleRecommendations', () => {
     expect(low!.sources.svd).toBeNull();
   });
 
+  it('does not double-count AWD in-transit units against FBA inbound', async () => {
+    // A unit in transit AWD->FBA can be reported by BOTH awd.replenishment_quantity
+    // and FBA's inbound buckets. countAwdReplenishment is off by default for
+    // exactly that reason, so the counted amazon-side figure must exclude it.
+    const { rows } = await assembleRecommendations(
+      makeDeps({
+        awd_inventory_levels: {
+          data: [
+            {
+              marketplace_id: mkt,
+              sku: 'SKU-LOW',
+              fn_sku: 'FNSKU-LOW',
+              replenishment_quantity: 180,
+              available_distributable_quantity: 8,
+            },
+          ],
+          error: null,
+        },
+      }),
+    );
+    const low = rows.find((row) => row.sku === 'SKU-LOW');
+
+    // Display still shows everything AWD holds: 8 available + 180 in transit.
+    expect(low!.sources.awd).toBe(188);
+    // Counted: 5 fulfillable + 5 policy inbound (shipped 3 + receiving 2)
+    // + 8 AWD available. The 180 in transit is NOT added on top of FBA inbound.
+    expect(low!.sources.amazonSideCounted).toBe(18);
+  });
+
   it('inherits lead time and safety stock when a per-SKU row overrides only the box size', async () => {
     // The seed writes rows carrying ONLY svd_units_per_box, with lead time and
     // safety stock null. Those must fall back to the global default, not act as

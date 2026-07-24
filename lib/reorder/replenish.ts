@@ -13,29 +13,22 @@
 import type { RecommendationRow } from './service';
 
 /**
- * Units at or heading to Amazon that count toward covering demand: FBA
- * fulfillable + FBA incoming (the policy-counted inbound, already summed in
- * `service.ts`) + AWD.
+ * Days of cover from stock at or heading to Amazon.
  *
- * SVD is excluded deliberately: it cannot fulfil a customer order, so it
- * reduces future reorder need without extending current cover. Reserved and
- * unfulfillable FBA stock are likewise excluded — they are not available to
- * cover demand — even though the breakdown displays them.
- */
-function onAmazonSide(row: RecommendationRow): number {
-  return (
-    (row.sources.fba ?? 0) + (row.sources.fbaInbound ?? 0) + (row.sources.awd ?? 0)
-  );
-}
-
-/**
- * Days of cover from stock at or heading to Amazon (FBA fulfillable + FBA
- * incoming + AWD).
+ * The amazon-side figure (`sources.amazonSideCounted`) is assembled in
+ * `service.ts`, where the policy lives: FBA fulfillable + policy-counted FBA
+ * incoming + policy-counted AWD. It must NOT be reassembled here — doing so from
+ * `sources.awd` (which shows ALL AWD, including in-transit units FBA inbound
+ * already reports) would double-count.
+ *
+ * SVD is excluded deliberately: it cannot fulfil a customer order, so it reduces
+ * future reorder need without extending current cover. Reserved and
+ * unfulfillable FBA stock are likewise excluded, though the breakdown shows them.
  */
 export function amazonSideCover(row: RecommendationRow): number | null {
   if (row.dailyDemand === null || row.dailyDemand <= 0) return null;
   if (row.sources.fba === null && row.sources.awd === null) return null;
-  return Math.floor(onAmazonSide(row) / row.dailyDemand);
+  return Math.floor(row.sources.amazonSideCounted / row.dailyDemand);
 }
 
 /**
@@ -52,7 +45,9 @@ export function suggestedShipQty(
   if (row.dailyDemand === null || row.dailyDemand <= 0) return null;
   const svd = row.sources.svd;
   if (svd === null || svd <= 0) return null;
-  const shortfall = Math.ceil(row.dailyDemand * targetDays - onAmazonSide(row));
+  const shortfall = Math.ceil(
+    row.dailyDemand * targetDays - row.sources.amazonSideCounted,
+  );
   if (shortfall <= 0) return null;
   return Math.min(shortfall, svd);
 }

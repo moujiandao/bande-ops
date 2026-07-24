@@ -6,7 +6,26 @@ import type { RecommendationRow } from './service';
  * These functions consume only a handful of fields, but the row type is wide.
  * The factory keeps each test to the fields it actually varies.
  */
-function row(overrides: Partial<RecommendationRow> = {}): RecommendationRow {
+type RowOverrides = Omit<Partial<RecommendationRow>, 'sources'> & {
+  sources?: Partial<RecommendationRow['sources']>;
+};
+
+function row(overrides: RowOverrides = {}): RecommendationRow {
+  const { sources: sourceOverrides, ...rest } = overrides;
+  const sources = {
+    fba: 10,
+    awd: 0,
+    svd: 0,
+    fbaInbound: 0,
+    amazonSideCounted: 0,
+    ...sourceOverrides,
+  };
+  // The counted amazon-side figure is derived in service.ts. Here it stands in
+  // as the sum of the fulfillable + counted inbound + AWD the test supplies,
+  // unless the case sets it explicitly. (The AWD-replenishment double-count that
+  // this figure exists to prevent is exercised at the service layer, not here.)
+  const amazonSideCounted = sourceOverrides?.amazonSideCounted ??
+    (sources.fba ?? 0) + (sources.fbaInbound ?? 0) + (sources.awd ?? 0);
   return {
     marketplaceId: 'ATVPDKIKX0DER',
     sku: 'SKU',
@@ -16,7 +35,6 @@ function row(overrides: Partial<RecommendationRow> = {}): RecommendationRow {
     velocitySampleDays: 90,
     sourceMapping: { status: 'mapped', svdItemId: 'svd-1', mappingSource: 'sku' },
     isLegacy: false,
-    sources: { fba: 10, awd: 0, svd: 0, fbaInbound: 0 },
     fbaBreakdown: {
       available: 10,
       reserved: 0,
@@ -31,7 +49,8 @@ function row(overrides: Partial<RecommendationRow> = {}): RecommendationRow {
     fnSku: null,
     supplyBreakdown: null,
     recommendation: { status: 'needs-review', reason: 'unknown-demand' },
-    ...overrides,
+    ...rest,
+    sources: { ...sources, amazonSideCounted },
   };
 }
 
