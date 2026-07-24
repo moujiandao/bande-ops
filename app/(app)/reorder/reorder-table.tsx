@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import type { RecommendationRow } from '@/lib/reorder/service';
 import {
   amazonSideCover,
@@ -61,6 +61,119 @@ function statusText(row: RecommendationRow, variant: ReorderTableVariant): strin
   return 'No reorder';
 }
 
+/**
+ * Seller Central inbound shipments queue. Amazon exposes no reliable per-SKU or
+ * per-shipment deep link, so every incoming line points at the queue. Swap this
+ * one constant if a better URL exists.
+ */
+const SELLER_CENTRAL_INBOUND_URL =
+  'https://sellercentral.amazon.com/fba/inbound-shipment-queue';
+
+/**
+ * The full FBA count for the replenish display: Available + Reserved + all
+ * Incoming + Other. Null (shown as an em dash) only when there is no FBA data
+ * at all; a present row with some unknown buckets still sums what is known.
+ */
+function fbaDisplayTotal(row: RecommendationRow): number | null {
+  const b = row.fbaBreakdown;
+  const parts = [
+    b.available,
+    b.reserved,
+    b.inboundWorking,
+    b.inboundShipped,
+    b.inboundReceiving,
+    b.researching,
+    b.unfulfillable,
+  ];
+  if (parts.every((v) => v === null)) return null;
+  return parts.reduce<number>((sum, v) => sum + (v ?? 0), 0);
+}
+
+/** Sum of all three FBA inbound buckets, for the display breakdown. */
+function fbaIncomingTotal(row: RecommendationRow): number | null {
+  const { inboundWorking, inboundShipped, inboundReceiving } = row.fbaBreakdown;
+  if (inboundWorking === null && inboundShipped === null && inboundReceiving === null) {
+    return null;
+  }
+  return (inboundWorking ?? 0) + (inboundShipped ?? 0) + (inboundReceiving ?? 0);
+}
+
+/** Sum of the non-sellable, non-incoming buckets: researching + unfulfillable. */
+function fbaOtherTotal(row: RecommendationRow): number | null {
+  const { researching, unfulfillable } = row.fbaBreakdown;
+  if (researching === null && unfulfillable === null) return null;
+  return (researching ?? 0) + (unfulfillable ?? 0);
+}
+
+/** One incoming bucket line, linking to the Seller Central inbound queue. */
+function IncomingLine({ label, value }: { label: string; value: number | null }) {
+  return (
+    <div className="flex items-center justify-between gap-4 pl-3">
+      <a
+        href={SELLER_CENTRAL_INBOUND_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-accent underline underline-offset-2 hover:text-accent-strong"
+      >
+        {label}
+      </a>
+      <span className="tabular-nums text-muted">{num(value)}</span>
+    </div>
+  );
+}
+
+/** One top-level breakdown line. */
+function BreakdownLine({
+  label,
+  value,
+  strong,
+}: {
+  label: string;
+  value: number | null;
+  strong?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className={strong ? 'font-medium text-foreground' : 'text-muted'}>
+        {label}
+      </span>
+      <span
+        className={`tabular-nums ${strong ? 'text-foreground' : 'text-muted'}`}
+      >
+        {num(value)}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * The full FBA picture for a row, shown when its FBA cell is expanded. Groups:
+ * Available + Reserved + Incoming (working/shipped/receiving) + Other. Marks
+ * which parts actually feed the replenish recommendation.
+ */
+function FbaBreakdown({ row }: { row: RecommendationRow }) {
+  const counted = row.sources.fbaInbound;
+  return (
+    <div className="flex flex-col gap-3 text-[11px] sm:flex-row sm:gap-10">
+      <div className="flex min-w-[220px] flex-col gap-1">
+        <BreakdownLine label="Available" value={row.sources.fba} strong />
+        <BreakdownLine label="Reserved" value={row.fbaBreakdown.reserved} />
+        <BreakdownLine label="Incoming" value={fbaIncomingTotal(row)} strong />
+        <IncomingLine label="Working" value={row.fbaBreakdown.inboundWorking} />
+        <IncomingLine label="Shipped" value={row.fbaBreakdown.inboundShipped} />
+        <IncomingLine label="Receiving" value={row.fbaBreakdown.inboundReceiving} />
+        <BreakdownLine label="Other" value={fbaOtherTotal(row)} />
+      </div>
+      <p className="max-w-[280px] text-muted">
+        Counts toward cover: Available
+        {counted !== null ? ` + ${Math.round(counted)} incoming` : ''} + AWD.
+        Reserved (held for orders) and Other (researching + unfulfillable) are
+        shown for context but never counted as coverage.
+      </p>
+    </div>
+  );
+}
+
 /** Sort value for a column; null sorts last regardless of direction. */
 function sortValue(
   row: RecommendationRow,
@@ -71,7 +184,9 @@ function sortValue(
     case 'sku':
       return row.sku.toLowerCase();
     case 'fba':
-      return row.sources.fba;
+      // The replenish FBA cell shows the full FBA total, so sort by that; every
+      // other list shows fulfillable and sorts by it.
+      return variant === 'replenish' ? fbaDisplayTotal(row) : row.sources.fba;
     case 'awd':
       return row.sources.awd;
     case 'svd':
@@ -120,6 +235,10 @@ export function ReorderTable({
   const [descending, setDescending] = useState(
     variant === 'order' || variant === 'replenish',
   );
+  // Which row's FBA breakdown is expanded (replenish variant only). One at a
+  // time keeps the table compact.
+  const [expandedFba, setExpandedFba] = useState<string | null>(null);
+  const showFbaBreakdown = variant === 'replenish';
 
   const sorted = useMemo(() => {
     return [...rows].sort((a, b) => {
@@ -183,20 +302,38 @@ export function ReorderTable({
           </tr>
         </thead>
         <tbody>
-          {sorted.map((row) => (
-            <tr
-              key={`${row.marketplaceId}:${row.sku}`}
-              className="border-b border-border/50 last:border-0"
-            >
+          {sorted.map((row) => {
+            const rowKey = `${row.marketplaceId}:${row.sku}`;
+            const isExpanded = expandedFba === rowKey;
+            return (
+            <Fragment key={rowKey}>
+            <tr className="border-b border-border/50 last:border-0">
               <td
                 className="max-w-[260px] truncate px-3 py-2 font-mono text-foreground"
                 title={`${row.title} — FNSKU ${row.fnSku ?? 'unknown'}`}
               >
                 {row.sku}
               </td>
-              <td className="px-3 py-2 text-right tabular-nums text-muted">
-                {num(row.sources.fba)}
-              </td>
+              {showFbaBreakdown ? (
+                <td className="px-3 py-2 text-right tabular-nums text-muted">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedFba(isExpanded ? null : rowKey)}
+                    aria-expanded={isExpanded}
+                    title="Show the full FBA breakdown"
+                    className="inline-flex items-center gap-1 tabular-nums hover:text-foreground"
+                  >
+                    <span aria-hidden="true" className="text-[9px]">
+                      {isExpanded ? '▼' : '▶'}
+                    </span>
+                    {num(fbaDisplayTotal(row))}
+                  </button>
+                </td>
+              ) : (
+                <td className="px-3 py-2 text-right tabular-nums text-muted">
+                  {num(row.sources.fba)}
+                </td>
+              )}
               <td className="px-3 py-2 text-right tabular-nums text-muted">
                 {num(row.sources.awd)}
               </td>
@@ -242,7 +379,16 @@ export function ReorderTable({
                 )}
               </td>
             </tr>
-          ))}
+            {showFbaBreakdown && isExpanded ? (
+              <tr className="border-b border-border/50 bg-panel-muted/40">
+                <td colSpan={COLUMNS.length + 1} className="px-3 py-3">
+                  <FbaBreakdown row={row} />
+                </td>
+              </tr>
+            ) : null}
+            </Fragment>
+            );
+          })}
         </tbody>
       </table>
     </div>

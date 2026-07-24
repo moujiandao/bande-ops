@@ -1,5 +1,17 @@
 # Changelog
 
+## [2026-07-23] FBA incoming in the replenish math
+
+### Fixed
+- Count FBA **incoming** toward coverage in the SVD→FBA replenish math (`lib/reorder/replenish.ts`). It previously credited only FBA fulfillable + AWD, so units already inbound to FBA were invisible and it over-recommended pulling stock from SVD. "Incoming" uses the same policy inbound toggles as the reorder supply math, so the term means one thing app-wide. Verified live: 30 of 94 active SKUs carry counted incoming.
+
+### Added
+- Add `sources.fbaInbound` (policy-counted incoming, drives the math) and a null-preserving `fbaBreakdown` (available, reserved, the three inbound buckets, researching, unfulfillable) to each reorder row. Every field already existed in the `inventory_levels` mirror; no migration or sync change was needed.
+- Add a collapsible FBA breakdown to the Replenish section: the FBA cell shows the full FBA total (Available + Reserved + Incoming + Other) and expands to itemize it, with each incoming bucket linking to the Seller Central inbound-shipments queue. Amazon exposes no reliable per-SKU inbound deep link, so the URL is a single constant (`SELLER_CENTRAL_INBOUND_URL`).
+
+### Changed
+- Reserved and unfulfillable FBA stock are now **displayed but never counted** as coverage — reserved is committed to orders and unfulfillable cannot ship. The breakdown states which parts feed the recommendation, so the shown total deliberately differs from the counted figure.
+
 ## [2026-07-23] SVD box-to-unit conversion
 
 SVD reports inventory in boxes while FBA and AWD report units, so `/reorder` was
