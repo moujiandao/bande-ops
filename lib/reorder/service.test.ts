@@ -333,6 +333,51 @@ describe('assembleRecommendations', () => {
     expect(low!.sources.amazonSideCounted).toBe(18);
   });
 
+  it('counts AWD in-transit when the policy toggle is on', async () => {
+    // The mirror image of the double-count test: with countAwdReplenishment ON,
+    // the 180 in-transit units SHOULD be added — proving the gate works both ways
+    // and is not just hard-off.
+    const { rows } = await assembleRecommendations(
+      makeDeps({
+        awd_inventory_levels: {
+          data: [
+            {
+              marketplace_id: mkt,
+              sku: 'SKU-LOW',
+              fn_sku: 'FNSKU-LOW',
+              replenishment_quantity: 180,
+              available_distributable_quantity: 8,
+            },
+          ],
+          error: null,
+        },
+        replenishment_policy: {
+          data: [
+            {
+              marketplace_id: mkt,
+              velocity_sample_in_stock_days: 90,
+              velocity_max_lookback_days: 365,
+              fulfillment_mode: 'fba_only',
+              svd_mode: 'replenishment_only',
+              unknown_stock_mode: 'needs_review',
+              stale_source_mode: 'needs_review',
+              count_awd_available: true,
+              count_awd_replenishment: true,
+              count_inbound_working: false,
+              count_inbound_shipped: true,
+              count_inbound_receiving: true,
+            },
+          ],
+          error: null,
+        },
+      }),
+    );
+    const low = rows.find((row) => row.sku === 'SKU-LOW');
+
+    // 5 fulfillable + 5 inbound + 8 AWD available + 180 AWD in transit = 198.
+    expect(low!.sources.amazonSideCounted).toBe(198);
+  });
+
   it('inherits lead time and safety stock when a per-SKU row overrides only the box size', async () => {
     // The seed writes rows carrying ONLY svd_units_per_box, with lead time and
     // safety stock null. Those must fall back to the global default, not act as
