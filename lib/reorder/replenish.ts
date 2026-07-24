@@ -13,16 +13,29 @@
 import type { RecommendationRow } from './service';
 
 /**
- * Days of cover counting only stock at or heading to Amazon (FBA + AWD).
+ * Units at or heading to Amazon that count toward covering demand: FBA
+ * fulfillable + FBA incoming (the policy-counted inbound, already summed in
+ * `service.ts`) + AWD.
  *
  * SVD is excluded deliberately: it cannot fulfil a customer order, so it
- * reduces future reorder need without extending current cover.
+ * reduces future reorder need without extending current cover. Reserved and
+ * unfulfillable FBA stock are likewise excluded — they are not available to
+ * cover demand — even though the breakdown displays them.
+ */
+function onAmazonSide(row: RecommendationRow): number {
+  return (
+    (row.sources.fba ?? 0) + (row.sources.fbaInbound ?? 0) + (row.sources.awd ?? 0)
+  );
+}
+
+/**
+ * Days of cover from stock at or heading to Amazon (FBA fulfillable + FBA
+ * incoming + AWD).
  */
 export function amazonSideCover(row: RecommendationRow): number | null {
   if (row.dailyDemand === null || row.dailyDemand <= 0) return null;
   if (row.sources.fba === null && row.sources.awd === null) return null;
-  const onAmazonSide = (row.sources.fba ?? 0) + (row.sources.awd ?? 0);
-  return Math.floor(onAmazonSide / row.dailyDemand);
+  return Math.floor(onAmazonSide(row) / row.dailyDemand);
 }
 
 /**
@@ -39,8 +52,7 @@ export function suggestedShipQty(
   if (row.dailyDemand === null || row.dailyDemand <= 0) return null;
   const svd = row.sources.svd;
   if (svd === null || svd <= 0) return null;
-  const onAmazonSide = (row.sources.fba ?? 0) + (row.sources.awd ?? 0);
-  const shortfall = Math.ceil(row.dailyDemand * targetDays - onAmazonSide);
+  const shortfall = Math.ceil(row.dailyDemand * targetDays - onAmazonSide(row));
   if (shortfall <= 0) return null;
   return Math.min(shortfall, svd);
 }
