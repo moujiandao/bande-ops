@@ -49,6 +49,9 @@ function baseTables(): Record<string, TableData> {
           inbound_working_quantity: 99,
           inbound_shipped_quantity: 3,
           inbound_receiving_quantity: 2,
+          reserved_quantity: 4,
+          researching_quantity: 1,
+          unfulfillable_quantity: 6,
         },
         {
           marketplace_id: mkt,
@@ -221,6 +224,19 @@ describe('assembleRecommendations', () => {
     expect(low!.sources.svd).toBe(14);
     expect(low!.svdBoxes).toBe(7);
     expect(low!.svdUnitsPerBox).toBe(2);
+    // FBA incoming counted per the default policy: shipped (3) + receiving (2);
+    // working (99) is excluded by default. The raw buckets are all preserved for
+    // the display breakdown.
+    expect(low!.sources.fbaInbound).toBe(5);
+    expect(low!.fbaBreakdown).toEqual({
+      available: 5,
+      reserved: 4,
+      inboundWorking: 99,
+      inboundShipped: 3,
+      inboundReceiving: 2,
+      researching: 1,
+      unfulfillable: 6,
+    });
     expect(low!.usableSupply).toBe(32);
     expect(low!.dailyDemand).toBe(4);
     expect(low!.velocitySampleDays).toBe(90);

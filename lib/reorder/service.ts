@@ -52,10 +52,32 @@ export interface RecommendationRow {
    * but what we DO know about each source is still worth showing.
    */
   sources: {
+    /** Fulfillable (available) units at FBA. */
     fba: number | null;
     awd: number | null;
     /** UNITS, converted from SVD's boxes. Null when the units are unknowable. */
     svd: number | null;
+    /**
+     * FBA inbound counted toward coverage, per the policy inbound toggles (the
+     * same definition the reorder supply math uses). Units already heading to
+     * FBA that the replenish math credits against demand. Null when there is no
+     * FBA row.
+     */
+    fbaInbound: number | null;
+  };
+  /**
+   * The full FBA picture for display, each bucket null-preserving (UNKNOWN is
+   * never folded to 0 here). Available + Reserved + Incoming + Other. Populated
+   * regardless of recommendation status, like `sources`.
+   */
+  fbaBreakdown: {
+    available: number | null;
+    reserved: number | null;
+    inboundWorking: number | null;
+    inboundShipped: number | null;
+    inboundReceiving: number | null;
+    researching: number | null;
+    unfulfillable: number | null;
   };
   /** SVD's own denomination, kept for display. Null when unreadable. */
   svdBoxes: number | null;
@@ -106,6 +128,9 @@ type FbaRow = {
   inbound_working_quantity: number | null;
   inbound_shipped_quantity: number | null;
   inbound_receiving_quantity: number | null;
+  reserved_quantity: number | null;
+  researching_quantity: number | null;
+  unfulfillable_quantity: number | null;
 };
 type AwdRow = {
   marketplace_id: string;
@@ -236,7 +261,7 @@ export async function assembleRecommendations(
     deps.supabase
       .from('inventory_levels')
       .select(
-        'marketplace_id, sku, fn_sku, fulfillable_quantity, inbound_working_quantity, inbound_shipped_quantity, inbound_receiving_quantity',
+        'marketplace_id, sku, fn_sku, fulfillable_quantity, inbound_working_quantity, inbound_shipped_quantity, inbound_receiving_quantity, reserved_quantity, researching_quantity, unfulfillable_quantity',
       )
       .eq('marketplace_id', marketplace.id),
     deps.supabase
@@ -353,6 +378,17 @@ export async function assembleRecommendations(
       openDate: item.open_date,
       lastSoldDate: velocityByKey.get(key)?.last_sold_date ?? null,
     });
+    // FBA inbound counted toward coverage, using the SAME policy toggles as the
+    // supply math so "incoming" means one thing across the app. Null buckets
+    // coalesce to 0 here (the replenish estimate is deliberately tolerant, like
+    // its `sources.fba ?? 0`), and the whole figure is null when there is no FBA
+    // row at all. This never blocks — the authoritative reorder math still does.
+    const fbaInbound =
+      fba === null
+        ? null
+        : (policy.countInboundWorking ? (fba.inbound_working_quantity ?? 0) : 0) +
+          (policy.countInboundShipped ? (fba.inbound_shipped_quantity ?? 0) : 0) +
+          (policy.countInboundReceiving ? (fba.inbound_receiving_quantity ?? 0) : 0);
     const sources = {
       fba: fba?.fulfillable_quantity ?? null,
       // Absence means "not stored at AWD", which is 0 — matching the supply
@@ -366,6 +402,17 @@ export async function assembleRecommendations(
             : (awd.available_distributable_quantity ?? 0) +
               (awd.replenishment_quantity ?? 0),
       svd: null as number | null,
+      fbaInbound,
+    };
+    // Full FBA picture for display; each bucket keeps UNKNOWN as null.
+    const fbaBreakdown = {
+      available: fba?.fulfillable_quantity ?? null,
+      reserved: fba?.reserved_quantity ?? null,
+      inboundWorking: fba?.inbound_working_quantity ?? null,
+      inboundShipped: fba?.inbound_shipped_quantity ?? null,
+      inboundReceiving: fba?.inbound_receiving_quantity ?? null,
+      researching: fba?.researching_quantity ?? null,
+      unfulfillable: fba?.unfulfillable_quantity ?? null,
     };
     const sourceMapping = resolveSourceMapping({
       amazonSku: item.sku,
@@ -414,6 +461,7 @@ export async function assembleRecommendations(
         isLegacy,
         fnSku,
         sources,
+        fbaBreakdown,
         svdBoxes,
         svdUnitsPerBox,
         supplyBreakdown: null,
@@ -436,6 +484,7 @@ export async function assembleRecommendations(
         isLegacy,
         fnSku,
         sources,
+        fbaBreakdown,
         svdBoxes,
         svdUnitsPerBox,
         supplyBreakdown: null,
@@ -486,6 +535,7 @@ export async function assembleRecommendations(
       isLegacy,
       fnSku,
       sources,
+      fbaBreakdown,
       svdBoxes,
       svdUnitsPerBox,
       supplyBreakdown: supply.status === 'ok' ? supply.breakdown : null,
