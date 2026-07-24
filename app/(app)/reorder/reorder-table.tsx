@@ -320,6 +320,7 @@ export function ReorderTable({
                     type="button"
                     onClick={() => setExpandedFba(isExpanded ? null : rowKey)}
                     aria-expanded={isExpanded}
+                    aria-controls={`fba-detail-${rowKey}`}
                     title="Show the full FBA breakdown"
                     className="inline-flex items-center gap-1 tabular-nums hover:text-foreground"
                   >
@@ -381,7 +382,11 @@ export function ReorderTable({
             </tr>
             {showFbaBreakdown && isExpanded ? (
               <tr className="border-b border-border/50 bg-panel-muted/40">
-                <td colSpan={COLUMNS.length + 1} className="px-3 py-3">
+                <td
+                  id={`fba-detail-${rowKey}`}
+                  colSpan={COLUMNS.length + 1}
+                  className="px-3 py-3"
+                >
                   <FbaBreakdown row={row} />
                 </td>
               </tr>

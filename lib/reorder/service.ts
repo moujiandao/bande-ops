@@ -64,6 +64,16 @@ export interface RecommendationRow {
      * FBA row.
      */
     fbaInbound: number | null;
+    /**
+     * The single amazon-side figure the replenish math consumes: FBA
+     * fulfillable + policy-counted FBA inbound + policy-counted AWD. Computed
+     * here, where the policy lives, so consumers cannot reassemble it and
+     * double-count. In particular AWD `replenishment_quantity` (units in transit
+     * AWD→FBA) is included ONLY when `countAwdReplenishment` is on — otherwise
+     * FBA's own inbound buckets already report those units and adding both
+     * double-counts. Unlike `sources.awd`, which shows everything AWD holds.
+     */
+    amazonSideCounted: number;
   };
   /**
    * The full FBA picture for display, each bucket null-preserving (UNKNOWN is
@@ -389,10 +399,26 @@ export async function assembleRecommendations(
         : (policy.countInboundWorking ? (fba.inbound_working_quantity ?? 0) : 0) +
           (policy.countInboundShipped ? (fba.inbound_shipped_quantity ?? 0) : 0) +
           (policy.countInboundReceiving ? (fba.inbound_receiving_quantity ?? 0) : 0);
+    // The one policy-gated amazon-side figure. AWD replenishment (in transit to
+    // FBA) is counted ONLY when the policy says so, because FBA's inbound buckets
+    // — already in `fbaInbound` — otherwise report the same units. Nulls coalesce
+    // to 0 here, matching the replenish estimate's existing tolerance.
+    const awdCountedAvailable = policy.countAwdAvailable
+      ? (awd?.available_distributable_quantity ?? 0)
+      : 0;
+    const awdCountedReplenishment = policy.countAwdReplenishment
+      ? (awd?.replenishment_quantity ?? 0)
+      : 0;
+    const amazonSideCounted =
+      (fba?.fulfillable_quantity ?? 0) +
+      (fbaInbound ?? 0) +
+      awdCountedAvailable +
+      awdCountedReplenishment;
     const sources = {
       fba: fba?.fulfillable_quantity ?? null,
       // Absence means "not stored at AWD", which is 0 — matching the supply
-      // math. Only a row with unreadable quantities is UNKNOWN.
+      // math. Only a row with unreadable quantities is UNKNOWN. This is the
+      // DISPLAY figure (everything AWD holds); the counted figure is separate.
       awd:
         awd === null
           ? 0
@@ -403,10 +429,12 @@ export async function assembleRecommendations(
               (awd.replenishment_quantity ?? 0),
       svd: null as number | null,
       fbaInbound,
+      amazonSideCounted,
     };
     // Full FBA picture for display; each bucket keeps UNKNOWN as null.
+    // `available` is the same fulfillable value as `sources.fba`, derived once.
     const fbaBreakdown = {
-      available: fba?.fulfillable_quantity ?? null,
+      available: sources.fba,
       reserved: fba?.reserved_quantity ?? null,
       inboundWorking: fba?.inbound_working_quantity ?? null,
       inboundShipped: fba?.inbound_shipped_quantity ?? null,
