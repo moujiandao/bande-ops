@@ -5,8 +5,10 @@
 ### Fixed
 - Count FBA **incoming** toward coverage in the SVD→FBA replenish math (`lib/reorder/replenish.ts`). It previously credited only FBA fulfillable + AWD, so units already inbound to FBA were invisible and it over-recommended pulling stock from SVD. "Incoming" uses the same policy inbound toggles as the reorder supply math, so the term means one thing app-wide. Verified live: 30 of 94 active SKUs carry counted incoming.
 
+- Assemble the amazon-side coverage figure once, in `service.ts` as `sources.amazonSideCounted` (FBA fulfillable + policy-counted FBA inbound + policy-counted AWD). The replenish math consumes it and cannot reassemble it. This closes a double-count: AWD `replenishment_quantity` (in transit AWD→FBA) is credited only when `countAwdReplenishment` is on, because FBA's own inbound buckets otherwise report the same units — an earlier revision summed both. Live: 4 SKUs were affected (e.g. `obgyn_notebook_`, 180 units counted twice). `sources.awd` stays the full display figure.
+
 ### Added
-- Add `sources.fbaInbound` (policy-counted incoming, drives the math) and a null-preserving `fbaBreakdown` (available, reserved, the three inbound buckets, researching, unfulfillable) to each reorder row. Every field already existed in the `inventory_levels` mirror; no migration or sync change was needed.
+- Add `sources.fbaInbound` (policy-counted incoming, feeds `amazonSideCounted`) and a null-preserving `fbaBreakdown` (available, reserved, the three inbound buckets, researching, unfulfillable) to each reorder row. Every field already existed in the `inventory_levels` mirror; no migration or sync change was needed.
 - Add a collapsible FBA breakdown to the Replenish section: the FBA cell shows the full FBA total (Available + Reserved + Incoming + Other) and expands to itemize it, with each incoming bucket linking to the Seller Central inbound-shipments queue. Amazon exposes no reliable per-SKU inbound deep link, so the URL is a single constant (`SELLER_CENTRAL_INBOUND_URL`).
 
 ### Changed
