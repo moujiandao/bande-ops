@@ -6,6 +6,7 @@ import {
   saveSkuOverrideAction,
   saveSourceMappingAction,
   saveSvdUnitsPerBoxAction,
+  saveBoxNameAction,
   deleteSourceMappingAction,
 } from '@/lib/settings/settings-actions';
 import { mapPolicyRow, type ReplenishmentPolicyRow } from '@/lib/settings/policy';
@@ -116,6 +117,19 @@ export default async function SettingsPage() {
       return a.sku.localeCompare(b.sku);
     });
   const svdUnsetCount = svdBoxRows.filter((r) => r.unitsPerBox === null).length;
+
+  // Box names apply to every active SKU (not just SVD-stocked ones), so this
+  // list is the full active set, unlabelled first so gaps are easy to fill.
+  const boxNameRows = reorderRows
+    .filter((r) => !r.isLegacy)
+    .map((r) => ({ sku: r.sku, boxName: r.boxName }))
+    .sort((a, b) => {
+      const aSet = a.boxName === null ? 0 : 1;
+      const bSet = b.boxName === null ? 0 : 1;
+      if (aSet !== bSet) return aSet - bSet;
+      return a.sku.localeCompare(b.sku);
+    });
+  const boxNameUnsetCount = boxNameRows.filter((r) => r.boxName === null).length;
 
   return (
     <div className="flex flex-col gap-8">
@@ -434,6 +448,60 @@ export default async function SettingsPage() {
             Add
           </button>
         </form>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="text-sm font-semibold text-foreground">Box names</h2>
+          <Badge className="border-border bg-panel-muted text-muted">
+            {boxNameUnsetCount > 0
+              ? `${boxNameUnsetCount} unlabelled`
+              : `${boxNameRows.length} labelled`}
+          </Badge>
+        </div>
+        <p className="max-w-prose text-xs text-muted">
+          Your label for each SKU&apos;s physical box (e.g.{' '}
+          <code className="font-mono">template 1 (2pack)</code>,{' '}
+          <code className="font-mono">setA + booklet</code>). Shown on the reorder
+          replenish list so a picker knows which box to pull. Free text; leave
+          blank to clear. Unlabelled SKUs are listed first.
+        </p>
+
+        {boxNameRows.length > 0 ? (
+          <ul className="flex flex-col gap-2">
+            {boxNameRows.map((r) => (
+              <li
+                key={r.sku}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-panel border border-border bg-panel px-4 py-3"
+              >
+                <span className="font-mono text-xs text-foreground">{r.sku}</span>
+                <form
+                  action={saveBoxNameAction}
+                  className="flex items-center gap-2"
+                >
+                  <input type="hidden" name="sku" value={r.sku} />
+                  <label className="flex items-center gap-2">
+                    <span className={labelClass}>Box name</span>
+                    <input
+                      type="text"
+                      name="boxName"
+                      defaultValue={r.boxName ?? ''}
+                      placeholder="unlabelled"
+                      className={`${fieldClass} w-48`}
+                    />
+                  </label>
+                  <button type="submit" className={primaryButtonClass}>
+                    Save
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="rounded-panel border border-dashed border-border bg-panel p-4 text-xs text-muted">
+            No active SKUs to label.
+          </p>
+        )}
       </section>
 
       <section className="flex flex-col gap-3">

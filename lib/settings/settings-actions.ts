@@ -223,6 +223,55 @@ export async function saveSvdUnitsPerBoxAction(formData: FormData): Promise<void
   revalidatePath('/reorder');
 }
 
+/**
+ * Set or clear a SKU's box name (the operator's label for its physical box).
+ *
+ * Per-SKU only — a free-text label, never a global default. A blank value clears
+ * it. Creates a settings row carrying only this field when none exists; lead
+ * time, safety stock, and coverage stay null and inherit the global default
+ * (migration 0016 / 0017).
+ */
+export async function saveBoxNameAction(formData: FormData): Promise<void> {
+  await requireUser();
+
+  const sku = String(formData.get('sku') ?? '').trim();
+  if (!sku) {
+    throw new Error('A SKU is required to set a box name.');
+  }
+  const raw = String(formData.get('boxName') ?? '').trim();
+  const boxName = raw === '' ? null : raw;
+
+  const supabase = await createClient();
+  const marketplaceId = DEFAULT_MARKETPLACE_ID;
+
+  const { data: existing, error: lookupError } = await supabase
+    .from('replenishment_settings')
+    .select('id')
+    .eq('marketplace_id', marketplaceId)
+    .eq('sku', sku)
+    .maybeSingle();
+  if (lookupError) {
+    throw new Error(`Could not load existing setting: ${lookupError.message}`);
+  }
+
+  const { error } = existing
+    ? await supabase
+        .from('replenishment_settings')
+        .update({ box_name: boxName, updated_at: new Date().toISOString() })
+        .eq('id', existing.id)
+    : await supabase.from('replenishment_settings').insert({
+        marketplace_id: marketplaceId,
+        sku,
+        box_name: boxName,
+      });
+  if (error) {
+    throw new Error(`Could not save the box name: ${error.message}`);
+  }
+
+  revalidatePath('/settings');
+  revalidatePath('/reorder');
+}
+
 /** Save the global replenishment policy that controls velocity and supply rules. */
 export async function savePolicyAction(formData: FormData): Promise<void> {
   await requireUser();
