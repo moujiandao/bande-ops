@@ -378,6 +378,94 @@ describe('assembleRecommendations', () => {
     expect(low!.sources.amazonSideCounted).toBe(198);
   });
 
+  it('reads box_name per-SKU only, never leaking the global default row', async () => {
+    const { rows } = await assembleRecommendations(
+      makeDeps({
+        replenishment_settings: {
+          data: [
+            {
+              marketplace_id: mkt,
+              sku: null,
+              lead_time_days: 10,
+              safety_stock: 0,
+              target_coverage_days: 30,
+              svd_units_per_box: null,
+              // A label on the default row is meaningless and must never appear
+              // on a SKU that has no label of its own.
+              box_name: 'DEFAULT-MUST-NOT-LEAK',
+            },
+            {
+              marketplace_id: mkt,
+              sku: 'SKU-LOW',
+              lead_time_days: null,
+              safety_stock: null,
+              target_coverage_days: null,
+              svd_units_per_box: 2,
+              box_name: 'template 9',
+            },
+            {
+              marketplace_id: mkt,
+              sku: 'SKU-MISSING-MAP',
+              lead_time_days: null,
+              safety_stock: null,
+              target_coverage_days: null,
+              svd_units_per_box: null,
+              box_name: 'template 99',
+            },
+          ],
+          error: null,
+        },
+      }),
+    );
+    const low = rows.find((row) => row.sku === 'SKU-LOW');
+    const missing = rows.find((row) => row.sku === 'SKU-MISSING-MAP');
+    const high = rows.find((row) => row.sku === 'SKU-HIGH');
+
+    // Value shown on the success path.
+    expect(low!.boxName).toBe('template 9');
+    expect(low!.recommendation.status).toBe('ok');
+    // Value shown on the needs-review path too (all row constructions populate it).
+    expect(missing!.boxName).toBe('template 99');
+    expect(missing!.recommendation).toEqual({
+      status: 'needs-review',
+      reason: 'missing-svd-mapping',
+    });
+    // No per-SKU row -> null, NOT the global default's label.
+    expect(high!.boxName).toBeNull();
+  });
+
+  it('treats an empty-string box_name as unset', async () => {
+    const { rows } = await assembleRecommendations(
+      makeDeps({
+        replenishment_settings: {
+          data: [
+            {
+              marketplace_id: mkt,
+              sku: null,
+              lead_time_days: 10,
+              safety_stock: 0,
+              target_coverage_days: 30,
+              svd_units_per_box: null,
+              box_name: null,
+            },
+            {
+              marketplace_id: mkt,
+              sku: 'SKU-LOW',
+              lead_time_days: null,
+              safety_stock: null,
+              target_coverage_days: null,
+              svd_units_per_box: 2,
+              box_name: '',
+            },
+          ],
+          error: null,
+        },
+      }),
+    );
+    const low = rows.find((row) => row.sku === 'SKU-LOW');
+    expect(low!.boxName).toBeNull();
+  });
+
   it('inherits lead time and safety stock when a per-SKU row overrides only the box size', async () => {
     // The seed writes rows carrying ONLY svd_units_per_box, with lead time and
     // safety stock null. Those must fall back to the global default, not act as
