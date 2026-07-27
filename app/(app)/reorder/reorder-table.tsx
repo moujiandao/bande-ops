@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useMemo, useState, type DragEvent } from 'react';
 import type { RecommendationRow } from '@/lib/reorder/service';
 import {
   amazonSideCover,
@@ -265,9 +265,16 @@ export function ReorderTable({
   const visibleColumns = showBoxName
     ? [COLUMNS[0], BOX_COLUMN, ...COLUMNS.slice(1)]
     : COLUMNS;
+  // Fixed (non-Notes) column count: the data columns plus the trailing column.
+  const fixedColumnCount = visibleColumns.length + 1;
+  // Where the draggable Notes column sits among the fixed columns (insert-before
+  // that index). null = its default far-right position. Drag its header onto
+  // another column header to move it; ephemeral, resets on reload.
+  const [notesIndex, setNotesIndex] = useState<number | null>(null);
+  const effectiveNotesIndex = notesIndex ?? fixedColumnCount;
   // Columns spanned by the expandable FBA detail row: all data columns + the
   // trailing column + Notes when shown.
-  const detailColSpan = visibleColumns.length + 1 + (showNotes ? 1 : 0);
+  const detailColSpan = fixedColumnCount + (showNotes ? 1 : 0);
 
   const sorted = useMemo(() => {
     return [...rows].sort((a, b) => {
@@ -296,13 +303,33 @@ export function ReorderTable({
     setDescending(key !== 'sku');
   }
 
-  function header(key: SortKey, label: string, title: string, numeric: boolean) {
+  // When Notes is draggable, every fixed header is a drop target that moves the
+  // Notes column to just before it.
+  const dropProps = (fixedIndex: number) =>
+    showNotes
+      ? {
+          onDragOver: (e: DragEvent) => e.preventDefault(),
+          onDrop: (e: DragEvent) => {
+            e.preventDefault();
+            setNotesIndex(fixedIndex);
+          },
+        }
+      : {};
+
+  function header(
+    key: SortKey,
+    label: string,
+    title: string,
+    numeric: boolean,
+    fixedIndex?: number,
+  ) {
     const active = key === sortKey;
     return (
       <th
         key={key}
         aria-sort={active ? (descending ? 'descending' : 'ascending') : 'none'}
         className={`px-3 py-2 font-medium ${numeric ? 'text-right' : 'text-left'}`}
+        {...(fixedIndex !== undefined ? dropProps(fixedIndex) : {})}
       >
         <button
           type="button"
@@ -326,11 +353,33 @@ export function ReorderTable({
       <table className="w-full min-w-[720px] text-xs">
         <thead className="border-b border-border text-faint">
           <tr>
-            {visibleColumns.map((c) => header(c.key, c.label, c.title, c.numeric))}
-            {header('trailing', trailingHeader, trailingHeader, true)}
-            {showNotes ? (
-              <th className="px-3 py-2 text-left font-medium">Notes</th>
-            ) : null}
+            {(() => {
+              const cells = [
+                ...visibleColumns.map((c, i) =>
+                  header(c.key, c.label, c.title, c.numeric, i),
+                ),
+                header('trailing', trailingHeader, trailingHeader, true, visibleColumns.length),
+              ];
+              if (showNotes) {
+                cells.splice(
+                  effectiveNotesIndex,
+                  0,
+                  <th
+                    key="notes"
+                    draggable
+                    onDragStart={(e) => e.dataTransfer.setData('text/plain', 'notes')}
+                    title="Drag onto another column to move the Notes column"
+                    className="cursor-grab px-3 py-2 text-left font-medium active:cursor-grabbing"
+                  >
+                    <span aria-hidden="true" className="mr-1 text-faint">
+                      ⠿
+                    </span>
+                    Notes
+                  </th>,
+                );
+              }
+              return cells;
+            })()}
           </tr>
         </thead>
         <tbody>
@@ -340,98 +389,115 @@ export function ReorderTable({
             return (
             <Fragment key={rowKey}>
             <tr className="border-b border-border/50 last:border-0">
-              <td
-                className="max-w-[260px] truncate px-3 py-2 font-mono text-foreground"
-                title={`${row.title} — FNSKU ${row.fnSku ?? 'unknown'}`}
-              >
-                {row.sku}
-              </td>
-              {showBoxName ? (
-                <td
-                  className="max-w-[220px] truncate px-3 py-2 text-muted"
-                  title={row.boxName ?? 'no box label set'}
-                >
-                  {row.boxName ?? '—'}
-                </td>
-              ) : null}
-              {showFbaBreakdown ? (
-                <td className="px-3 py-2 text-right tabular-nums text-muted">
-                  <button
-                    type="button"
-                    onClick={() => setExpandedFba(isExpanded ? null : rowKey)}
-                    aria-expanded={isExpanded}
-                    aria-controls={`fba-detail-${rowKey}`}
-                    title="Show the full FBA breakdown"
-                    className="inline-flex items-center gap-1 tabular-nums hover:text-foreground"
+              {(() => {
+                const cells = [
+                  <td
+                    key="sku"
+                    className="max-w-[260px] truncate px-3 py-2 font-mono text-foreground"
+                    title={`${row.title} — FNSKU ${row.fnSku ?? 'unknown'}`}
                   >
-                    <span aria-hidden="true" className="text-[9px]">
-                      {isExpanded ? '▼' : '▶'}
-                    </span>
-                    {num(fbaDisplayTotal(row))}
-                  </button>
-                </td>
-              ) : (
-                <td className="px-3 py-2 text-right tabular-nums text-muted">
-                  {num(row.sources.fba)}
-                </td>
-              )}
-              <td className="px-3 py-2 text-right tabular-nums text-muted">
-                {num(row.sources.awd)}
-              </td>
-              <td
-                className="px-3 py-2 text-right tabular-nums text-muted"
-                title={svdCellTitle(row)}
-              >
-                {num(row.sources.svd)}
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums text-foreground">
-                {num(row.usableSupply)}
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums text-muted">
-                {row.dailyDemand === null ? '—' : row.dailyDemand.toFixed(1)}
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums text-muted">
-                {num(coverDays(row.usableSupply, row.dailyDemand))}
-              </td>
-              <td className="px-3 py-2 text-right">
-                {variant === 'order' || variant === 'replenish' ? (
-                  <span className="text-sm font-semibold tabular-nums text-accent-strong">
-                    {num(
-                      variant === 'order'
-                        ? orderQty(row)
-                        : suggestedShipQty(row, REPLENISH_TARGET_DAYS),
+                    {row.sku}
+                  </td>,
+                  ...(showBoxName
+                    ? [
+                        <td
+                          key="box"
+                          className="max-w-[220px] truncate px-3 py-2 text-muted"
+                          title={row.boxName ?? 'no box label set'}
+                        >
+                          {row.boxName ?? '—'}
+                        </td>,
+                      ]
+                    : []),
+                  showFbaBreakdown ? (
+                    <td key="fba" className="px-3 py-2 text-right tabular-nums text-muted">
+                      <button
+                        type="button"
+                        onClick={() => setExpandedFba(isExpanded ? null : rowKey)}
+                        aria-expanded={isExpanded}
+                        aria-controls={`fba-detail-${rowKey}`}
+                        title="Show the full FBA breakdown"
+                        className="inline-flex items-center gap-1 tabular-nums hover:text-foreground"
+                      >
+                        <span aria-hidden="true" className="text-[9px]">
+                          {isExpanded ? '▼' : '▶'}
+                        </span>
+                        {num(fbaDisplayTotal(row))}
+                      </button>
+                    </td>
+                  ) : (
+                    <td key="fba" className="px-3 py-2 text-right tabular-nums text-muted">
+                      {num(row.sources.fba)}
+                    </td>
+                  ),
+                  <td key="awd" className="px-3 py-2 text-right tabular-nums text-muted">
+                    {num(row.sources.awd)}
+                  </td>,
+                  <td
+                    key="svd"
+                    className="px-3 py-2 text-right tabular-nums text-muted"
+                    title={svdCellTitle(row)}
+                  >
+                    {num(row.sources.svd)}
+                  </td>,
+                  <td
+                    key="total"
+                    className="px-3 py-2 text-right tabular-nums text-foreground"
+                  >
+                    {num(row.usableSupply)}
+                  </td>,
+                  <td key="perDay" className="px-3 py-2 text-right tabular-nums text-muted">
+                    {row.dailyDemand === null ? '—' : row.dailyDemand.toFixed(1)}
+                  </td>,
+                  <td key="cover" className="px-3 py-2 text-right tabular-nums text-muted">
+                    {num(coverDays(row.usableSupply, row.dailyDemand))}
+                  </td>,
+                  <td key="trailing" className="px-3 py-2 text-right">
+                    {variant === 'order' || variant === 'replenish' ? (
+                      <span className="text-sm font-semibold tabular-nums text-accent-strong">
+                        {num(
+                          variant === 'order'
+                            ? orderQty(row)
+                            : suggestedShipQty(row, REPLENISH_TARGET_DAYS),
+                        )}
+                      </span>
+                    ) : variant !== 'legacy' &&
+                      row.recommendation.status === 'needs-review' &&
+                      row.recommendation.reason === 'unknown-svd-units-per-box' ? (
+                      // The one needs-review reason with a direct fix: link
+                      // straight to where the box size is set.
+                      <Link
+                        href="/settings"
+                        className="text-[11px] text-accent underline underline-offset-2 hover:text-accent-strong"
+                      >
+                        set SVD box size
+                      </Link>
+                    ) : (
+                      <span className="text-[11px] text-muted">
+                        {statusText(row, variant)}
+                      </span>
                     )}
-                  </span>
-                ) : variant !== 'legacy' &&
-                  row.recommendation.status === 'needs-review' &&
-                  row.recommendation.reason === 'unknown-svd-units-per-box' ? (
-                  // The one needs-review reason with a direct fix: link straight
-                  // to where the box size is set, per the design spec.
-                  <Link
-                    href="/settings"
-                    className="text-[11px] text-accent underline underline-offset-2 hover:text-accent-strong"
-                  >
-                    set SVD box size
-                  </Link>
-                ) : (
-                  <span className="text-[11px] text-muted">
-                    {statusText(row, variant)}
-                  </span>
-                )}
-              </td>
-              {showNotes ? (
-                <td className="px-3 py-2">
-                  <input
-                    type="text"
-                    aria-label={`Notes for ${row.sku} (not saved)`}
-                    placeholder="Note…"
-                    // Uncontrolled and unpersisted on purpose: scratch space for a
-                    // picking session. React keeps the value across re-sorts via the
-                    // row's stable key; it clears on reload.
-                    className="w-full min-w-[8rem] rounded-md border border-border bg-panel px-2 py-1 text-xs text-foreground placeholder:text-faint focus:border-accent focus:outline-none"
-                  />
-                </td>
-              ) : null}
+                  </td>,
+                ];
+                if (showNotes) {
+                  cells.splice(
+                    effectiveNotesIndex,
+                    0,
+                    <td key="notes" className="px-3 py-2">
+                      <input
+                        type="text"
+                        aria-label={`Notes for ${row.sku} (not saved)`}
+                        placeholder="Note…"
+                        // Uncontrolled and unpersisted on purpose: scratch space
+                        // for a picking session. React keeps the value across
+                        // re-sorts via the row's stable key; it clears on reload.
+                        className="w-full min-w-[8rem] rounded-md border border-border bg-panel px-2 py-1 text-xs text-foreground placeholder:text-faint focus:border-accent focus:outline-none"
+                      />
+                    </td>,
+                  );
+                }
+                return cells;
+              })()}
             </tr>
             {showFbaBreakdown && isExpanded ? (
               <tr className="border-b border-border/50 bg-panel-muted/40">
