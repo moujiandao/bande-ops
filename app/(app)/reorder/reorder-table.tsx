@@ -271,6 +271,7 @@ export function ReorderTable({
   // that index). null = its default far-right position. Drag its header onto
   // another column header to move it; ephemeral, resets on reload.
   const [notesIndex, setNotesIndex] = useState<number | null>(null);
+  const [draggingNotes, setDraggingNotes] = useState(false);
   const effectiveNotesIndex = notesIndex ?? fixedColumnCount;
   // Columns spanned by the expandable FBA detail row: all data columns + the
   // trailing column + Notes when shown.
@@ -303,10 +304,11 @@ export function ReorderTable({
     setDescending(key !== 'sku');
   }
 
-  // When Notes is draggable, every fixed header is a drop target that moves the
-  // Notes column to just before it.
+  // When the Notes column is being dragged, every fixed header is a drop target
+  // that moves Notes to just before it. Gated on `draggingNotes` so an unrelated
+  // drag (e.g. selecting text in a cell) can never reposition the column.
   const dropProps = (fixedIndex: number) =>
-    showNotes
+    showNotes && draggingNotes
       ? {
           onDragOver: (e: DragEvent) => e.preventDefault(),
           onDrop: (e: DragEvent) => {
@@ -358,7 +360,10 @@ export function ReorderTable({
                 ...visibleColumns.map((c, i) =>
                   header(c.key, c.label, c.title, c.numeric, i),
                 ),
-                header('trailing', trailingHeader, trailingHeader, true, visibleColumns.length),
+                // Drop index fixedColumnCount = the far-right slot after the
+                // trailing column, so Notes can always be dragged back to its
+                // default position.
+                header('trailing', trailingHeader, trailingHeader, true, fixedColumnCount),
               ];
               if (showNotes) {
                 cells.splice(
@@ -367,7 +372,11 @@ export function ReorderTable({
                   <th
                     key="notes"
                     draggable
-                    onDragStart={(e) => e.dataTransfer.setData('text/plain', 'notes')}
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('text/plain', 'notes');
+                      setDraggingNotes(true);
+                    }}
+                    onDragEnd={() => setDraggingNotes(false)}
                     title="Drag onto another column to move the Notes column"
                     className="cursor-grab px-3 py-2 text-left font-medium active:cursor-grabbing"
                   >
