@@ -18,7 +18,16 @@ import {
  * cross the server/client boundary.
  */
 
-type SortKey = 'sku' | 'fba' | 'awd' | 'svd' | 'total' | 'perDay' | 'cover' | 'trailing';
+type SortKey =
+  | 'sku'
+  | 'box'
+  | 'fba'
+  | 'awd'
+  | 'svd'
+  | 'total'
+  | 'perDay'
+  | 'cover'
+  | 'trailing';
 
 export type ReorderTableVariant = 'order' | 'status' | 'legacy' | 'replenish';
 
@@ -183,6 +192,8 @@ function sortValue(
   switch (key) {
     case 'sku':
       return row.sku.toLowerCase();
+    case 'box':
+      return boxName(row)?.toLowerCase() ?? null;
     case 'fba':
       // The replenish FBA cell shows the full FBA total, so sort by that; every
       // other list shows fulfillable and sorts by it.
@@ -203,6 +214,18 @@ function sortValue(
       return statusText(row, variant);
   }
 }
+
+/** The SVD box this SKU is mapped to (its source item name), or null if unmapped. */
+function boxName(row: RecommendationRow): string | null {
+  return row.sourceMapping.status === 'mapped' ? row.sourceMapping.svdItemId : null;
+}
+
+const BOX_COLUMN = {
+  key: 'box' as const,
+  label: 'Box',
+  title: 'SVD box name this SKU is pulled from',
+  numeric: false,
+};
 
 const COLUMNS: { key: SortKey; label: string; title: string; numeric: boolean }[] = [
   { key: 'sku', label: 'SKU', title: 'Seller SKU', numeric: false },
@@ -239,6 +262,17 @@ export function ReorderTable({
   // time keeps the table compact.
   const [expandedFba, setExpandedFba] = useState<string | null>(null);
   const showFbaBreakdown = variant === 'replenish';
+  // The replenish list gets two extra columns: the SVD Box name (after SKU) and
+  // a free-text Notes field (far right). Notes are intentionally NOT persisted —
+  // they are scratch space for a picking session and reset on reload.
+  const showBoxName = variant === 'replenish';
+  const showNotes = variant === 'replenish';
+  const visibleColumns = showBoxName
+    ? [COLUMNS[0], BOX_COLUMN, ...COLUMNS.slice(1)]
+    : COLUMNS;
+  // Columns spanned by the expandable FBA detail row: all data columns + the
+  // trailing column + Notes when shown.
+  const detailColSpan = visibleColumns.length + 1 + (showNotes ? 1 : 0);
 
   const sorted = useMemo(() => {
     return [...rows].sort((a, b) => {
@@ -297,8 +331,11 @@ export function ReorderTable({
       <table className="w-full min-w-[720px] text-xs">
         <thead className="border-b border-border text-faint">
           <tr>
-            {COLUMNS.map((c) => header(c.key, c.label, c.title, c.numeric))}
+            {visibleColumns.map((c) => header(c.key, c.label, c.title, c.numeric))}
             {header('trailing', trailingHeader, trailingHeader, true)}
+            {showNotes ? (
+              <th className="px-3 py-2 text-left font-medium">Notes</th>
+            ) : null}
           </tr>
         </thead>
         <tbody>
@@ -314,6 +351,14 @@ export function ReorderTable({
               >
                 {row.sku}
               </td>
+              {showBoxName ? (
+                <td
+                  className="max-w-[220px] truncate px-3 py-2 font-mono text-muted"
+                  title={boxName(row) ?? 'unmapped'}
+                >
+                  {boxName(row) ?? '—'}
+                </td>
+              ) : null}
               {showFbaBreakdown ? (
                 <td className="px-3 py-2 text-right tabular-nums text-muted">
                   <button
@@ -379,12 +424,25 @@ export function ReorderTable({
                   </span>
                 )}
               </td>
+              {showNotes ? (
+                <td className="px-3 py-2">
+                  <input
+                    type="text"
+                    aria-label={`Notes for ${row.sku} (not saved)`}
+                    placeholder="Note…"
+                    // Uncontrolled and unpersisted on purpose: scratch space for a
+                    // picking session. React keeps the value across re-sorts via the
+                    // row's stable key; it clears on reload.
+                    className="w-full min-w-[8rem] rounded-md border border-border bg-panel px-2 py-1 text-xs text-foreground placeholder:text-faint focus:border-accent focus:outline-none"
+                  />
+                </td>
+              ) : null}
             </tr>
             {showFbaBreakdown && isExpanded ? (
               <tr className="border-b border-border/50 bg-panel-muted/40">
                 <td
                   id={`fba-detail-${rowKey}`}
-                  colSpan={COLUMNS.length + 1}
+                  colSpan={detailColSpan}
                   className="px-3 py-3"
                 >
                   <FbaBreakdown row={row} />
