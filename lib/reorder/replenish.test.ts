@@ -45,6 +45,7 @@ function row(overrides: RowOverrides = {}): RecommendationRow {
     },
     svdBoxes: 0,
     svdUnitsPerBox: null,
+    boxName: null,
     fnSku: null,
     supplyBreakdown: null,
     recommendation: { status: 'needs-review', reason: 'unknown-demand' },

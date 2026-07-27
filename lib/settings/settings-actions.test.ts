@@ -25,6 +25,7 @@ import {
   saveDefaultsAction,
   saveSkuOverrideAction,
   saveSvdUnitsPerBoxAction,
+  saveBoxNameAction,
 } from './settings-actions';
 
 function policyForm(overrides: Record<string, string> = {}): FormData {
@@ -281,6 +282,68 @@ describe('saveSvdUnitsPerBoxAction', () => {
     form.set('svdUnitsPerBox', '60');
 
     await expect(saveSvdUnitsPerBoxAction(form)).rejects.toThrow('A SKU is required');
+    expect(mocks.createClient).not.toHaveBeenCalled();
+  });
+});
+
+describe('saveBoxNameAction', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.requireUser.mockResolvedValue({ id: 'user-1' });
+  });
+
+  it('inserts a per-SKU row carrying only the box name when none exists', async () => {
+    const { client, insert } = makeSettingsClient(null);
+    mocks.createClient.mockResolvedValue(client);
+
+    const form = new FormData();
+    form.set('sku', 'SKU-1');
+    form.set('boxName', 'template 1 (2pack)');
+
+    await saveBoxNameAction(form);
+
+    const payload = insert.mock.calls[0][0];
+    expect(payload).toMatchObject({ sku: 'SKU-1', box_name: 'template 1 (2pack)' });
+    expect(payload).not.toHaveProperty('lead_time_days');
+    expect(payload).not.toHaveProperty('safety_stock');
+  });
+
+  it('updates the existing row without disturbing its other fields', async () => {
+    const { client, insert, update } = makeSettingsClient('row-3');
+    mocks.createClient.mockResolvedValue(client);
+
+    const form = new FormData();
+    form.set('sku', 'SKU-1');
+    form.set('boxName', 'setA + booklet');
+
+    await saveBoxNameAction(form);
+
+    expect(insert).not.toHaveBeenCalled();
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({ box_name: 'setA + booklet' }),
+    );
+  });
+
+  it('stores NULL to clear the box name when blank', async () => {
+    const { client, insert } = makeSettingsClient(null);
+    mocks.createClient.mockResolvedValue(client);
+
+    const form = new FormData();
+    form.set('sku', 'SKU-1');
+    form.set('boxName', '   ');
+
+    await saveBoxNameAction(form);
+
+    expect(insert).toHaveBeenCalledWith(
+      expect.objectContaining({ box_name: null }),
+    );
+  });
+
+  it('rejects a missing SKU', async () => {
+    const form = new FormData();
+    form.set('boxName', 'template 1');
+
+    await expect(saveBoxNameAction(form)).rejects.toThrow('A SKU is required');
     expect(mocks.createClient).not.toHaveBeenCalled();
   });
 });

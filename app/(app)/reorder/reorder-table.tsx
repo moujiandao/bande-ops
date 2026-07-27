@@ -193,7 +193,7 @@ function sortValue(
     case 'sku':
       return row.sku.toLowerCase();
     case 'box':
-      return boxName(row)?.toLowerCase() ?? null;
+      return row.boxName?.toLowerCase() ?? null;
     case 'fba':
       // The replenish FBA cell shows the full FBA total, so sort by that; every
       // other list shows fulfillable and sorts by it.
@@ -215,15 +215,10 @@ function sortValue(
   }
 }
 
-/** The SVD box this SKU is mapped to (its source item name), or null if unmapped. */
-function boxName(row: RecommendationRow): string | null {
-  return row.sourceMapping.status === 'mapped' ? row.sourceMapping.svdItemId : null;
-}
-
 const BOX_COLUMN = {
   key: 'box' as const,
   label: 'Box',
-  title: 'SVD box name this SKU is pulled from',
+  title: 'Operator box label for this SKU (set in Settings)',
   numeric: false,
 };
 
@@ -353,10 +348,10 @@ export function ReorderTable({
               </td>
               {showBoxName ? (
                 <td
-                  className="max-w-[220px] truncate px-3 py-2 font-mono text-muted"
-                  title={boxName(row) ?? 'unmapped'}
+                  className="max-w-[220px] truncate px-3 py-2 text-muted"
+                  title={row.boxName ?? 'no box label set'}
                 >
-                  {boxName(row) ?? '—'}
+                  {row.boxName ?? '—'}
                 </td>
               ) : null}
               {showFbaBreakdown ? (

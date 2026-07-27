@@ -93,6 +93,8 @@ export interface RecommendationRow {
   svdBoxes: number | null;
   /** Units per SVD box for this SKU. Null when not configured. */
   svdUnitsPerBox: number | null;
+  /** Operator's label for this SKU's box. Null when none assigned. */
+  boxName: string | null;
   fnSku: string | null;
   supplyBreakdown:
     | (Extract<UsableSupplyResult, { status: 'ok' }>['breakdown'])
@@ -183,6 +185,8 @@ type SettingRow = {
    * no global-default fallback, so a value on the `sku IS NULL` row is ignored.
    */
   svd_units_per_box: number | null;
+  /** Operator's free-text label for the SKU's box. Per-SKU only; null = none. */
+  box_name: string | null;
 };
 type SourceStateDbRow = {
   source: string;
@@ -296,7 +300,7 @@ export async function assembleRecommendations(
     deps.supabase
       .from('replenishment_settings')
       .select(
-        'marketplace_id, sku, lead_time_days, safety_stock, target_coverage_days, svd_units_per_box',
+        'marketplace_id, sku, lead_time_days, safety_stock, target_coverage_days, svd_units_per_box, box_name',
       )
       .eq('marketplace_id', marketplace.id),
     deps.supabase.from('replenishment_policy').select('*').eq('marketplace_id', marketplace.id),
@@ -371,6 +375,16 @@ export async function assembleRecommendations(
           row.sku !== null && row.svd_units_per_box !== null,
       )
       .map((row) => [row.sku, row.svd_units_per_box]),
+  );
+
+  // Per-SKU box label. Per-SKU only; the global default row never carries one.
+  const boxNameBySku = new Map<string, string>(
+    settingRows
+      .filter(
+        (row): row is SettingRow & { sku: string; box_name: string } =>
+          row.sku !== null && row.box_name !== null && row.box_name !== '',
+      )
+      .map((row) => [row.sku, row.box_name]),
   );
 
   const activeManualMappings = mappingRows
@@ -461,6 +475,7 @@ export async function assembleRecommendations(
     // that never reach the supply math — knowing "7 boxes, pack size unset"
     // is more useful than a blank cell.
     const svdUnitsPerBox = svdUnitsPerBoxBySku.get(item.sku) ?? null;
+    const boxName = boxNameBySku.get(item.sku) ?? null;
     const svd =
       sourceMapping.status === 'mapped'
         ? (svdById.get(sourceMapping.svdItemId) ?? null)
@@ -492,6 +507,7 @@ export async function assembleRecommendations(
         fbaBreakdown,
         svdBoxes,
         svdUnitsPerBox,
+        boxName,
         supplyBreakdown: null,
         recommendation: {
           status: 'needs-review',
@@ -515,6 +531,7 @@ export async function assembleRecommendations(
         fbaBreakdown,
         svdBoxes,
         svdUnitsPerBox,
+        boxName,
         supplyBreakdown: null,
         recommendation: { status: 'needs-review', reason: sourceMapping.reason },
       };
@@ -566,6 +583,7 @@ export async function assembleRecommendations(
       fbaBreakdown,
       svdBoxes,
       svdUnitsPerBox,
+      boxName,
       supplyBreakdown: supply.status === 'ok' ? supply.breakdown : null,
       recommendation,
     };
