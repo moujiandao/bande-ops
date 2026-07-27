@@ -1,5 +1,15 @@
 # Changelog
 
+## [2026-07-23] Box names, and replenish-list tweaks
+
+### Added
+- Per-SKU **box name** (migration `0017`, `box_name` on `replenishment_settings`, per-SKU only like `svd_units_per_box`): the operator's own label for a SKU's physical box (e.g. `template 1 (2pack)`, `setA + booklet`). Shown in the replenish list's Box column and editable in a new "Box names" section on `/settings` (unlabelled SKUs first). Seeded 66 labels from the source sheet through the server-action write path; 53 active SKUs now labelled.
+- **Notes** column on the replenish list: a free-text field per row, intentionally not persisted (scratch space for a picking session; resets on reload). Its column is draggable — drop the Notes header onto another column header to reposition it.
+
+### Changed
+- The replenish table's Box column previously showed the SVD item id; it now shows the operator box name.
+- `app/(app)/reorder/reorder-table.tsx` builds header and body cells as keyed arrays so the Notes column can be spliced in at any position; the other table variants render unchanged.
+
 ## [2026-07-23] FBA incoming in the replenish math
 
 ### Fixed
