@@ -33,6 +33,7 @@ function policyForm(overrides: Record<string, string> = {}): FormData {
   const values = {
     velocitySampleInStockDays: '90',
     velocityMaxLookbackDays: '365',
+    svdToFbaTargetDays: '30',
     countInboundShipped: 'on',
     countInboundReceiving: 'on',
     ...overrides,
@@ -53,7 +54,10 @@ describe('savePolicyAction', () => {
   });
 
   it('parses the form and upserts the global replenishment policy', async () => {
-    const formData = policyForm({ countInboundWorking: 'on' });
+    const formData = policyForm({
+      countInboundWorking: 'on',
+      svdToFbaTargetDays: '60',
+    });
 
     await savePolicyAction(formData);
 
@@ -68,6 +72,7 @@ describe('savePolicyAction', () => {
         svd_mode: 'replenishment_only',
         unknown_stock_mode: 'needs_review',
         stale_source_mode: 'needs_review',
+        svd_to_fba_target_days: 60,
         count_inbound_working: true,
         count_inbound_shipped: true,
         count_inbound_receiving: true,

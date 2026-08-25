@@ -9,7 +9,11 @@ import {
   saveBoxNameAction,
   deleteSourceMappingAction,
 } from '@/lib/settings/settings-actions';
-import { mapPolicyRow, type ReplenishmentPolicyRow } from '@/lib/settings/policy';
+import {
+  mapPolicyRow,
+  SVD_TO_FBA_TARGET_OPTIONS,
+  type ReplenishmentPolicyRow,
+} from '@/lib/settings/policy';
 import { assembleRecommendations } from '@/lib/reorder/service';
 
 /**
@@ -167,7 +171,7 @@ export default async function SettingsPage() {
           action={savePolicyAction}
           className="flex flex-col gap-4 rounded-panel border border-border bg-panel p-5"
         >
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-3">
             <label className="flex flex-col gap-1.5">
               <span className={labelClass}>Velocity sample (in-stock days)</span>
               <input
@@ -192,7 +196,28 @@ export default async function SettingsPage() {
                 className={fieldClass}
               />
             </label>
+            <label className="flex flex-col gap-1.5">
+              <span className={labelClass}>SVD to FBA target cover</span>
+              <select
+                name="svdToFbaTargetDays"
+                required
+                defaultValue={policy.svdToFbaTargetDays}
+                className={fieldClass}
+              >
+                {SVD_TO_FBA_TARGET_OPTIONS.map((days) => (
+                  <option key={days} value={days}>
+                    {days} days
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
+
+          <p className="text-[11px] text-faint">
+            SVD to FBA target cover controls only which SKUs appear in that
+            transfer list and how many units it recommends shipping. It does not
+            change supplier reorder quantities.
+          </p>
 
           <div className="grid gap-3 sm:grid-cols-3">
             <label className="flex items-center gap-2 rounded-md border border-border bg-panel-muted px-3 py-2 text-xs text-muted">

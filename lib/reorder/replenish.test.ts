@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { amazonSideCover, suggestedShipQty } from './replenish';
+import {
+  amazonSideCover,
+  shouldReplenishFromSvd,
+  suggestedShipQty,
+} from './replenish';
 import type { RecommendationRow } from './service';
 
 /**
@@ -132,5 +136,19 @@ describe('suggestedShipQty', () => {
     expect(
       suggestedShipQty(row({ sources: { amazonSideCounted: 0, svd: null } }), 30),
     ).toBeNull();
+  });
+});
+
+describe('shouldReplenishFromSvd', () => {
+  it('uses the configured target for both eligibility and ship quantity', () => {
+    // 180 counted units at 4/day gives 45 days of Amazon-side cover.
+    const candidate = row({
+      sources: { amazonSideCounted: 180, svd: 500 },
+      dailyDemand: 4,
+    });
+
+    expect(shouldReplenishFromSvd(candidate, 30)).toBe(false);
+    expect(shouldReplenishFromSvd(candidate, 60)).toBe(true);
+    expect(suggestedShipQty(candidate, 60)).toBe(60);
   });
 });

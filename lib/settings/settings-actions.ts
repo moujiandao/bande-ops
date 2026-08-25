@@ -285,6 +285,10 @@ export async function savePolicyAction(formData: FormData): Promise<void> {
       formData.get('velocityMaxLookbackDays'),
       'Velocity max lookback days',
     ),
+    svdToFbaTargetDays: parsePositiveInt(
+      formData.get('svdToFbaTargetDays'),
+      'SVD to FBA target days',
+    ),
     countInboundWorking: checkbox(formData, 'countInboundWorking'),
     countInboundShipped: checkbox(formData, 'countInboundShipped'),
     countInboundReceiving: checkbox(formData, 'countInboundReceiving'),
@@ -302,6 +306,7 @@ export async function savePolicyAction(formData: FormData): Promise<void> {
       svd_mode: policy.svdMode,
       unknown_stock_mode: policy.unknownStockMode,
       stale_source_mode: policy.staleSourceMode,
+      svd_to_fba_target_days: policy.svdToFbaTargetDays,
       count_inbound_working: policy.countInboundWorking,
       count_inbound_shipped: policy.countInboundShipped,
       count_inbound_receiving: policy.countInboundReceiving,
