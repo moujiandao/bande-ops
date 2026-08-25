@@ -3,6 +3,8 @@ import { DEFAULT_MARKETPLACE } from '@/lib/amazon/types';
 export type FulfillmentMode = 'fba_only';
 export type SvdMode = 'replenishment_only';
 export type ReviewMode = 'needs_review';
+export const SVD_TO_FBA_TARGET_OPTIONS = [30, 60, 90, 180] as const;
+export type SvdToFbaTargetDays = (typeof SVD_TO_FBA_TARGET_OPTIONS)[number];
 
 export interface ReplenishmentPolicy {
   marketplaceId: string;
@@ -12,6 +14,7 @@ export interface ReplenishmentPolicy {
   svdMode: SvdMode;
   unknownStockMode: ReviewMode;
   staleSourceMode: ReviewMode;
+  svdToFbaTargetDays: SvdToFbaTargetDays;
   countAwdAvailable: boolean;
   countAwdReplenishment: boolean;
   countInboundWorking: boolean;
@@ -22,6 +25,7 @@ export interface ReplenishmentPolicy {
 export interface ReplenishmentPolicyInput {
   velocitySampleInStockDays: number;
   velocityMaxLookbackDays: number;
+  svdToFbaTargetDays: number;
   countAwdAvailable: boolean;
   countAwdReplenishment: boolean;
   countInboundWorking: boolean;
@@ -37,6 +41,7 @@ export interface ReplenishmentPolicyRow {
   svd_mode: SvdMode;
   unknown_stock_mode: ReviewMode;
   stale_source_mode: ReviewMode;
+  svd_to_fba_target_days: SvdToFbaTargetDays;
   count_awd_available: boolean | null;
   count_awd_replenishment: boolean | null;
   count_inbound_working: boolean;
@@ -52,6 +57,7 @@ export const REPLENISHMENT_POLICY_DEFAULTS: ReplenishmentPolicy = {
   svdMode: 'replenishment_only',
   unknownStockMode: 'needs_review',
   staleSourceMode: 'needs_review',
+  svdToFbaTargetDays: 30,
   // AWD stock free to send to FBA is stock you own, so it counts. Units already
   // in transit to FBA do not, because FBA inbound may already report them.
   countAwdAvailable: true,
@@ -75,7 +81,14 @@ export function validatePolicyInput(
   if (input.velocitySampleInStockDays > input.velocityMaxLookbackDays) {
     throw new Error('velocity sample days must be <= max lookback days');
   }
-  return { ...REPLENISHMENT_POLICY_DEFAULTS, ...input };
+  if (!SVD_TO_FBA_TARGET_OPTIONS.includes(input.svdToFbaTargetDays as SvdToFbaTargetDays)) {
+    throw new Error('SVD to FBA target days must be one of 30, 60, 90, 180');
+  }
+  return {
+    ...REPLENISHMENT_POLICY_DEFAULTS,
+    ...input,
+    svdToFbaTargetDays: input.svdToFbaTargetDays as SvdToFbaTargetDays,
+  };
 }
 
 export function mapPolicyRow(
@@ -90,6 +103,8 @@ export function mapPolicyRow(
     svdMode: row.svd_mode,
     unknownStockMode: row.unknown_stock_mode,
     staleSourceMode: row.stale_source_mode,
+    svdToFbaTargetDays:
+      row.svd_to_fba_target_days ?? REPLENISHMENT_POLICY_DEFAULTS.svdToFbaTargetDays,
     countAwdAvailable: row.count_awd_available ?? true,
     countAwdReplenishment: row.count_awd_replenishment ?? false,
     countInboundWorking: row.count_inbound_working,

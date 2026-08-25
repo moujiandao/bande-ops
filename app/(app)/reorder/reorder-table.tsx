@@ -3,11 +3,7 @@
 import Link from 'next/link';
 import { Fragment, useMemo, useState, type DragEvent } from 'react';
 import type { RecommendationRow } from '@/lib/reorder/service';
-import {
-  amazonSideCover,
-  REPLENISH_TARGET_DAYS,
-  suggestedShipQty,
-} from '@/lib/reorder/replenish';
+import { suggestedShipQty } from '@/lib/reorder/replenish';
 
 /**
  * Sortable reorder table.
@@ -188,6 +184,7 @@ function sortValue(
   row: RecommendationRow,
   key: SortKey,
   variant: ReorderTableVariant,
+  svdToFbaTargetDays: number,
 ): string | number | null {
   switch (key) {
     case 'sku':
@@ -210,7 +207,7 @@ function sortValue(
       return coverDays(row.usableSupply, row.dailyDemand);
     case 'trailing':
       if (variant === 'order') return orderQty(row);
-      if (variant === 'replenish') return suggestedShipQty(row, REPLENISH_TARGET_DAYS);
+      if (variant === 'replenish') return suggestedShipQty(row, svdToFbaTargetDays);
       return statusText(row, variant);
   }
 }
@@ -241,11 +238,18 @@ export function ReorderTable({
   rows,
   trailingHeader,
   variant,
+  svdToFbaTargetDays,
 }: {
   rows: RecommendationRow[];
   trailingHeader: string;
   variant: ReorderTableVariant;
+  svdToFbaTargetDays?: number;
 }) {
+  if (variant === 'replenish' && svdToFbaTargetDays === undefined) {
+    throw new Error('Replenish tables require an SVD-to-FBA target.');
+  }
+  const replenishTargetDays = svdToFbaTargetDays ?? 0;
+
   // Default: biggest order first on the reorder list, else by SKU.
   const [sortKey, setSortKey] = useState<SortKey>(
     variant === 'order' || variant === 'replenish' ? 'trailing' : 'sku',
@@ -279,8 +283,8 @@ export function ReorderTable({
 
   const sorted = useMemo(() => {
     return [...rows].sort((a, b) => {
-      const av = sortValue(a, sortKey, variant);
-      const bv = sortValue(b, sortKey, variant);
+      const av = sortValue(a, sortKey, variant, replenishTargetDays);
+      const bv = sortValue(b, sortKey, variant, replenishTargetDays);
       // Unknown values always sink, so sorting never buries real data under
       // a wall of em dashes.
       if (av === null && bv === null) return 0;
@@ -292,7 +296,7 @@ export function ReorderTable({
           : String(av).localeCompare(String(bv));
       return descending ? -cmp : cmp;
     });
-  }, [rows, sortKey, descending, variant]);
+  }, [rows, sortKey, descending, variant, replenishTargetDays]);
 
   function toggle(key: SortKey) {
     if (key === sortKey) {
@@ -467,7 +471,7 @@ export function ReorderTable({
                         {num(
                           variant === 'order'
                             ? orderQty(row)
-                            : suggestedShipQty(row, REPLENISH_TARGET_DAYS),
+                            : suggestedShipQty(row, replenishTargetDays),
                         )}
                       </span>
                     ) : variant !== 'legacy' &&

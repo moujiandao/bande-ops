@@ -52,5 +52,14 @@ export function suggestedShipQty(
   return Math.min(shortfall, svd);
 }
 
-/** Coverage target that defines "low" for the SVD→FBA replenish list. */
-export const REPLENISH_TARGET_DAYS = 30;
+export function shouldReplenishFromSvd(
+  row: RecommendationRow,
+  targetDays: number,
+): boolean {
+  const cover = amazonSideCover(row);
+  return (
+    cover !== null &&
+    cover < targetDays &&
+    suggestedShipQty(row, targetDays) !== null
+  );
+}
