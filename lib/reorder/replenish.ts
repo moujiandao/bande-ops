@@ -12,6 +12,8 @@
 
 import type { RecommendationRow } from './service';
 
+export type SvdShipmentBoxCounts = Record<string, number | ''>;
+
 /**
  * Days of cover from stock at or heading to Amazon.
  *
@@ -50,6 +52,123 @@ export function suggestedShipQty(
   );
   if (shortfall <= 0) return null;
   return Math.min(shortfall, svd);
+}
+
+export function suggestedBoxesToSend(
+  shipUnits: number | null,
+  unitsPerBox: number | null,
+): number | null {
+  if (shipUnits === null || !Number.isFinite(shipUnits) || shipUnits < 0) return null;
+  if (unitsPerBox === null || !Number.isFinite(unitsPerBox) || unitsPerBox <= 0) {
+    return null;
+  }
+  return Math.ceil(shipUnits / unitsPerBox);
+}
+
+export function svdShipmentRowKey(row: RecommendationRow): string {
+  return `${row.marketplaceId}:${row.sku}`;
+}
+
+export function initialSvdShipmentBoxCounts(
+  rows: RecommendationRow[],
+  targetDays: number,
+): SvdShipmentBoxCounts {
+  return Object.fromEntries(
+    rows.map((row) => [
+      svdShipmentRowKey(row),
+      suggestedBoxesToSend(
+        suggestedShipQty(row, targetDays),
+        row.svdUnitsPerBox,
+      ) ?? '',
+    ]),
+  );
+}
+
+function svdShipmentEmailRows(
+  rows: RecommendationRow[],
+  counts: SvdShipmentBoxCounts,
+) {
+  return rows.map((row) => ({
+    box: row.boxName ?? '(not set)',
+    numberOfBoxes: counts[svdShipmentRowKey(row)] ?? '',
+  }));
+}
+
+export function applySvdShipmentBoxCount({
+  monthYear,
+  rows,
+  currentCounts,
+  rowKey,
+  numberOfBoxes,
+}: {
+  monthYear: string;
+  rows: RecommendationRow[];
+  currentCounts: SvdShipmentBoxCounts;
+  rowKey: string;
+  numberOfBoxes: number | '';
+}): { boxesToSend: SvdShipmentBoxCounts; emailDraft: string } {
+  const boxesToSend = { ...currentCounts, [rowKey]: numberOfBoxes };
+  return {
+    boxesToSend,
+    emailDraft: buildSvdShipmentEmail(
+      monthYear,
+      svdShipmentEmailRows(rows, boxesToSend),
+    ),
+  };
+}
+
+/**
+ * React key for the session-only draft. A server refresh that changes shipment
+ * inputs remounts the table so stale counts and removed rows cannot survive.
+ */
+export function svdShipmentDraftKey(
+  rows: RecommendationRow[],
+  targetDays: number,
+  monthYear: string,
+): string {
+  return JSON.stringify([
+    monthYear,
+    targetDays,
+    rows.map((row) => [
+      svdShipmentRowKey(row),
+      row.boxName,
+      suggestedShipQty(row, targetDays),
+      row.svdUnitsPerBox,
+    ]),
+  ]);
+}
+
+export function formatShipmentMonthYear(date: Date): string {
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'America/Los_Angeles',
+  }).format(date);
+}
+
+export function buildSvdShipmentEmail(
+  monthYear: string,
+  rows: ReadonlyArray<{ box: string; numberOfBoxes: number | '' }>,
+): string {
+  const table = [
+    'Box | Number of Boxes',
+    ...rows.map((row) => `${row.box} | ${row.numberOfBoxes}`),
+  ].join('\n');
+
+  return `Subject: B&E Medical ${monthYear} Shipment
+
+
+Hi Julio,
+
+See attached for box labels and pallet labels. They will be coming within 2 days to pick up the boxes.
+
+${table}
+
+As always please email or call me if you have any questions.
+
+Kind regards,
+Brian
+5107171898`;
 }
 
 export function shouldReplenishFromSvd(

@@ -3,7 +3,14 @@
 import Link from 'next/link';
 import { Fragment, useMemo, useState, type DragEvent } from 'react';
 import type { RecommendationRow } from '@/lib/reorder/service';
-import { suggestedShipQty } from '@/lib/reorder/replenish';
+import {
+  applySvdShipmentBoxCount,
+  buildSvdShipmentEmail,
+  initialSvdShipmentBoxCounts,
+  suggestedShipQty,
+  svdShipmentRowKey,
+  type SvdShipmentBoxCounts,
+} from '@/lib/reorder/replenish';
 
 /**
  * Sortable reorder table.
@@ -239,14 +246,19 @@ export function ReorderTable({
   trailingHeader,
   variant,
   svdToFbaTargetDays,
+  shipmentMonthYear,
 }: {
   rows: RecommendationRow[];
   trailingHeader: string;
   variant: ReorderTableVariant;
   svdToFbaTargetDays?: number;
+  shipmentMonthYear?: string;
 }) {
   if (variant === 'replenish' && svdToFbaTargetDays === undefined) {
     throw new Error('Replenish tables require an SVD-to-FBA target.');
+  }
+  if (variant === 'replenish' && shipmentMonthYear === undefined) {
+    throw new Error('Replenish tables require a shipment month and year.');
   }
   const replenishTargetDays = svdToFbaTargetDays ?? 0;
 
@@ -266,11 +278,30 @@ export function ReorderTable({
   // they are scratch space for a picking session and reset on reload.
   const showBoxName = variant === 'replenish';
   const showNotes = variant === 'replenish';
+  const showBoxesToSend = variant === 'replenish';
   const visibleColumns = showBoxName
     ? [COLUMNS[0], BOX_COLUMN, ...COLUMNS.slice(1)]
     : COLUMNS;
-  // Fixed (non-Notes) column count: the data columns plus the trailing column.
-  const fixedColumnCount = visibleColumns.length + 1;
+  const initialBoxCounts = initialSvdShipmentBoxCounts(
+    rows,
+    replenishTargetDays,
+  );
+  const [boxesToSend, setBoxesToSend] =
+    useState<SvdShipmentBoxCounts>(initialBoxCounts);
+  const [emailDraft, setEmailDraft] = useState(() =>
+    showBoxesToSend
+      ? buildSvdShipmentEmail(
+          shipmentMonthYear ?? '',
+          rows.map((row) => ({
+            box: row.boxName ?? '(not set)',
+            numberOfBoxes: initialBoxCounts[svdShipmentRowKey(row)] ?? '',
+          })),
+        )
+      : '',
+  );
+  // Fixed (non-Notes) columns: data + trailing + boxes-to-send when replenishing.
+  const fixedColumnCount =
+    visibleColumns.length + 1 + (showBoxesToSend ? 1 : 0);
   // Where the draggable Notes column sits among the fixed columns (insert-before
   // that index). null = its default far-right position. Drag its header onto
   // another column header to move it; ephemeral, resets on reload.
@@ -306,6 +337,25 @@ export function ReorderTable({
     setSortKey(key);
     // Numbers are most useful largest-first; text reads better A-Z.
     setDescending(key !== 'sku');
+  }
+
+  function updateBoxesToSend(rowKey: string, rawValue: string) {
+    let value: number | '' = '';
+    if (rawValue !== '') {
+      const parsed = Number(rawValue);
+      if (!Number.isInteger(parsed) || parsed < 0) return;
+      value = parsed;
+    }
+
+    const next = applySvdShipmentBoxCount({
+      monthYear: shipmentMonthYear ?? '',
+      rows,
+      currentCounts: boxesToSend,
+      rowKey,
+      numberOfBoxes: value,
+    });
+    setBoxesToSend(next.boxesToSend);
+    setEmailDraft(next.emailDraft);
   }
 
   // When the Notes column is being dragged, every fixed header is a drop target
@@ -355,49 +405,64 @@ export function ReorderTable({
   }
 
   return (
-    <div className="overflow-x-auto rounded-panel border border-border bg-panel">
-      <table className="w-full min-w-[720px] text-xs">
-        <thead className="border-b border-border text-faint">
-          <tr>
-            {(() => {
-              const cells = [
-                ...visibleColumns.map((c, i) =>
-                  header(c.key, c.label, c.title, c.numeric, i),
-                ),
-                // Drop index fixedColumnCount = the far-right slot after the
-                // trailing column, so Notes can always be dragged back to its
-                // default position.
-                header('trailing', trailingHeader, trailingHeader, true, fixedColumnCount),
-              ];
-              if (showNotes) {
-                cells.splice(
-                  effectiveNotesIndex,
-                  0,
-                  <th
-                    key="notes"
-                    draggable
-                    onDragStart={(e) => {
-                      e.dataTransfer.setData('text/plain', 'notes');
-                      setDraggingNotes(true);
-                    }}
-                    onDragEnd={() => setDraggingNotes(false)}
-                    title="Drag onto another column to move the Notes column"
-                    className="cursor-grab px-3 py-2 text-left font-medium active:cursor-grabbing"
-                  >
-                    <span aria-hidden="true" className="mr-1 text-faint">
-                      ⠿
-                    </span>
-                    Notes
-                  </th>,
-                );
-              }
-              return cells;
-            })()}
-          </tr>
-        </thead>
-        <tbody>
+    <div className="flex flex-col gap-3">
+      <div className="overflow-x-auto rounded-panel border border-border bg-panel">
+        <table className="w-full min-w-[960px] text-xs">
+          <thead className="border-b border-border text-faint">
+            <tr>
+              {(() => {
+                const cells = [
+                  ...visibleColumns.map((c, i) =>
+                    header(c.key, c.label, c.title, c.numeric, i),
+                  ),
+                  header(
+                    'trailing',
+                    trailingHeader,
+                    trailingHeader,
+                    true,
+                    visibleColumns.length,
+                  ),
+                ];
+                if (showBoxesToSend) {
+                  cells.push(
+                    <th
+                      key="boxes-to-send"
+                      className="min-w-[9rem] px-3 py-2 text-right font-medium"
+                      {...dropProps(visibleColumns.length + 1)}
+                    >
+                      Number of Boxes to send
+                    </th>,
+                  );
+                }
+                if (showNotes) {
+                  cells.splice(
+                    effectiveNotesIndex,
+                    0,
+                    <th
+                      key="notes"
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData('text/plain', 'notes');
+                        setDraggingNotes(true);
+                      }}
+                      onDragEnd={() => setDraggingNotes(false)}
+                      title="Drag onto another column to move the Notes column"
+                      className="cursor-grab px-3 py-2 text-left font-medium active:cursor-grabbing"
+                    >
+                      <span aria-hidden="true" className="mr-1 text-faint">
+                        ⠿
+                      </span>
+                      Notes
+                    </th>,
+                  );
+                }
+                return cells;
+              })()}
+            </tr>
+          </thead>
+          <tbody>
           {sorted.map((row) => {
-            const rowKey = `${row.marketplaceId}:${row.sku}`;
+            const rowKey = svdShipmentRowKey(row);
             const isExpanded = expandedFba === rowKey;
             return (
             <Fragment key={rowKey}>
@@ -492,6 +557,24 @@ export function ReorderTable({
                     )}
                   </td>,
                 ];
+                if (showBoxesToSend) {
+                  cells.push(
+                    <td key="boxes-to-send" className="px-3 py-2 text-right">
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        inputMode="numeric"
+                        aria-label={`Number of boxes to send for ${row.sku}`}
+                        value={boxesToSend[rowKey] ?? ''}
+                        onChange={(event) =>
+                          updateBoxesToSend(rowKey, event.currentTarget.value)
+                        }
+                        className="w-24 rounded-md border border-border bg-panel px-2 py-1 text-right text-xs tabular-nums text-foreground focus:border-accent focus:outline-none"
+                      />
+                    </td>,
+                  );
+                }
                 if (showNotes) {
                   cells.splice(
                     effectiveNotesIndex,
@@ -526,8 +609,29 @@ export function ReorderTable({
             </Fragment>
             );
           })}
-        </tbody>
-      </table>
+          </tbody>
+        </table>
+      </div>
+      {showBoxesToSend ? (
+        <div className="flex flex-col gap-2 rounded-panel border border-border bg-panel p-4">
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">
+              Shipment email draft
+            </h3>
+            <p className="mt-1 text-[11px] text-faint">
+              Editable and ready to copy. Changing a box count regenerates this
+              draft and replaces manual edits.
+            </p>
+          </div>
+          <textarea
+            aria-label="SVD shipment email draft"
+            rows={18}
+            value={emailDraft}
+            onChange={(event) => setEmailDraft(event.currentTarget.value)}
+            className="w-full resize-y rounded-md border border-border bg-panel px-3 py-2 font-mono text-xs leading-relaxed text-foreground focus:border-accent focus:outline-none"
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
