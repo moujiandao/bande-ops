@@ -1,6 +1,10 @@
 import { Badge } from '@/components/ui/badge';
 import { ReorderTable } from './reorder-table';
-import { shouldReplenishFromSvd } from '@/lib/reorder/replenish';
+import {
+  formatShipmentMonthYear,
+  shouldReplenishFromSvd,
+  svdShipmentDraftKey,
+} from '@/lib/reorder/replenish';
 import { assembleRecommendations, type RecommendationRow } from '@/lib/reorder/service';
 import { refreshSvdInventoryAction } from '@/lib/svd/actions';
 import { createClient } from '@/lib/supabase/server';
@@ -28,6 +32,7 @@ export default async function ReorderPage() {
   const supabase = await createClient();
   const { rows, errors, sourceHealth, policy } = await assembleRecommendations({ supabase });
   const svdToFbaTargetDays = policy.svdToFbaTargetDays;
+  const shipmentMonthYear = formatShipmentMonthYear(new Date());
 
   // Legacy SKUs are excluded from every working list. They stay reachable in a
   // collapsed section so an excluded SKU is never silently invisible.
@@ -148,10 +153,16 @@ export default async function ReorderPage() {
                 needed.
               </p>
               <ReorderTable
+                key={svdShipmentDraftKey(
+                  replenishFromSvd,
+                  svdToFbaTargetDays,
+                  shipmentMonthYear,
+                )}
                 rows={replenishFromSvd}
                 trailingHeader="Ship"
                 variant="replenish"
                 svdToFbaTargetDays={svdToFbaTargetDays}
+                shipmentMonthYear={shipmentMonthYear}
               />
             </section>
           ) : null}
