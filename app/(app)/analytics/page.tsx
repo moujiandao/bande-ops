@@ -1,4 +1,8 @@
 import Link from 'next/link';
+import {
+  ANALYTICS_CLASSIFICATION_OPTIONS,
+  ClassificationLegend,
+} from '@/components/analytics/classification-legend';
 import { Badge } from '@/components/ui/badge';
 import {
   analyticsSourceIssue,
@@ -416,12 +420,11 @@ export default async function AnalyticsPage({
             defaultValue={filter}
             className="rounded-md border border-border bg-panel px-3 py-2 text-sm text-foreground focus:border-accent focus:outline-none"
           >
-            <option value="all">All active</option>
-            <option value="trending">Trending up</option>
-            <option value="early">Early launch</option>
-            <option value="constrained">Stock constrained</option>
-            <option value="insufficient">Insufficient evidence</option>
-            <option value="historical">Historical</option>
+            {ANALYTICS_CLASSIFICATION_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </select>
         </label>
         <label className="flex flex-col gap-1.5">
@@ -445,6 +448,8 @@ export default async function AnalyticsPage({
           Apply
         </button>
       </form>
+
+      <ClassificationLegend />
 
       {selected ? <ProductDetail product={selected} /> : selectedSku ? (
         <div className="rounded-panel border border-border bg-panel p-4 text-sm text-muted">
