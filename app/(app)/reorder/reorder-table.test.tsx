@@ -4,6 +4,7 @@ import type { RecommendationRow } from '@/lib/reorder/service';
 import {
   copyEmailDraft,
   emailClipboardBlobs,
+  orderQuantityForCoverage,
   ReorderTable,
 } from './reorder-table';
 
@@ -45,6 +46,64 @@ function replenishRow(): RecommendationRow {
     recommendation: { status: 'needs-review', reason: 'test-fixture' },
   };
 }
+
+function orderRow(): RecommendationRow {
+  return {
+    ...replenishRow(),
+    usableSupply: 50,
+    dailyDemand: 2,
+    recommendation: {
+      status: 'ok',
+      recommendedQty: 130,
+      reasoning: {
+        usableSupply: 50,
+        dailyDemand: 2,
+        leadTimeDays: 30,
+        safetyStock: 0,
+        coverageDays: 90,
+        reorderPoint: 60,
+        targetStock: 180,
+        orderUpToLevel: 180,
+      },
+    },
+  };
+}
+
+describe('ReorderTable coverage selector', () => {
+  it('offers the legacy coverage presets on the order list only', () => {
+    const html = renderToStaticMarkup(
+      <ReorderTable rows={[orderRow()]} trailingHeader="Order" variant="order" />,
+    );
+
+    expect(html).toContain('aria-label="Months of coverage"');
+    expect(html).toMatch(
+      /<option value=""[^>]*>Configured per SKU<\/option>/,
+    );
+    for (const months of [1, 2, 3, 6, 12]) {
+      expect(html).toContain(`<option value="${months}">${months} month`);
+    }
+
+    const replenishHtml = renderToStaticMarkup(
+      <ReorderTable
+        rows={[replenishRow()]}
+        trailingHeader="Ship"
+        variant="replenish"
+        svdToFbaTargetDays={30}
+        shipmentMonthYear="August 2026"
+      />,
+    );
+    expect(replenishHtml).not.toContain('aria-label="Months of coverage"');
+  });
+
+  it('recalculates quantity from the selected coverage without changing the trigger', () => {
+    const row = orderRow();
+
+    expect(orderQuantityForCoverage(row, null)).toBe(130);
+    expect(orderQuantityForCoverage(row, 30)).toBe(10);
+    expect(orderQuantityForCoverage(row, 180)).toBe(310);
+    expect(row.recommendation).toMatchObject({ recommendedQty: 130 });
+  });
+});
 
 describe('ReorderTable replenish shipment fields', () => {
   it('renders the rounded-up box count immediately before Notes', () => {

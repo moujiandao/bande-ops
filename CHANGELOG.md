@@ -1,5 +1,10 @@
 # Changelog
 
+## [2026-09-17] Reorder coverage selector
+
+### Added
+- Add a 1, 2, 3, 6, and 12 month coverage selector to Reorder Now so operators can recalculate order quantities without changing saved per-SKU settings.
+
 ## [2026-09-17] Shipment email and agent instructions
 
 ### Added

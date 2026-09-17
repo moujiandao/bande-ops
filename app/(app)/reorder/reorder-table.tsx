@@ -9,6 +9,7 @@ import {
   type DragEvent,
 } from 'react';
 import type { RecommendationRow } from '@/lib/reorder/service';
+import { recommend } from '@/lib/reorder/recommend';
 import {
   applySvdShipmentBoxCount,
   buildSvdShipmentEmail,
@@ -107,8 +108,22 @@ function coverDays(supply: number | null, demand: number | null): number | null 
   return Math.floor(supply / demand);
 }
 
-function orderQty(row: RecommendationRow): number | null {
-  return row.recommendation.status === 'ok' ? row.recommendation.recommendedQty : null;
+export function orderQuantityForCoverage(
+  row: RecommendationRow,
+  coverageDays: number | null,
+): number | null {
+  if (row.recommendation.status !== 'ok') return null;
+  if (coverageDays === null) return row.recommendation.recommendedQty;
+
+  const { reasoning } = row.recommendation;
+  const recalculated = recommend({
+    usableSupply: reasoning.usableSupply,
+    dailyDemand: reasoning.dailyDemand,
+    leadTimeDays: reasoning.leadTimeDays,
+    safetyStock: reasoning.safetyStock,
+    coverageDays,
+  });
+  return recalculated.status === 'ok' ? recalculated.recommendedQty : null;
 }
 
 function statusText(row: RecommendationRow, variant: ReorderTableVariant): string {
@@ -238,6 +253,7 @@ function sortValue(
   key: SortKey,
   variant: ReorderTableVariant,
   svdToFbaTargetDays: number,
+  coverageDays: number | null,
 ): string | number | null {
   switch (key) {
     case 'sku':
@@ -259,7 +275,7 @@ function sortValue(
     case 'cover':
       return coverDays(row.usableSupply, row.dailyDemand);
     case 'trailing':
-      if (variant === 'order') return orderQty(row);
+      if (variant === 'order') return orderQuantityForCoverage(row, coverageDays);
       if (variant === 'replenish') return suggestedShipQty(row, svdToFbaTargetDays);
       return statusText(row, variant);
   }
@@ -307,6 +323,8 @@ export function ReorderTable({
     throw new Error('Replenish tables require a shipment month and year.');
   }
   const replenishTargetDays = svdToFbaTargetDays ?? 0;
+  const [coverageMonths, setCoverageMonths] = useState<number | null>(null);
+  const coverageDays = coverageMonths === null ? null : coverageMonths * 30;
 
   // Default: biggest order first on the reorder list, else by SKU.
   const [sortKey, setSortKey] = useState<SortKey>(
@@ -362,8 +380,20 @@ export function ReorderTable({
 
   const sorted = useMemo(() => {
     return [...rows].sort((a, b) => {
-      const av = sortValue(a, sortKey, variant, replenishTargetDays);
-      const bv = sortValue(b, sortKey, variant, replenishTargetDays);
+      const av = sortValue(
+        a,
+        sortKey,
+        variant,
+        replenishTargetDays,
+        coverageDays,
+      );
+      const bv = sortValue(
+        b,
+        sortKey,
+        variant,
+        replenishTargetDays,
+        coverageDays,
+      );
       // Unknown values always sink, so sorting never buries real data under
       // a wall of em dashes.
       if (av === null && bv === null) return 0;
@@ -375,7 +405,14 @@ export function ReorderTable({
           : String(av).localeCompare(String(bv));
       return descending ? -cmp : cmp;
     });
-  }, [rows, sortKey, descending, variant, replenishTargetDays]);
+  }, [
+    rows,
+    sortKey,
+    descending,
+    variant,
+    replenishTargetDays,
+    coverageDays,
+  ]);
 
   function toggle(key: SortKey) {
     if (key === sortKey) {
@@ -471,6 +508,33 @@ export function ReorderTable({
 
   return (
     <div className="flex flex-col gap-3">
+      {variant === 'order' ? (
+        <div className="flex items-center justify-end gap-2">
+          <label htmlFor="reorder-coverage-months" className="text-xs text-muted">
+            Months of coverage
+          </label>
+          <select
+            id="reorder-coverage-months"
+            aria-label="Months of coverage"
+            value={coverageMonths ?? ''}
+            onChange={(event) =>
+              setCoverageMonths(
+                event.currentTarget.value === ''
+                  ? null
+                  : Number(event.currentTarget.value),
+              )
+            }
+            className="rounded-md border border-border bg-panel px-2 py-1.5 text-xs text-foreground focus:border-accent focus:outline-none"
+          >
+            <option value="">Configured per SKU</option>
+            {[1, 2, 3, 6, 12].map((months) => (
+              <option key={months} value={months}>
+                {months} {months === 1 ? 'month' : 'months'}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
       <div className="overflow-x-auto rounded-panel border border-border bg-panel">
         <table className="w-full min-w-[960px] text-xs">
           <thead className="border-b border-border text-faint">
@@ -600,7 +664,7 @@ export function ReorderTable({
                       <span className="text-sm font-semibold tabular-nums text-accent-strong">
                         {num(
                           variant === 'order'
-                            ? orderQty(row)
+                            ? orderQuantityForCoverage(row, coverageDays)
                             : suggestedShipQty(row, replenishTargetDays),
                         )}
                       </span>
