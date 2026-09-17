@@ -1,5 +1,10 @@
 # Changelog
 
+## [2026-09-17] Manual refresh access
+
+### Changed
+- Allow every authenticated user, including staff, to trigger the manual SVD inventory refresh. Catalog and Ads refresh actions already allowed all authenticated users; Ads write-back controls remain owner-only.
+
 ## [2026-07-23] Box names, and replenish-list tweaks
 
 ### Added

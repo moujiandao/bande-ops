@@ -14,7 +14,7 @@ import { isAuthorizedCronRequest } from '@/lib/cron/auth';
  * metrics — via the service-role admin client. This is a superset of what the
  * page "Sync now" actions cover: /catalog refreshes only catalog + FBA
  * inventory, /ads only the two ads mirrors, and SVD inventory is NOT refreshed
- * here at all (it is owner-triggered from /reorder).
+ * here at all (it is triggered by an authenticated user from /reorder).
  *
  * Unlike the page actions there is no logged-in user here, so auth is a
  * shared-secret / platform-header check (`isAuthorizedCronRequest`) rather than

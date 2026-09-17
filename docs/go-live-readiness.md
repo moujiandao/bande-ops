@@ -17,7 +17,7 @@ The `feat/live-inventory-reorder` branch addresses the reorder-specific blockers
 - FBA ledger velocity is now a scheduled mirror using one report per marketplace/window, not per-SKU page-load calls.
 - Report document download uses the presigned document URL separately from SP-API JSON requests.
 - Reorder recommendations read persisted FBA, AWD, SVD, source mappings, sales velocity, policy, and freshness state.
-- SVD inventory refresh is owner-triggered from the Reorder page and uses server-side `SVD_USERNAME`/`SVD_PASSWORD`.
+- SVD inventory refresh is triggered by an authenticated user from the Reorder page and uses server-side `SVD_USERNAME`/`SVD_PASSWORD`.
 
 Remaining go-live checks: apply migration `0010`, provide live Amazon and SVD env vars, verify the new SP-API/AWD/ledger/SVD paths against real credentials, and still migrate Advertising API to Sponsored Products v3 before trusting Ads live data.
 
@@ -52,7 +52,7 @@ The app tells you where it is: `lib/env/mode.ts` resolves the same flags the cli
 2. **Sandbox** (`AMAZON_USE_FAKE=false`, `AMAZON_USE_SANDBOX=true`): needs real LWA creds + refresh tokens. Amazon returns canned fixtures keyed to each operation, so this proves *auth, headers, routing, and parsing* — never data correctness. Do not judge numbers here.
 3. **Production, one API at a time** (`AMAZON_USE_SANDBOX=false` / `ADS_USE_SANDBOX=false`): requires `SPAPI_SELLER_ID`; `getAmazonConfig` throws without it once sandbox is off. Promote SP-API first (read-only), verify the reorder numbers against Seller Central by hand, then promote Ads.
 
-Rollback at any stage is a single env var back to its previous value plus a redeploy. SVD has no sandbox — it is a live read-only scrape, gated behind the owner-triggered refresh button, so it is either configured or it throws.
+Rollback at any stage is a single env var back to its previous value plus a redeploy. SVD has no sandbox — it is a live read-only scrape, gated behind the authenticated-user refresh button, so it is either configured or it throws.
 
 ### 2. Per-integration changes
 
