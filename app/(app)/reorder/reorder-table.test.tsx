@@ -70,6 +70,35 @@ function orderRow(): RecommendationRow {
 }
 
 describe('ReorderTable coverage selector', () => {
+  it('links an actionable row to its dated analytics evidence', () => {
+    const html = renderToStaticMarkup(
+      <ReorderTable
+        rows={[orderRow()]}
+        trailingHeader="Order"
+        variant="order"
+        momentumBySku={{
+          'SKU-1': {
+            kind: 'trending-up',
+            label: 'Trending up +50%',
+            absoluteChange: 1,
+            percentageChange: 50,
+            recentVelocity: 3,
+            previousVelocity: 2,
+            recentStartDate: '2026-09-11',
+            recentEndDate: '2026-09-17',
+            previousStartDate: '2026-09-04',
+            previousEndDate: '2026-09-10',
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain('>Momentum<');
+    expect(html).toContain('href="/analytics?sku=SKU-1"');
+    expect(html).toContain('Trending up +50%');
+    expect(html).toContain('Recent 2026-09-11 to 2026-09-17');
+  });
+
   it('offers the legacy coverage presets on the order list only', () => {
     const html = renderToStaticMarkup(
       <ReorderTable rows={[orderRow()]} trailingHeader="Order" variant="order" />,

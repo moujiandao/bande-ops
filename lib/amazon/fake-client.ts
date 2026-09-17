@@ -137,10 +137,10 @@ export class FakeAmazonClient implements AmazonClient {
     _opts: DownloadReportDocumentOptions,
   ): Promise<string> {
     return [
-      'Date\tFNSKU\tMSKU\tDisposition\tCustomer Shipments\tEnding Warehouse Balance',
-      '2026-07-21\tX000111AAA\tBANDE-001\tSELLABLE\t2\t42',
-      '2026-07-20\tX000111AAA\tBANDE-001\tSELLABLE\t1\t40',
-      '2026-07-21\t\tBANDE-002\tSELLABLE\t0\t0',
+      'Date\tFNSKU\tMSKU\tDisposition\tStarting Warehouse Balance\tCustomer Shipments\tEnding Warehouse Balance',
+      '2026-07-21\tX000111AAA\tBANDE-001\tSELLABLE\t44\t2\t42',
+      '2026-07-20\tX000111AAA\tBANDE-001\tSELLABLE\t41\t1\t40',
+      '2026-07-21\t\tBANDE-002\tSELLABLE\t0\t0\t0',
     ].join('\n');
   }
 }

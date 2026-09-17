@@ -8,6 +8,13 @@ import {
 import { assembleRecommendations, type RecommendationRow } from '@/lib/reorder/service';
 import { refreshSvdInventoryAction } from '@/lib/svd/actions';
 import { createClient } from '@/lib/supabase/server';
+import {
+  analyticsSourceIssue,
+  buildSalesAnalytics,
+  momentumSignalsBySku,
+  readAnalyticsHistory,
+} from '@/lib/analytics/service';
+import Link from 'next/link';
 
 function reorderQty(row: RecommendationRow): number {
   return row.recommendation.status === 'ok' ? row.recommendation.recommendedQty : 0;
@@ -30,7 +37,24 @@ function formatTimestamp(iso: string): string {
 
 export default async function ReorderPage() {
   const supabase = await createClient();
-  const { rows, errors, sourceHealth, policy } = await assembleRecommendations({ supabase });
+  const [recommendations, analyticsHistory] = await Promise.all([
+    assembleRecommendations({ supabase }),
+    readAnalyticsHistory({ supabase, historyDays: 90 }),
+  ]);
+  const { rows, errors, sourceHealth, policy } = recommendations;
+  const analyticsIssue = analyticsSourceIssue(sourceHealth);
+  const analytics = analyticsHistory.error || analyticsIssue
+    ? []
+    : buildSalesAnalytics({
+        products: rows,
+        ledgerRows: analyticsHistory.rows,
+        windowDays: 7,
+        historyDays: 90,
+        dataThroughDate: analyticsHistory.dataThroughDate,
+      });
+  const momentumBySku = analyticsHistory.error || analyticsIssue
+    ? undefined
+    : momentumSignalsBySku(analytics);
   const svdToFbaTargetDays = policy.svdToFbaTargetDays;
   const shipmentMonthYear = formatShipmentMonthYear(new Date());
 
@@ -49,6 +73,10 @@ export default async function ReorderPage() {
   const toReorder = active
     .filter((row) => row.recommendation.status === 'ok' && reorderQty(row) > 0)
     .sort((a, b) => reorderQty(b) - reorderQty(a));
+  const trendingCount = toReorder.filter((row) => {
+    const kind = momentumBySku?.[row.sku]?.kind;
+    return kind === 'trending-up' || kind === 'sustained-growth';
+  }).length;
   const wellStocked = active.filter(
     (row) => row.recommendation.status === 'ok' && reorderQty(row) === 0,
   );
@@ -125,6 +153,22 @@ export default async function ReorderPage() {
         </div>
       ) : null}
 
+      {analyticsHistory.error || analyticsIssue ? (
+        <div className="rounded-panel border border-border bg-panel-muted p-3 text-xs text-foreground">
+          Sales momentum is unavailable ({analyticsHistory.error ?? analyticsIssue}).
+          Reorder math is unchanged. Apply migration 0020 if needed, then refresh
+          the FBA ledger to restore current analytics evidence.
+        </div>
+      ) : trendingCount > 0 ? (
+        <Link
+          href="/analytics?filter=trending"
+          className="rounded-panel border border-accent-soft bg-accent-soft p-3 text-xs font-medium text-accent-strong transition-colors hover:border-accent"
+        >
+          {trendingCount} reorder {trendingCount === 1 ? 'candidate is' : 'candidates are'}{' '}
+          trending up. Review the dated evidence and inventory scenarios in Advanced Analytics.
+        </Link>
+      ) : null}
+
       {rows.length === 0 ? (
         <div className="flex flex-col items-start gap-3 rounded-panel border border-dashed border-border bg-panel p-8">
           <h2 className="text-sm font-medium text-foreground">
@@ -163,6 +207,7 @@ export default async function ReorderPage() {
                 variant="replenish"
                 svdToFbaTargetDays={svdToFbaTargetDays}
                 shipmentMonthYear={shipmentMonthYear}
+                momentumBySku={momentumBySku}
               />
             </section>
           ) : null}
@@ -177,7 +222,12 @@ export default async function ReorderPage() {
                 No SKUs are at or below their reorder point.
               </p>
             ) : (
-              <ReorderTable rows={toReorder} trailingHeader="Order" variant="order" />
+              <ReorderTable
+                rows={toReorder}
+                trailingHeader="Order"
+                variant="order"
+                momentumBySku={momentumBySku}
+              />
             )}
           </section>
 

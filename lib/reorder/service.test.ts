@@ -607,6 +607,109 @@ describe('assembleRecommendations', () => {
     expect('recommendedQty' in low!.recommendation).toBe(false);
   });
 
+  it('preserves healthy inventory supply when only the demand ledger failed', async () => {
+    const sourceStates = baseTables().source_sync_state.data as Array<{
+      source: string;
+      status: string;
+      last_success_at: string;
+      row_count: number;
+      error_summary: string | null;
+    }>;
+    const { rows } = await assembleRecommendations(
+      makeDeps({
+        source_sync_state: {
+          data: sourceStates.map((state) =>
+            state.source === 'fba_ledger'
+              ? {
+                  ...state,
+                  status: 'failed',
+                  error_summary: 'Sync failed; check server logs for details.',
+                }
+              : state,
+          ),
+          error: null,
+        },
+      }),
+    );
+    const low = rows.find((row) => row.sku === 'SKU-LOW');
+
+    expect(low!.usableSupply).toBe(32);
+    expect(low!.supplyBreakdown).not.toBeNull();
+    expect(low!.recommendation).toEqual({
+      status: 'needs-review',
+      reason: 'stale-source-fba_ledger',
+    });
+  });
+
+  it('does not preserve supply when the ledger and a stock source both failed', async () => {
+    const sourceStates = baseTables().source_sync_state.data as Array<{
+      source: string;
+      status: string;
+      last_success_at: string;
+      row_count: number;
+      error_summary: string | null;
+    }>;
+    const { rows } = await assembleRecommendations(
+      makeDeps({
+        source_sync_state: {
+          data: sourceStates.map((state) =>
+            state.source === 'fba_ledger' || state.source === 'svd_inventory'
+              ? {
+                  ...state,
+                  status: 'failed',
+                  error_summary: 'Sync failed; check server logs for details.',
+                }
+              : state,
+          ),
+          error: null,
+        },
+      }),
+    );
+    const low = rows.find((row) => row.sku === 'SKU-LOW');
+
+    expect(low!.usableSupply).toBeNull();
+    expect(low!.supplyBreakdown).toBeNull();
+    expect(low!.recommendation).toEqual({
+      status: 'needs-review',
+      reason: 'stale-source-fba_ledger',
+    });
+  });
+
+  it('does not preserve supply when stock rows fail to load despite healthy sync state', async () => {
+    const sourceStates = baseTables().source_sync_state.data as Array<{
+      source: string;
+      status: string;
+      last_success_at: string;
+      row_count: number;
+      error_summary: string | null;
+    }>;
+    const { rows, errors } = await assembleRecommendations(
+      makeDeps({
+        source_sync_state: {
+          data: sourceStates.map((state) =>
+            state.source === 'fba_ledger'
+              ? {
+                  ...state,
+                  status: 'failed',
+                  error_summary: 'Sync failed; check server logs for details.',
+                }
+              : state,
+          ),
+          error: null,
+        },
+        awd_inventory_levels: {
+          data: null,
+          error: { message: 'AWD read failed' },
+        },
+      }),
+    );
+    const low = rows.find((row) => row.sku === 'SKU-LOW');
+
+    expect(errors.awdInventory).toBe('AWD read failed');
+    expect(low!.usableSupply).toBeNull();
+    expect(low!.supplyBreakdown).toBeNull();
+  });
+
   it('blocks numeric recommendations when a required source has never synced', async () => {
     const { rows } = await assembleRecommendations(
       makeDeps({

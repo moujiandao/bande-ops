@@ -54,7 +54,11 @@ describe('normalizeLedgerRows', () => {
       marketplace_id: 'ATVPDKIKX0DER',
       sku: 'hp_notebook_2pack',
       fn_sku: 'X001518VF5',
+      sellable_starting_balance: 159,
+      starting_balance_valid: true,
       sellable_ending_balance: 158,
+      ending_balance_valid: true,
+      customer_shipments_valid: true,
       is_in_stock: true,
       report_id: 'report-1',
       sync_run_id: 'run-1',
@@ -82,6 +86,19 @@ describe('normalizeLedgerRows', () => {
     ].join('\n');
 
     expect(normalizeLedgerRows(tsv, OPTS)[0].customer_shipments).toBe(3);
+    expect(normalizeLedgerRows(tsv, OPTS)[0].customer_shipments_valid).toBe(true);
+  });
+
+  it('marks an unreadable shipment count invalid instead of treating it as a true zero', () => {
+    const tsv = [
+      HEADER,
+      row('07/21/2026', 'X1', 'sku-a', 'SELLABLE', 'n/a', '10'),
+    ].join('\n');
+
+    expect(normalizeLedgerRows(tsv, OPTS)[0]).toMatchObject({
+      customer_shipments: 0,
+      customer_shipments_valid: false,
+    });
   });
 
   it('keeps only SELLABLE dispositions', () => {
@@ -134,8 +151,27 @@ describe('normalizeLedgerRows', () => {
     expect(rows).toHaveLength(1);
     // Demand sums; stock on hand sums across the SKU's FNSKUs.
     expect(rows[0].customer_shipments).toBe(5);
+    expect(rows[0].sellable_starting_balance).toBe(318);
+    expect(rows[0].starting_balance_valid).toBe(true);
     expect(rows[0].sellable_ending_balance).toBe(15);
+    expect(rows[0].ending_balance_valid).toBe(true);
+    expect(rows[0].customer_shipments_valid).toBe(true);
     expect(rows[0].is_in_stock).toBe(true);
+  });
+
+  it('marks an aggregate invalid when any contributing row has unreadable evidence', () => {
+    const tsv = [
+      HEADER,
+      row('07/21/2026', 'X1', 'sku-a', 'SELLABLE', '-2', '10'),
+      row('07/21/2026', 'X2', 'sku-a', 'SELLABLE', 'n/a', 'n/a'),
+    ].join('\n');
+
+    expect(normalizeLedgerRows(tsv, OPTS)[0]).toMatchObject({
+      customer_shipments: 2,
+      customer_shipments_valid: false,
+      sellable_ending_balance: 10,
+      ending_balance_valid: false,
+    });
   });
 
   it('keeps different days and different SKUs separate when aggregating', () => {

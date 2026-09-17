@@ -1,5 +1,17 @@
 # Changelog
 
+## [2026-09-17] Advanced sales analytics
+
+### Added
+- Add the protected `/analytics` Sales momentum workspace with 7/14/28 eligible-day windows, 90/180/365-day history, search, classifications, inventory-cover scenarios, exact best-period dates, and product-level daily evidence.
+- Add `lib/analytics` as the shared calculation boundary for selling-day classification, recent and previous velocity, trend labels, early-launch pace, rolling best velocity, inventory scenarios, and paged ledger-history reads.
+- Add migration `0020_velocity_analytics_evidence.sql` so the FBA daily ledger mirror retains starting sellable balance and parse-validity evidence without changing the existing reorder forecast.
+- Add compact, linked Momentum signals to actionable Reorder and SVD replenishment lists.
+
+### Changed
+- Include a shipment day that ends at zero inventory in observed analytics velocity and flag it as a possible sellout, while known zero-stock/zero-shipment days remain excluded and invalid evidence remains unknown.
+- Keep independently healthy canonical inventory totals available for historical analytics when only the demand ledger is unhealthy; reorder recommendations still stay blocked, and any stock-source failure still makes usable supply unknown.
+
 ## [2026-09-17] Reorder coverage selector
 
 ### Added

@@ -13,11 +13,12 @@ type NavItem = {
 
 const overview: NavItem[] = [{ label: "Dashboard", href: "/", active: true }];
 
-// The four Modules of the Ops App. Catalog & Inventory is the Module being
-// built; the rest are not yet available.
+// Operational modules in workflow order. Analytics sits beside Reorder because
+// its dated demand evidence supports the same replenishment decisions.
 const modules: NavItem[] = [
   { label: "Catalog & Inventory", href: "/catalog" },
   { label: "Reorder", href: "/reorder" },
+  { label: "Analytics", href: "/analytics" },
   { label: "Ads", href: "/ads" },
   { label: "Launch", soon: true },
   { label: "Research", soon: true },

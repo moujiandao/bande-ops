@@ -54,10 +54,10 @@ describe('syncFbaLedgerVelocity', () => {
         .mockResolvedValue({ reportId: 'report-1', reportDocumentId: 'doc-1' }),
       downloadReportDocument: vi.fn().mockResolvedValue(
         [
-          'Date\tFNSKU\tMSKU\tDisposition\tCustomer Shipments\tEnding Warehouse Balance',
-          '2026-07-21\tFNSKU-1\tSKU-1\tSELLABLE\t3\t7',
-          '2026-07-20\tFNSKU-1\tSKU-1\tSELLABLE\t5\t2',
-          '2026-07-21\tFNSKU-2\tSKU-2\tSELLABLE\t9\t0',
+          'Date\tFNSKU\tMSKU\tDisposition\tStarting Warehouse Balance\tCustomer Shipments\tEnding Warehouse Balance',
+          '2026-07-21\tFNSKU-1\tSKU-1\tSELLABLE\t10\t3\t7',
+          '2026-07-20\tFNSKU-1\tSKU-1\tSELLABLE\t7\t5\t2',
+          '2026-07-21\tFNSKU-2\tSKU-2\tSELLABLE\t9\t9\t0',
         ].join('\n'),
       ),
     };
@@ -77,6 +77,19 @@ describe('syncFbaLedgerVelocity', () => {
     expect(ledgerUpsert).toHaveBeenCalledWith(expect.any(Array), {
       onConflict: 'marketplace_id,sku,activity_date',
     });
+    expect(ledgerUpsert).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sku: 'SKU-2',
+          sellable_starting_balance: 9,
+          starting_balance_valid: true,
+          customer_shipments_valid: true,
+          sellable_ending_balance: 0,
+          ending_balance_valid: true,
+        }),
+      ]),
+      { onConflict: 'marketplace_id,sku,activity_date' },
+    );
     expect(velocityUpsert).toHaveBeenCalledWith(
       expect.arrayContaining([
         expect.objectContaining({

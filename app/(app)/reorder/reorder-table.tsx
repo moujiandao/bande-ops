@@ -9,6 +9,7 @@ import {
   type DragEvent,
 } from 'react';
 import type { RecommendationRow } from '@/lib/reorder/service';
+import type { MomentumSignal } from '@/lib/analytics/service';
 import { recommend } from '@/lib/reorder/recommend';
 import {
   applySvdShipmentBoxCount,
@@ -37,6 +38,7 @@ type SortKey =
   | 'total'
   | 'perDay'
   | 'cover'
+  | 'momentum'
   | 'trailing';
 
 export type ReorderTableVariant = 'order' | 'status' | 'legacy' | 'replenish';
@@ -254,6 +256,7 @@ function sortValue(
   variant: ReorderTableVariant,
   svdToFbaTargetDays: number,
   coverageDays: number | null,
+  momentumBySku: Record<string, MomentumSignal> | undefined,
 ): string | number | null {
   switch (key) {
     case 'sku':
@@ -274,6 +277,10 @@ function sortValue(
       return row.dailyDemand;
     case 'cover':
       return coverDays(row.usableSupply, row.dailyDemand);
+    case 'momentum': {
+      const signal = momentumBySku?.[row.sku];
+      return signal?.absoluteChange ?? null;
+    }
     case 'trailing':
       if (variant === 'order') return orderQuantityForCoverage(row, coverageDays);
       if (variant === 'replenish') return suggestedShipQty(row, svdToFbaTargetDays);
@@ -309,12 +316,14 @@ export function ReorderTable({
   variant,
   svdToFbaTargetDays,
   shipmentMonthYear,
+  momentumBySku,
 }: {
   rows: RecommendationRow[];
   trailingHeader: string;
   variant: ReorderTableVariant;
   svdToFbaTargetDays?: number;
   shipmentMonthYear?: string;
+  momentumBySku?: Record<string, MomentumSignal>;
 }) {
   if (variant === 'replenish' && svdToFbaTargetDays === undefined) {
     throw new Error('Replenish tables require an SVD-to-FBA target.');
@@ -343,6 +352,9 @@ export function ReorderTable({
   const showBoxName = variant === 'replenish';
   const showNotes = variant === 'replenish';
   const showBoxesToSend = variant === 'replenish';
+  const showMomentum =
+    (variant === 'order' || variant === 'replenish') &&
+    momentumBySku !== undefined;
   const visibleColumns = showBoxName
     ? [COLUMNS[0], BOX_COLUMN, ...COLUMNS.slice(1)]
     : COLUMNS;
@@ -367,7 +379,10 @@ export function ReorderTable({
   const [copyStatus, setCopyStatus] = useState('');
   // Fixed (non-Notes) columns: data + trailing + boxes-to-send when replenishing.
   const fixedColumnCount =
-    visibleColumns.length + 1 + (showBoxesToSend ? 1 : 0);
+    visibleColumns.length +
+    (showMomentum ? 1 : 0) +
+    1 +
+    (showBoxesToSend ? 1 : 0);
   // Where the draggable Notes column sits among the fixed columns (insert-before
   // that index). null = its default far-right position. Drag its header onto
   // another column header to move it; ephemeral, resets on reload.
@@ -386,6 +401,7 @@ export function ReorderTable({
         variant,
         replenishTargetDays,
         coverageDays,
+        momentumBySku,
       );
       const bv = sortValue(
         b,
@@ -393,6 +409,7 @@ export function ReorderTable({
         variant,
         replenishTargetDays,
         coverageDays,
+        momentumBySku,
       );
       // Unknown values always sink, so sorting never buries real data under
       // a wall of em dashes.
@@ -412,6 +429,7 @@ export function ReorderTable({
     variant,
     replenishTargetDays,
     coverageDays,
+    momentumBySku,
   ]);
 
   function toggle(key: SortKey) {
@@ -540,24 +558,37 @@ export function ReorderTable({
           <thead className="border-b border-border text-faint">
             <tr>
               {(() => {
-                const cells = [
-                  ...visibleColumns.map((c, i) =>
-                    header(c.key, c.label, c.title, c.numeric, i),
-                  ),
+                const cells = visibleColumns.map((c, i) =>
+                  header(c.key, c.label, c.title, c.numeric, i),
+                );
+                if (showMomentum) {
+                  cells.push(
+                    header(
+                      'momentum',
+                      'Momentum',
+                      'Observed recent velocity trend; opens dated evidence',
+                      false,
+                      visibleColumns.length,
+                    ),
+                  );
+                }
+                const trailingIndex =
+                  visibleColumns.length + (showMomentum ? 1 : 0);
+                cells.push(
                   header(
                     'trailing',
                     trailingHeader,
                     trailingHeader,
                     true,
-                    visibleColumns.length,
+                    trailingIndex,
                   ),
-                ];
+                );
                 if (showBoxesToSend) {
                   cells.push(
                     <th
                       key="boxes-to-send"
                       className="min-w-[9rem] px-3 py-2 text-right font-medium"
-                      {...dropProps(visibleColumns.length + 1)}
+                      {...dropProps(trailingIndex + 1)}
                     >
                       Number of Boxes to send
                     </th>,
@@ -686,6 +717,34 @@ export function ReorderTable({
                     )}
                   </td>,
                 ];
+                if (showMomentum) {
+                  const signal = momentumBySku?.[row.sku];
+                  const title = signal
+                    ? [
+                        signal.recentStartDate && signal.recentEndDate
+                          ? `Recent ${signal.recentStartDate} to ${signal.recentEndDate}`
+                          : null,
+                        signal.previousStartDate && signal.previousEndDate
+                          ? `Previous ${signal.previousStartDate} to ${signal.previousEndDate}`
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .join('. ')
+                    : 'No observed momentum evidence yet';
+                  cells.splice(
+                    cells.length - 1,
+                    0,
+                    <td key="momentum" className="px-3 py-2">
+                      <Link
+                        href={`/analytics?sku=${encodeURIComponent(row.sku)}`}
+                        title={title}
+                        className="whitespace-nowrap text-[11px] font-medium text-accent underline-offset-2 hover:text-accent-strong hover:underline"
+                      >
+                        {signal?.label ?? 'Needs evidence'}
+                      </Link>
+                    </td>,
+                  );
+                }
                 if (showBoxesToSend) {
                   cells.push(
                     <td key="boxes-to-send" className="px-3 py-2 text-right">

@@ -48,8 +48,9 @@ export interface RecommendationRow {
   isLegacy: boolean;
   /**
    * Per-source quantities, populated even when the recommendation fails.
-   * usableSupply/supplyBreakdown are null whenever anything blocks the math,
-   * but what we DO know about each source is still worth showing.
+   * usableSupply/supplyBreakdown are null when supply itself is unsafe. A stale
+   * demand ledger still blocks the recommendation, but independently healthy
+   * inventory may retain a canonical supply total for historical analytics.
    */
   sources: {
     /** Fulfillable (available) units at FBA. */
@@ -325,6 +326,17 @@ export async function assembleRecommendations(
     policy.staleSourceMode === 'needs_review'
       ? blockingSource(sourceStateRows, sourceStateRes.error)
       : null;
+  const supplySourcesHealthy =
+    !sourceStateRes.error &&
+    !fbaRes.error &&
+    !awdRes.error &&
+    !svdRes.error &&
+    !mappingsRes.error &&
+    ['fba_inventory', 'awd_inventory', 'svd_inventory'].every((source) =>
+      sourceStateRows.some(
+        (state) => state.source === source && state.status === 'success',
+      ),
+    );
 
   const fbaByKey = new Map<string, FbaRow>(fbaRows.map((row) => [rowKey(row), row]));
   const awdByKey = new Map<string, AwdRow>(awdRows.map((row) => [rowKey(row), row]));
@@ -492,12 +504,42 @@ export async function assembleRecommendations(
           ? null
           : toUnits(svdBoxes, svdUnitsPerBox);
 
+    // Calculate canonical supply before the freshness gate only when SVD is
+    // mapped. This lets a demand-ledger failure preserve independently healthy
+    // inventory context, while any failed stock source still blanks supply.
+    const supply =
+      sourceMapping.status === 'mapped'
+        ? calculateUsableSupply({
+            fba: fba
+              ? {
+                  fulfillableQuantity: fba.fulfillable_quantity,
+                  inboundWorkingQuantity: fba.inbound_working_quantity,
+                  inboundShippedQuantity: fba.inbound_shipped_quantity,
+                  inboundReceivingQuantity: fba.inbound_receiving_quantity,
+                }
+              : null,
+            awd: awd
+              ? {
+                  availableQuantity: awd.available_distributable_quantity,
+                  replenishmentQuantity: awd.replenishment_quantity,
+                }
+              : null,
+            svd: svd ? { quantity: svd.quantity } : null,
+            svdUnitsPerBox,
+            policy,
+          })
+        : null;
+
     if (staleSource) {
+      const retainSupply =
+        staleSource.source === 'fba_ledger' &&
+        supplySourcesHealthy &&
+        supply?.status === 'ok';
       return {
         marketplaceId: item.marketplace_id,
         sku: item.sku,
         title: item.title,
-        usableSupply: null,
+        usableSupply: retainSupply ? supply.usableSupply : null,
         dailyDemand,
         velocitySampleDays: velocity?.in_stock_sample_days ?? null,
         sourceMapping,
@@ -508,7 +550,7 @@ export async function assembleRecommendations(
         svdBoxes,
         svdUnitsPerBox,
         boxName,
-        supplyBreakdown: null,
+        supplyBreakdown: retainSupply ? supply.breakdown : null,
         recommendation: {
           status: 'needs-review',
           reason: `stale-source-${staleSource.source}`,
@@ -537,25 +579,8 @@ export async function assembleRecommendations(
       };
     }
 
-    const supply = calculateUsableSupply({
-      fba: fba
-        ? {
-            fulfillableQuantity: fba.fulfillable_quantity,
-            inboundWorkingQuantity: fba.inbound_working_quantity,
-            inboundShippedQuantity: fba.inbound_shipped_quantity,
-            inboundReceivingQuantity: fba.inbound_receiving_quantity,
-          }
-        : null,
-      awd: awd
-        ? {
-            availableQuantity: awd.available_distributable_quantity,
-            replenishmentQuantity: awd.replenishment_quantity,
-          }
-        : null,
-      svd: svd ? { quantity: svd.quantity } : null,
-      svdUnitsPerBox,
-      policy,
-    });
+    // sourceMapping is mapped here, so supply was calculated above.
+    if (!supply) throw new Error('assembleRecommendations: mapped SKU has no supply');
 
     const usableSupply = supply.status === 'ok' ? supply.usableSupply : null;
     const recommendation =
