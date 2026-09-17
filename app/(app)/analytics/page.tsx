@@ -470,7 +470,7 @@ export default async function AnalyticsPage({
           </Badge>
         </div>
         <div className="overflow-x-auto rounded-panel border border-border bg-panel">
-          <table className="w-full min-w-[1180px] text-xs">
+          <table className="w-full min-w-[1180px] whitespace-nowrap text-xs">
             <thead className="border-b border-border text-faint">
               <tr className="border-b border-border/60 bg-panel-muted/40">
                 <th colSpan={2} className="px-3 py-2 text-left font-semibold">Product</th>
@@ -537,8 +537,8 @@ export default async function AnalyticsPage({
                             {product.momentum.absoluteChange >= 0 ? '+' : ''}
                             {product.momentum.absoluteChange.toFixed(1)} / day
                           </span>
-                          <span className="block text-[10px] text-faint">
-                            {percentChange(product)}
+                          <span className="ml-1 text-[10px] text-faint">
+                            ({percentChange(product)})
                           </span>
                         </>
                       )}
