@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { RecommendationRow } from '@/lib/reorder/service';
-import { ReorderTable } from './reorder-table';
+import { emailClipboardBlobs, ReorderTable } from './reorder-table';
 
 function replenishRow(): RecommendationRow {
   return {
@@ -65,6 +65,36 @@ describe('ReorderTable replenish shipment fields', () => {
     expect(html).toMatch(
       /aria-label="Number of boxes to send for SKU-1"[^>]*value="2"/,
     );
-    expect(html).toContain('Blue cartons | 2');
+    expect(html).toContain('>Blue cartons</td>');
+  });
+
+  it('renders an editable email with a bordered grid and copy button', () => {
+    const html = renderToStaticMarkup(
+      <ReorderTable
+        rows={[replenishRow()]}
+        trailingHeader="Ship"
+        variant="replenish"
+        svdToFbaTargetDays={30}
+        shipmentMonthYear="August 2026"
+      />,
+    );
+
+    expect(html).toContain('contentEditable="true"');
+    expect(html).toContain('aria-label="Shipment box counts"');
+    expect(html).toContain('border:1px solid');
+    expect(html).toContain('>Copy email<');
+    expect(html).not.toContain('<textarea');
+  });
+
+  it('provides HTML and plain-text clipboard formats', async () => {
+    const blobs = emailClipboardBlobs(
+      '<table><tr><td>Blue cartons</td><td>2</td></tr></table>',
+      'Blue cartons 2',
+    );
+
+    expect(await blobs['text/html'].text()).toBe(
+      '<table><tr><td>Blue cartons</td><td>2</td></tr></table>',
+    );
+    expect(await blobs['text/plain'].text()).toBe('Blue cartons 2');
   });
 });

@@ -1,5 +1,11 @@
 # Changelog
 
+## [2026-09-17] Shipment email and agent instructions
+
+### Added
+- Add an editable, copyable shipment email with HTML and plain-text clipboard formats.
+- Add a canonical `AGENTS.md` policy check to local hooks and CI, with `CLAUDE.md` reduced to an import shim.
+
 ## [2026-09-17] Manual refresh access
 
 ### Changed

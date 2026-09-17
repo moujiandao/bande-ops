@@ -1,7 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import { Fragment, useMemo, useState, type DragEvent } from 'react';
+import {
+  Fragment,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+} from 'react';
 import type { RecommendationRow } from '@/lib/reorder/service';
 import {
   applySvdShipmentBoxCount,
@@ -33,6 +39,22 @@ type SortKey =
   | 'trailing';
 
 export type ReorderTableVariant = 'order' | 'status' | 'legacy' | 'replenish';
+
+export function emailClipboardBlobs(
+  html: string,
+  plainText: string,
+): Record<'text/html' | 'text/plain', Blob> {
+  return {
+    'text/html': new Blob([html], { type: 'text/html' }),
+    'text/plain': new Blob([plainText], { type: 'text/plain' }),
+  };
+}
+
+const EMAIL_CELL_STYLE = {
+  border: '1px solid #9ca3af',
+  padding: '6px 10px',
+  textAlign: 'left' as const,
+};
 
 function num(value: number | null | undefined): string {
   return value === null || value === undefined ? '—' : String(Math.round(value));
@@ -299,6 +321,8 @@ export function ReorderTable({
         )
       : '',
   );
+  const emailDraftRef = useRef<HTMLDivElement>(null);
+  const [copyStatus, setCopyStatus] = useState('');
   // Fixed (non-Notes) columns: data + trailing + boxes-to-send when replenishing.
   const fixedColumnCount =
     visibleColumns.length + 1 + (showBoxesToSend ? 1 : 0);
@@ -356,6 +380,27 @@ export function ReorderTable({
     });
     setBoxesToSend(next.boxesToSend);
     setEmailDraft(next.emailDraft);
+    setCopyStatus('');
+  }
+
+  async function copyEmail() {
+    const draft = emailDraftRef.current;
+    if (!draft) return;
+
+    try {
+      const plainText = draft.innerText;
+      if (typeof ClipboardItem !== 'undefined' && navigator.clipboard.write) {
+        await navigator.clipboard.write([
+          new ClipboardItem(emailClipboardBlobs(draft.innerHTML, plainText)),
+        ]);
+        setCopyStatus('Copied');
+      } else {
+        await navigator.clipboard.writeText(plainText);
+        setCopyStatus('Copied as plain text');
+      }
+    } catch {
+      setCopyStatus('Copy failed');
+    }
   }
 
   // When the Notes column is being dragged, every fixed header is a drop target
@@ -614,22 +659,81 @@ export function ReorderTable({
       </div>
       {showBoxesToSend ? (
         <div className="flex flex-col gap-2 rounded-panel border border-border bg-panel p-4">
-          <div>
-            <h3 className="text-sm font-semibold text-foreground">
-              Shipment email draft
-            </h3>
-            <p className="mt-1 text-[11px] text-faint">
-              Editable and ready to copy. Changing a box count regenerates this
-              draft and replaces manual edits.
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">
+                Shipment email draft
+              </h3>
+              <p className="mt-1 text-[11px] text-faint">
+                Editable and ready to copy. Changing a box count regenerates
+                this draft and replaces manual edits.
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <span aria-live="polite" className="text-[11px] text-muted">
+                {copyStatus}
+              </span>
+              <button
+                type="button"
+                onClick={copyEmail}
+                className="rounded-md border border-border bg-panel px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:border-accent hover:text-accent-strong"
+              >
+                Copy email
+              </button>
+            </div>
+          </div>
+          <div
+            key={emailDraft}
+            ref={emailDraftRef}
+            contentEditable
+            suppressContentEditableWarning
+            role="textbox"
+            aria-multiline="true"
+            aria-label="SVD shipment email draft"
+            className="min-h-[28rem] w-full overflow-auto rounded-md border border-border bg-panel px-5 py-4 text-sm leading-relaxed text-foreground focus:border-accent focus:outline-none"
+          >
+            <p style={{ margin: '0 0 24px' }}>
+              Subject: B&amp;E Medical {shipmentMonthYear} Shipment
+            </p>
+            <p style={{ margin: '0 0 16px' }}>Hi Julio,</p>
+            <p style={{ margin: '0 0 16px' }}>
+              See attached for box labels and pallet labels. They will be coming
+              within 2 days to pick up the boxes.
+            </p>
+            <table
+              aria-label="Shipment box counts"
+              style={{ borderCollapse: 'collapse', margin: '0 0 24px' }}
+            >
+              <thead>
+                <tr>
+                  <th style={EMAIL_CELL_STYLE}>Box</th>
+                  <th style={EMAIL_CELL_STYLE}>Number of Boxes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={svdShipmentRowKey(row)}>
+                    <td style={EMAIL_CELL_STYLE}>
+                      {row.boxName ?? '(not set)'}
+                    </td>
+                    <td style={EMAIL_CELL_STYLE}>
+                      {boxesToSend[svdShipmentRowKey(row)] ?? ''}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p style={{ margin: '0 0 24px' }}>
+              As always please email or call me if you have any questions.
+            </p>
+            <p style={{ margin: 0 }}>
+              Kind regards,
+              <br />
+              Brian
+              <br />
+              5107171898
             </p>
           </div>
-          <textarea
-            aria-label="SVD shipment email draft"
-            rows={18}
-            value={emailDraft}
-            onChange={(event) => setEmailDraft(event.currentTarget.value)}
-            className="w-full resize-y rounded-md border border-border bg-panel px-3 py-2 font-mono text-xs leading-relaxed text-foreground focus:border-accent focus:outline-none"
-          />
         </div>
       ) : null}
     </div>

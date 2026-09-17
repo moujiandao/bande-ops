@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "check:agent-instructions": "node scripts/check-agent-instructions.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
