@@ -15,6 +15,8 @@ import {
   type ReplenishmentPolicyRow,
 } from '@/lib/settings/policy';
 import { assembleRecommendations } from '@/lib/reorder/service';
+import { unarchiveSkuAction } from '@/lib/archive/actions';
+import type { ArchivedSkuRow } from '@/lib/archive/skus';
 
 /**
  * Replenishment settings, the operational layer behind the reorder math.
@@ -59,7 +61,7 @@ const primaryButtonClass =
 export default async function SettingsPage() {
   const supabase = await createClient();
 
-  const [settingsRes, policyRes, mappingsRes] = await Promise.all([
+  const [settingsRes, policyRes, mappingsRes, archivedRes] = await Promise.all([
     supabase
       .from('replenishment_settings')
       .select(
@@ -76,6 +78,11 @@ export default async function SettingsPage() {
       .select('id, amazon_sku, svd_item_id, status')
       .eq('marketplace_id', 'ATVPDKIKX0DER')
       .order('amazon_sku', { ascending: true }),
+    supabase
+      .from('archived_skus')
+      .select('marketplace_id, sku, archived_at, archived_by')
+      .eq('marketplace_id', 'ATVPDKIKX0DER')
+      .order('archived_at', { ascending: false }),
   ]);
 
   const mappings = (mappingsRes.data ?? []) as {
@@ -107,6 +114,10 @@ export default async function SettingsPage() {
   // pack size, so those are all that's shown; unset-with-stock float to the top
   // because they are the rows currently blocking a recommendation.
   const { rows: reorderRows } = await assembleRecommendations({ supabase });
+  const titleBySku = new Map(
+    reorderRows.map((row) => [row.sku, row.title]),
+  );
+  const archivedProducts = (archivedRes.data ?? []) as ArchivedSkuRow[];
   const svdBoxRows = reorderRows
     .filter((r) => r.svdBoxes !== null && r.svdBoxes > 0)
     .map((r) => ({
@@ -156,6 +167,74 @@ export default async function SettingsPage() {
           below still submit, but current values may be missing.
         </div>
       ) : null}
+
+      <section className="flex flex-col gap-3">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="text-sm font-semibold text-foreground">
+            Archived products
+          </h2>
+          <Badge className="border-border bg-panel-muted text-muted">
+            {archivedProducts.length}
+          </Badge>
+        </div>
+        <p className="max-w-prose text-xs text-muted">
+          Archived products stay synced from their source but are hidden from
+          both Reorder and Catalog until restored here.
+        </p>
+        {archivedRes.error ? (
+          <div className="rounded-panel border border-border bg-panel-muted p-4 text-xs text-foreground">
+            Couldn&apos;t load archived products ({archivedRes.error.message}).
+          </div>
+        ) : archivedProducts.length === 0 ? (
+          <div className="rounded-panel border border-dashed border-border bg-panel p-4 text-xs text-muted">
+            No products are archived.
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-panel border border-border bg-panel">
+            <table className="w-full min-w-[680px] text-xs">
+              <thead className="border-b border-border text-faint">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium">SKU</th>
+                  <th className="px-3 py-2 text-left font-medium">Product</th>
+                  <th className="px-3 py-2 text-left font-medium">Archived</th>
+                  <th className="px-3 py-2 text-right font-medium">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {archivedProducts.map((product) => (
+                  <tr
+                    key={`${product.marketplace_id}:${product.sku}`}
+                    className="border-b border-border/50 last:border-0"
+                  >
+                    <td className="px-3 py-2 font-mono text-foreground">
+                      {product.sku}
+                    </td>
+                    <td className="max-w-[320px] truncate px-3 py-2 text-muted">
+                      {titleBySku.get(product.sku) ?? 'Not in the current FBA product universe'}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-muted">
+                      <time dateTime={product.archived_at}>
+                        {formatTimestamp(product.archived_at)}
+                      </time>
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <form action={unarchiveSkuAction}>
+                        <input type="hidden" name="sku" value={product.sku} />
+                        <button
+                          type="submit"
+                          className="rounded-md border border-border px-2 py-1 text-[11px] font-medium text-foreground transition-colors hover:border-accent hover:text-accent-strong"
+                        >
+                          Unarchive
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       <section className="flex flex-col gap-3">
         <div className="flex items-baseline justify-between gap-3">

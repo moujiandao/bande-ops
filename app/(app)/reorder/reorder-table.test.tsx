@@ -70,6 +70,16 @@ function orderRow(): RecommendationRow {
 }
 
 describe('ReorderTable coverage selector', () => {
+  it('offers an archive action for each row', () => {
+    const html = renderToStaticMarkup(
+      <ReorderTable rows={[orderRow()]} trailingHeader="Order" variant="order" />,
+    );
+
+    expect(html).toContain('>Archive</th>');
+    expect(html).toContain('name="sku" value="SKU-1"');
+    expect(html).toContain('aria-label="Archive SKU-1"');
+  });
+
   it('links an actionable row to its dated analytics evidence', () => {
     const html = renderToStaticMarkup(
       <ReorderTable

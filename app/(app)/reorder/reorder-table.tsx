@@ -8,6 +8,8 @@ import {
   useState,
   type DragEvent,
 } from 'react';
+import { useFormStatus } from 'react-dom';
+import { archiveSkuAction } from '@/lib/archive/actions';
 import type { RecommendationRow } from '@/lib/reorder/service';
 import type { MomentumSignal } from '@/lib/analytics/service';
 import { recommend } from '@/lib/reorder/recommend';
@@ -143,6 +145,20 @@ function statusText(row: RecommendationRow, variant: ReorderTableVariant): strin
  */
 const SELLER_CENTRAL_INBOUND_URL =
   'https://sellercentral.amazon.com/fba/inbound-shipment-queue';
+
+function ArchiveButton({ sku }: { sku: string }) {
+  const { pending } = useFormStatus();
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      aria-label={`Archive ${sku}`}
+      className="rounded-md border border-border px-2 py-1 text-[11px] font-medium text-muted transition-colors hover:border-accent hover:text-foreground disabled:cursor-wait disabled:opacity-50"
+    >
+      {pending ? 'Archiving…' : 'Archive'}
+    </button>
+  );
+}
 
 /**
  * The full FBA count for the replenish display: Available + Reserved + all
@@ -391,7 +407,7 @@ export function ReorderTable({
   const effectiveNotesIndex = notesIndex ?? fixedColumnCount;
   // Columns spanned by the expandable FBA detail row: all data columns + the
   // trailing column + Notes when shown.
-  const detailColSpan = fixedColumnCount + (showNotes ? 1 : 0);
+  const detailColSpan = fixedColumnCount + (showNotes ? 1 : 0) + 1;
 
   const sorted = useMemo(() => {
     return [...rows].sort((a, b) => {
@@ -616,6 +632,14 @@ export function ReorderTable({
                     </th>,
                   );
                 }
+                cells.push(
+                  <th
+                    key="archive"
+                    className="px-3 py-2 text-right font-medium"
+                  >
+                    Archive
+                  </th>,
+                );
                 return cells;
               })()}
             </tr>
@@ -780,6 +804,14 @@ export function ReorderTable({
                     </td>,
                   );
                 }
+                cells.push(
+                  <td key="archive" className="px-3 py-2 text-right">
+                    <form action={archiveSkuAction}>
+                      <input type="hidden" name="sku" value={row.sku} />
+                      <ArchiveButton sku={row.sku} />
+                    </form>
+                  </td>,
+                );
                 return cells;
               })()}
             </tr>

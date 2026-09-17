@@ -1,15 +1,16 @@
 import { createClient } from '@/lib/supabase/server';
 import { syncCatalogAction } from './actions';
 import { CatalogTable, type CatalogTableRow } from './catalog-table';
+import { archivedSkuKeys, isSkuArchived } from '@/lib/archive/skus';
 
 /**
  * Catalog & Inventory (Module 1) — the catalog list view.
  *
- * Server component. Reads three sources through the authenticated Supabase
+ * Server component. Reads four sources through the authenticated Supabase
  * server client (RLS): the `catalog_items` + `inventory_levels` synced mirrors
- * and the `sku_notes` operational table (user-authored notes — see ADR-0001),
- * then joins them in memory on the shared (marketplace_id, sku) key. The joined
- * rows are handed to the client `CatalogTable`, which owns search, sort, and the
+ * and the `sku_notes` + `archived_skus` operational tables, then joins them in
+ * memory on the shared (marketplace_id, sku) key. Archived rows are removed
+ * before the joined rows reach `CatalogTable`, which owns search, sort, and the
  * inline note editor. Inventory is keyed per row; a null quantity or a missing
  * row renders as a distinct "Unknown" badge, NEVER as 0 (UNKNOWN-stock rule).
  * Empty state prompts a sync. The mirrors are rebuildable from Amazon (ADR-0001);
@@ -60,11 +61,11 @@ function mostRecentSyncedAt(rows: CatalogItemRow[]): string | null {
 export default async function CatalogPage() {
   const supabase = await createClient();
 
-  // Three reads, then join in memory on the shared (marketplace_id, sku) key. We
+  // Four reads, then join in memory on the shared (marketplace_id, sku) key. We
   // keep them as separate selects (rather than a PostgREST embedded join)
   // because the tables have no declared FK relationship — the mirrors are
   // independently rebuildable from Amazon and sku_notes is our own layer.
-  const [catalogRes, inventoryRes, notesRes] = await Promise.all([
+  const [catalogRes, inventoryRes, notesRes, archivedRes] = await Promise.all([
     supabase
       .from('catalog_items')
       .select('marketplace_id, sku, asin, title, image_url, synced_at')
@@ -73,12 +74,14 @@ export default async function CatalogPage() {
       .from('inventory_levels')
       .select('marketplace_id, sku, total_quantity'),
     supabase.from('sku_notes').select('marketplace_id, sku, note'),
+    supabase.from('archived_skus').select('marketplace_id, sku'),
   ]);
 
   const { data, error } = catalogRes;
 
   const catalogRows = (data ?? []) as CatalogItemRow[];
   const lastSynced = mostRecentSyncedAt(catalogRows);
+  const archivedKeys = archivedSkuKeys(archivedRes.data ?? []);
 
   // Lookup of inventory level by composite key. A SKU with no entry here falls
   // through to the UNKNOWN state in formatInventoryLevel — never 0.
@@ -105,21 +108,26 @@ export default async function CatalogPage() {
     console.error('catalog: sku_notes read failed', notesRes.error);
   }
 
-  // Join the three sources into the row shape the client table renders.
-  const rows: CatalogTableRow[] = catalogRows.map((row) => {
-    const key = rowKey(row);
-    return {
-      marketplace_id: row.marketplace_id,
-      sku: row.sku,
-      asin: row.asin,
-      title: row.title,
-      image_url: row.image_url,
-      // get() returns undefined for a missing key; formatInventoryLevel treats
-      // undefined the same as null (UNKNOWN), so coalesce to null here.
-      total_quantity: inventoryByKey.get(key) ?? null,
-      note: noteByKey.get(key) ?? '',
-    };
-  });
+  // Join the visible sources into the row shape the client table renders.
+  const rows: CatalogTableRow[] = catalogRows
+    .filter(
+      (row) =>
+        !isSkuArchived(archivedKeys, row.marketplace_id, row.sku),
+    )
+    .map((row) => {
+      const key = rowKey(row);
+      return {
+        marketplace_id: row.marketplace_id,
+        sku: row.sku,
+        asin: row.asin,
+        title: row.title,
+        image_url: row.image_url,
+        // get() returns undefined for a missing key; formatInventoryLevel treats
+        // undefined the same as null (UNKNOWN), so coalesce to null here.
+        total_quantity: inventoryByKey.get(key) ?? null,
+        note: noteByKey.get(key) ?? '',
+      };
+    });
 
   return (
     <div className="flex flex-col gap-6">
@@ -164,11 +172,18 @@ export default async function CatalogPage() {
         </div>
       ) : null}
 
+      {archivedRes.error ? (
+        <div className="rounded-panel border border-border bg-panel-muted p-3 text-xs text-foreground">
+          Archived products could not be loaded ({archivedRes.error.message}).
+          The catalog list is hidden so archived SKUs cannot reappear accidentally.
+        </div>
+      ) : null}
+
       {error ? (
         <div className="rounded-panel border border-border bg-panel p-5 text-sm text-muted">
           Couldn&apos;t load the catalog mirror: {error.message}
         </div>
-      ) : rows.length === 0 ? (
+      ) : archivedRes.error ? null : catalogRows.length === 0 ? (
         <div className="flex flex-col items-start gap-3 rounded-panel border border-dashed border-border bg-panel p-8">
           <h2 className="text-sm font-medium text-foreground">
             No catalog items yet
@@ -185,6 +200,15 @@ export default async function CatalogPage() {
               Sync now
             </button>
           </form>
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="flex flex-col items-start gap-3 rounded-panel border border-dashed border-border bg-panel p-8">
+          <h2 className="text-sm font-medium text-foreground">
+            All catalog items are archived
+          </h2>
+          <p className="max-w-prose text-sm text-muted">
+            Restore a product from Settings to show it in Catalog and Reorder again.
+          </p>
         </div>
       ) : (
         <CatalogTable rows={rows} />

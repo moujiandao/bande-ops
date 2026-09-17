@@ -14,6 +14,7 @@ import {
   momentumSignalsBySku,
   readAnalyticsHistory,
 } from '@/lib/analytics/service';
+import { archivedSkuKeys, isSkuArchived } from '@/lib/archive/skus';
 import Link from 'next/link';
 
 function reorderQty(row: RecommendationRow): number {
@@ -37,11 +38,24 @@ function formatTimestamp(iso: string): string {
 
 export default async function ReorderPage() {
   const supabase = await createClient();
-  const [recommendations, analyticsHistory] = await Promise.all([
+  const [recommendations, analyticsHistory, archivedRes] = await Promise.all([
     assembleRecommendations({ supabase }),
     readAnalyticsHistory({ supabase, historyDays: 90 }),
+    supabase.from('archived_skus').select('marketplace_id, sku'),
   ]);
-  const { rows, errors, sourceHealth, policy } = recommendations;
+  const {
+    rows: sourceRows,
+    errors,
+    sourceHealth,
+    policy,
+  } = recommendations;
+  const archivedKeys = archivedSkuKeys(archivedRes.data ?? []);
+  const rows = archivedRes.error
+    ? []
+    : sourceRows.filter(
+        (row) =>
+          !isSkuArchived(archivedKeys, row.marketplaceId, row.sku),
+      );
   const analyticsIssue = analyticsSourceIssue(sourceHealth);
   const analytics = analyticsHistory.error || analyticsIssue
     ? []
@@ -153,6 +167,13 @@ export default async function ReorderPage() {
         </div>
       ) : null}
 
+      {archivedRes.error ? (
+        <div className="rounded-panel border border-border bg-panel-muted p-3 text-xs text-foreground">
+          Archived products could not be loaded ({archivedRes.error.message}).
+          Product lists are hidden so archived SKUs cannot reappear accidentally.
+        </div>
+      ) : null}
+
       {analyticsHistory.error || analyticsIssue ? (
         <div className="rounded-panel border border-border bg-panel-muted p-3 text-xs text-foreground">
           Sales momentum is unavailable ({analyticsHistory.error ?? analyticsIssue}).
@@ -169,14 +190,25 @@ export default async function ReorderPage() {
         </Link>
       ) : null}
 
-      {rows.length === 0 ? (
+      {archivedRes.error ? null : rows.length === 0 ? (
         <div className="flex flex-col items-start gap-3 rounded-panel border border-dashed border-border bg-panel p-8">
           <h2 className="text-sm font-medium text-foreground">
-            Nothing to recommend yet
+            {sourceRows.length === 0
+              ? 'Nothing to recommend yet'
+              : 'All products are archived'}
           </h2>
           <p className="max-w-prose text-sm text-muted">
-            No catalog SKUs found. Sync Amazon catalog, FBA inventory, AWD
-            inventory, sales velocity, and SVD inventory first.
+            {sourceRows.length === 0 ? (
+              <>
+                No catalog SKUs found. Sync Amazon catalog, FBA inventory, AWD
+                inventory, sales velocity, and SVD inventory first.
+              </>
+            ) : (
+              <>
+                Restore a product from <Link href="/settings" className="text-accent underline underline-offset-2">Settings</Link>{' '}
+                to show it here again.
+              </>
+            )}
           </p>
         </div>
       ) : (
