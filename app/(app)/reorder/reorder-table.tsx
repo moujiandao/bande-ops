@@ -50,6 +50,30 @@ export function emailClipboardBlobs(
   };
 }
 
+type EmailDraft = Pick<HTMLDivElement, 'innerHTML' | 'innerText'>;
+type EmailClipboard = Pick<Clipboard, 'write' | 'writeText'>;
+type ClipboardItemConstructor = new (
+  items: Record<string, Blob>,
+) => ClipboardItem;
+
+export async function copyEmailDraft(
+  draft: EmailDraft,
+  clipboard: EmailClipboard,
+  ClipboardItemClass?: ClipboardItemConstructor,
+): Promise<'rich' | 'plain'> {
+  if (ClipboardItemClass && clipboard.write) {
+    await clipboard.write([
+      new ClipboardItemClass(
+        emailClipboardBlobs(draft.innerHTML, draft.innerText),
+      ),
+    ]);
+    return 'rich';
+  }
+
+  await clipboard.writeText(draft.innerText);
+  return 'plain';
+}
+
 const EMAIL_CELL_STYLE = {
   border: '1px solid #9ca3af',
   padding: '6px 10px',
@@ -388,16 +412,12 @@ export function ReorderTable({
     if (!draft) return;
 
     try {
-      const plainText = draft.innerText;
-      if (typeof ClipboardItem !== 'undefined' && navigator.clipboard.write) {
-        await navigator.clipboard.write([
-          new ClipboardItem(emailClipboardBlobs(draft.innerHTML, plainText)),
-        ]);
-        setCopyStatus('Copied');
-      } else {
-        await navigator.clipboard.writeText(plainText);
-        setCopyStatus('Copied as plain text');
-      }
+      const result = await copyEmailDraft(
+        draft,
+        navigator.clipboard,
+        typeof ClipboardItem === 'undefined' ? undefined : ClipboardItem,
+      );
+      setCopyStatus(result === 'rich' ? 'Copied' : 'Copied as plain text');
     } catch {
       setCopyStatus('Copy failed');
     }

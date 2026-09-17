@@ -1,7 +1,11 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { RecommendationRow } from '@/lib/reorder/service';
-import { emailClipboardBlobs, ReorderTable } from './reorder-table';
+import {
+  copyEmailDraft,
+  emailClipboardBlobs,
+  ReorderTable,
+} from './reorder-table';
 
 function replenishRow(): RecommendationRow {
   return {
@@ -96,5 +100,45 @@ describe('ReorderTable replenish shipment fields', () => {
       '<table><tr><td>Blue cartons</td><td>2</td></tr></table>',
     );
     expect(await blobs['text/plain'].text()).toBe('Blue cartons 2');
+  });
+
+  it('copies current editable content as rich HTML and plain text', async () => {
+    const write = vi.fn().mockResolvedValue(undefined);
+    const writeText = vi.fn();
+    class ClipboardItemStub {
+      constructor(public readonly items: Record<string, Blob>) {}
+    }
+
+    const result = await copyEmailDraft(
+      {
+        innerHTML: '<p>Manually edited <strong>email</strong></p>',
+        innerText: 'Manually edited email',
+      },
+      { write, writeText },
+      ClipboardItemStub as unknown as typeof ClipboardItem,
+    );
+
+    expect(result).toBe('rich');
+    expect(writeText).not.toHaveBeenCalled();
+    const item = write.mock.calls[0]?.[0][0] as ClipboardItemStub;
+    expect(await item.items['text/html'].text()).toBe(
+      '<p>Manually edited <strong>email</strong></p>',
+    );
+    expect(await item.items['text/plain'].text()).toBe(
+      'Manually edited email',
+    );
+  });
+
+  it('falls back to plain text when rich clipboard items are unavailable', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+
+    await expect(
+      copyEmailDraft(
+        { innerHTML: '<p>Edited</p>', innerText: 'Edited' },
+        { write: vi.fn(), writeText },
+      ),
+    ).resolves.toBe('plain');
+
+    expect(writeText).toHaveBeenCalledWith('Edited');
   });
 });

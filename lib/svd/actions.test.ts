@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   requireUser: vi.fn(),
   createAdminClient: vi.fn(),
   refreshSvdInventory: vi.fn(),
+  rpc: vi.fn(),
   httpSvdClient: {},
 }));
 
@@ -42,7 +43,10 @@ describe('refreshSvdInventoryAction', () => {
       email: 'staff@example.com',
       role: 'staff',
     });
-    mocks.createAdminClient.mockReturnValue({ from: vi.fn() });
+    mocks.createAdminClient.mockReturnValue({ from: vi.fn(), rpc: mocks.rpc });
+    mocks.rpc
+      .mockResolvedValueOnce({ data: true, error: null })
+      .mockResolvedValueOnce({ data: true, error: null });
     mocks.refreshSvdInventory.mockResolvedValue({ count: 1, syncRunId: 'run-1' });
   });
 
@@ -54,6 +58,7 @@ describe('refreshSvdInventoryAction', () => {
       admin: mocks.createAdminClient.mock.results[0]?.value,
       client: mocks.httpSvdClient,
     });
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
     expect(mocks.revalidatePath).toHaveBeenCalledWith('/reorder');
   });
 
@@ -63,6 +68,18 @@ describe('refreshSvdInventoryAction', () => {
     await expect(refreshSvdInventoryAction()).rejects.toThrow('Unauthenticated');
 
     expect(mocks.createAdminClient).not.toHaveBeenCalled();
+    expect(mocks.refreshSvdInventory).not.toHaveBeenCalled();
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it('does not refresh while another SVD refresh holds the lock', async () => {
+    mocks.rpc.mockReset();
+    mocks.rpc.mockResolvedValueOnce({ data: false, error: null });
+
+    await expect(refreshSvdInventoryAction()).rejects.toThrow(
+      'already in progress',
+    );
+
     expect(mocks.refreshSvdInventory).not.toHaveBeenCalled();
     expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });

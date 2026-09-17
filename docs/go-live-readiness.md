@@ -2,6 +2,14 @@
 
 ## Go-Live Readiness: bande-ops on real Amazon data
 
+### 0. Current deployment status (2026-09-17)
+
+The live app is deployed at `https://ops.medicalbasics.com`, and Supabase auth is working. The Vercel project currently has only the three Supabase environment variables. Amazon SP-API, Ads, and SVD credentials are not configured there, and the explicit production-mode flags are absent, so the production deployment still shows the red sandbox warning and cannot refresh live external data.
+
+The codebase contains the production SP-API, Ads v3, and SVD paths. Before relying on them in this deployment, add the required server-side credentials, set `AMAZON_USE_FAKE=false`, `AMAZON_USE_SANDBOX=false`, and `ADS_USE_SANDBOX=false`, redeploy, then verify each source against its upstream system. SVD refresh is available to every authenticated user and is serialized with a short-lived database lease; it remains manual and is never run by cron. Ads write-back remains owner-only.
+
+Sections 1 and 2 below preserve the earlier readiness audit and its dated rechecks. When they conflict with this section, this section is current.
+
 ### 1. Summary
 
 Not close. The plumbing is sound — host routing, LWA token exchange, retry/backoff, the server-only/credentials-never-reach-browser boundary, the synced-mirror architecture, and (correctly) the *absence* of AWS SigV4/STS AssumeRole, which Amazon removed in 2023-24. But every one of the three integrations has at least one hard blocker that will either 400 on the first real call or, worse, silently return wrong data. SP-API catalog SKU lookups fail without a `sellerId` we don't yet configure; inventory quantities come back empty because `details=true` is missing, collapsing every SKU to UNKNOWN; the Reorder demand provider is a throw-only skeleton wired in an architecturally wrong shape (per-SKU at page load vs. one batched async report); and the Advertising client targets a Sponsored Products v2 endpoint Amazon **sunset on 2023-03-30**. The dangerous failures aren't the 400s (loud, easy to catch) — they're the three places where the project's central UNKNOWN-vs-true-0 invariant silently breaks once real data flows. Plan on real implementation work in all three modules plus a credentials/sandbox flip, not a config toggle.

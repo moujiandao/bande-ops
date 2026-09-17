@@ -24,6 +24,7 @@ const LOGIN_FORM_PATTERN =
 const OFFER_LIST_MARKER = /clsIDData/;
 
 const MAX_REDIRECTS = 8;
+const REQUEST_SEQUENCE_TIMEOUT_MS = 120_000;
 
 /**
  * Scrapes the SVD replenishment stock list.
@@ -83,7 +84,10 @@ export class HttpSvdClient implements SvdClient {
       }
 
       current = new URL(location, current);
-      nextInit = {}; // A redirect is always followed as a GET with no body.
+      // A redirect is followed as a GET with no body, while retaining the
+      // sequence-wide abort signal so a stuck site cannot outlive the refresh
+      // lease and admit an overlapping mirror replacement.
+      nextInit = { signal: nextInit.signal };
     }
 
     throw new Error('SVD request exceeded the redirect limit.');
@@ -91,9 +95,10 @@ export class HttpSvdClient implements SvdClient {
 
   async fetchInventoryHtml(): Promise<string> {
     const origin = this.config.baseUrl;
+    const signal = AbortSignal.timeout(REQUEST_SEQUENCE_TIMEOUT_MS);
 
     // 1. Bootstrap: land on the login page with a session id and cookies.
-    const login = await this.request(new URL(ENTRY_PATH, origin));
+    const login = await this.request(new URL(ENTRY_PATH, origin), { signal });
 
     const action = LOGIN_FORM_PATTERN.exec(login.html)?.[1];
     if (!action) {
@@ -115,6 +120,7 @@ export class HttpSvdClient implements SvdClient {
         hdnGuest: '',
         hdnViewAttach: '',
       }),
+      signal,
     });
 
     // 3. Prove we reached the offer list. A logged-out or error page parses to
