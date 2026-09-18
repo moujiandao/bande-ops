@@ -236,6 +236,15 @@ regression now verifies partial success, both failures, auth, safe messages,
 and invalidation. Amazon's existing bounded retries remain unchanged: a catalog
 quota exhaustion is reported honestly and can be retried later. No new migration
 or API permissions are needed. All 563 tests, TypeScript, lint, instruction checks,
-production build and required read-only code review passed. Live Supplier Reorder
-also shows the correct 3,430 on-hand breakdown. Deployment of the follow-up and
-live manual-action verification are the remaining release checks.
+production build and required read-only code review passed. Live Supplier Reorder,
+FBA Replenishment and Analytics also showed the correct 3,430 on-hand breakdown.
+
+Follow-up released as `24e107d`, CI 35320300234 and Vercel deployment
+J4rRi93W171UrFWco8k9PkZatCTu both passed. The authenticated staff user's live Sync
+now test at 07:38 UTC showed a disabled pending button, then confirmed successful
+refreshes of 191 FBA inventory SKUs and 191 catalog SKUs. The page stayed usable,
+retained the SKU search, and displayed the fresh catalog timestamp. The latest
+Amazon snapshot moved to 427 available + 3,004 FC transfer = 3,431 on hand, verified
+in the expanded live Catalog cell. All release checks are complete. Future Amazon
+quota failures remain possible, but they now produce explicit partial-result
+feedback and cannot prevent the independent FBA refresh from being attempted.
