@@ -5,8 +5,8 @@ import {
   copyEmailDraft,
   emailClipboardBlobs,
   orderQuantityForCoverage,
-  ReorderTable,
-} from './reorder-table';
+  RecommendationTable,
+} from './recommendation-table';
 
 function replenishRow(): RecommendationRow {
   return {
@@ -69,10 +69,10 @@ function orderRow(): RecommendationRow {
   };
 }
 
-describe('ReorderTable coverage selector', () => {
+describe('RecommendationTable coverage selector', () => {
   it('offers an archive action for each row', () => {
     const html = renderToStaticMarkup(
-      <ReorderTable rows={[orderRow()]} trailingHeader="Order" variant="order" />,
+      <RecommendationTable rows={[orderRow()]} trailingHeader="Order" variant="order" />,
     );
 
     expect(html).toContain('>Archive</th>');
@@ -82,7 +82,7 @@ describe('ReorderTable coverage selector', () => {
 
   it('links an actionable row to its dated analytics evidence', () => {
     const html = renderToStaticMarkup(
-      <ReorderTable
+      <RecommendationTable
         rows={[orderRow()]}
         trailingHeader="Order"
         variant="order"
@@ -111,24 +111,26 @@ describe('ReorderTable coverage selector', () => {
 
   it('offers the legacy coverage presets on the order list only', () => {
     const html = renderToStaticMarkup(
-      <ReorderTable rows={[orderRow()]} trailingHeader="Order" variant="order" />,
+      <RecommendationTable rows={[orderRow()]} trailingHeader="Order" variant="order" />,
     );
 
     expect(html).toContain('aria-label="Months of coverage"');
+    expect(html).toContain('>Total cover<');
     expect(html).toMatch(
-      /<option value=""[^>]*>Configured per SKU<\/option>/,
+      /<option value=""[^>]*>Use SKU settings<\/option>/,
     );
     for (const months of [1, 2, 3, 6, 12]) {
       expect(html).toContain(`<option value="${months}">${months} month`);
     }
 
     const replenishHtml = renderToStaticMarkup(
-      <ReorderTable
+      <RecommendationTable
         rows={[replenishRow()]}
         trailingHeader="Ship"
         variant="replenish"
         svdToFbaTargetDays={30}
         shipmentMonthYear="August 2026"
+        userId="user-1"
       />,
     );
     expect(replenishHtml).not.toContain('aria-label="Months of coverage"');
@@ -144,15 +146,16 @@ describe('ReorderTable coverage selector', () => {
   });
 });
 
-describe('ReorderTable replenish shipment fields', () => {
+describe('RecommendationTable replenish shipment fields', () => {
   it('renders the rounded-up box count immediately before Notes', () => {
     const html = renderToStaticMarkup(
-      <ReorderTable
+      <RecommendationTable
         rows={[replenishRow()]}
         trailingHeader="Ship"
         variant="replenish"
         svdToFbaTargetDays={30}
         shipmentMonthYear="August 2026"
+        userId="user-1"
       />,
     );
 
@@ -170,14 +173,34 @@ describe('ReorderTable replenish shipment fields', () => {
     expect(html).toContain('>Blue cartons</td>');
   });
 
+  it('labels transfer coverage as Amazon cover and excludes total usable supply', () => {
+    const html = renderToStaticMarkup(
+      <RecommendationTable
+        rows={[replenishRow()]}
+        trailingHeader="Suggested units"
+        variant="replenish"
+        svdToFbaTargetDays={30}
+        shipmentMonthYear="August 2026"
+        userId="user-1"
+      />,
+    );
+
+    expect(html).toContain('>Amazon cover<');
+    expect(html).not.toContain('>Total<');
+    // 59 units counted at Amazon / 4 daily units = 14 days. The 100 SVD units
+    // are deliberately excluded from this transfer-specific coverage value.
+    expect(html).toContain('>14</td>');
+  });
+
   it('renders an editable email with a bordered grid and copy button', () => {
     const html = renderToStaticMarkup(
-      <ReorderTable
+      <RecommendationTable
         rows={[replenishRow()]}
         trailingHeader="Ship"
         variant="replenish"
         svdToFbaTargetDays={30}
         shipmentMonthYear="August 2026"
+        userId="user-1"
       />,
     );
 

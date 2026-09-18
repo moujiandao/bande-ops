@@ -10,6 +10,7 @@ import {
   suggestedShipQty,
   svdShipmentDraftKey,
   svdShipmentRowKey,
+  svdShipmentStorageKey,
 } from './replenish';
 import type { RecommendationRow } from './service';
 
@@ -249,5 +250,15 @@ describe('shouldReplenishFromSvd', () => {
     expect(shouldReplenishFromSvd(candidate, 30)).toBe(false);
     expect(shouldReplenishFromSvd(candidate, 60)).toBe(true);
     expect(suggestedShipQty(candidate, 60)).toBe(60);
+  });
+});
+
+describe('svdShipmentStorageKey', () => {
+  it('isolates an operator\'s in-browser transfer draft from another operator', () => {
+    const rows = [row({ sources: { svd: 60 }, svdUnitsPerBox: 60 })];
+
+    expect(svdShipmentStorageKey('operator-a', rows, 30, 'August 2026')).not.toBe(
+      svdShipmentStorageKey('operator-b', rows, 30, 'August 2026'),
+    );
   });
 });

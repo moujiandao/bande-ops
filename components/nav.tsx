@@ -1,23 +1,25 @@
+'use client';
+
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 
 type NavItem = {
   label: string;
   href?: string;
-  /** Marks the currently-viewed item. The shell hard-codes Dashboard for now. */
-  active?: boolean;
   /** Coming-soon Module: rendered muted + disabled with a "Soon" tag. */
   soon?: boolean;
 };
 
-const overview: NavItem[] = [{ label: "Dashboard", href: "/", active: true }];
+const overview: NavItem[] = [{ label: "Dashboard", href: "/" }];
 
-// Operational modules in workflow order. Analytics sits beside Reorder because
-// its dated demand evidence supports the same replenishment decisions.
+// Operational modules in workflow order. FBA replenishment and supplier reorder
+// are separate decisions, even though they consume the same inventory mirrors.
 const modules: NavItem[] = [
   { label: "Catalog & Inventory", href: "/catalog" },
-  { label: "Reorder", href: "/reorder" },
+  { label: "FBA Replenishment", href: "/replenishment" },
+  { label: "Supplier Reorder", href: "/reorder" },
   { label: "Analytics", href: "/analytics" },
   { label: "Ads", href: "/ads" },
   { label: "Launch", soon: true },
@@ -28,7 +30,7 @@ const modules: NavItem[] = [
 // inputs to the reorder math, not a Module of their own).
 const workspace: NavItem[] = [{ label: "Settings", href: "/settings" }];
 
-function NavRow({ item }: { item: NavItem }) {
+function NavRow({ item, active }: { item: NavItem; active: boolean }) {
   const base =
     "group flex items-center justify-between gap-2 rounded-md px-3 py-2 text-sm transition-colors";
 
@@ -46,7 +48,7 @@ function NavRow({ item }: { item: NavItem }) {
     );
   }
 
-  if (item.active) {
+  if (active) {
     return (
       <Link
         href={item.href ?? "#"}
@@ -77,26 +79,30 @@ function SectionLabel({ children }: { children: ReactNode }) {
 }
 
 export function Nav() {
+  const pathname = usePathname();
+  const isActive = (href: string | undefined) =>
+    href === "/" ? pathname === "/" : Boolean(href && (pathname === href || pathname.startsWith(`${href}/`)));
+
   return (
     <nav aria-label="Primary" className="flex flex-col gap-4 px-2 py-3">
       <div className="flex flex-col gap-0.5">
         <SectionLabel>Overview</SectionLabel>
         {overview.map((item) => (
-          <NavRow key={item.label} item={item} />
+          <NavRow key={item.label} item={item} active={isActive(item.href)} />
         ))}
       </div>
 
       <div className="flex flex-col gap-0.5">
         <SectionLabel>Modules</SectionLabel>
         {modules.map((item) => (
-          <NavRow key={item.label} item={item} />
+          <NavRow key={item.label} item={item} active={isActive(item.href)} />
         ))}
       </div>
 
       <div className="flex flex-col gap-0.5">
         <SectionLabel>Workspace</SectionLabel>
         {workspace.map((item) => (
-          <NavRow key={item.label} item={item} />
+          <NavRow key={item.label} item={item} active={isActive(item.href)} />
         ))}
       </div>
     </nav>

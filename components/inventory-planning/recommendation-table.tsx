@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import {
   Fragment,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -15,10 +16,11 @@ import type { MomentumSignal } from '@/lib/analytics/service';
 import { recommend } from '@/lib/reorder/recommend';
 import {
   applySvdShipmentBoxCount,
-  buildSvdShipmentEmail,
+  amazonSideCover,
   initialSvdShipmentBoxCounts,
   suggestedShipQty,
   svdShipmentRowKey,
+  svdShipmentStorageKey,
   type SvdShipmentBoxCounts,
 } from '@/lib/reorder/replenish';
 
@@ -43,7 +45,7 @@ type SortKey =
   | 'momentum'
   | 'trailing';
 
-export type ReorderTableVariant = 'order' | 'status' | 'legacy' | 'replenish';
+export type RecommendationTableVariant = 'order' | 'status' | 'legacy' | 'replenish';
 
 export function emailClipboardBlobs(
   html: string,
@@ -84,6 +86,24 @@ const EMAIL_CELL_STYLE = {
   padding: '6px 10px',
   textAlign: 'left' as const,
 };
+
+function sanitizeShipmentEmailHtml(html: string): string {
+  const documentFragment = new DOMParser().parseFromString(html, 'text/html');
+  const allowedTags = new Set([
+    'P', 'BR', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TD', 'TH', 'STRONG', 'B',
+    'EM', 'I', 'U', 'UL', 'OL', 'LI', 'DIV', 'SPAN',
+  ]);
+
+  for (const element of documentFragment.body.querySelectorAll('*')) {
+    if (!allowedTags.has(element.tagName)) {
+      element.replaceWith(documentFragment.createTextNode(element.textContent ?? ''));
+      continue;
+    }
+    for (const attribute of [...element.attributes]) element.removeAttribute(attribute.name);
+  }
+
+  return documentFragment.body.innerHTML;
+}
 
 function num(value: number | null | undefined): string {
   return value === null || value === undefined ? '—' : String(Math.round(value));
@@ -130,7 +150,7 @@ export function orderQuantityForCoverage(
   return recalculated.status === 'ok' ? recalculated.recommendedQty : null;
 }
 
-function statusText(row: RecommendationRow, variant: ReorderTableVariant): string {
+function statusText(row: RecommendationRow, variant: RecommendationTableVariant): string {
   if (variant === 'legacy') return 'Legacy';
   if (row.recommendation.status === 'needs-review') {
     return row.recommendation.reason.replaceAll('-', ' ');
@@ -269,7 +289,7 @@ function FbaBreakdown({ row }: { row: RecommendationRow }) {
 function sortValue(
   row: RecommendationRow,
   key: SortKey,
-  variant: ReorderTableVariant,
+  variant: RecommendationTableVariant,
   svdToFbaTargetDays: number,
   coverageDays: number | null,
   momentumBySku: Record<string, MomentumSignal> | undefined,
@@ -292,7 +312,9 @@ function sortValue(
     case 'perDay':
       return row.dailyDemand;
     case 'cover':
-      return coverDays(row.usableSupply, row.dailyDemand);
+      return variant === 'replenish'
+        ? amazonSideCover(row)
+        : coverDays(row.usableSupply, row.dailyDemand);
     case 'momentum': {
       const signal = momentumBySku?.[row.sku];
       return signal?.absoluteChange ?? null;
@@ -326,26 +348,52 @@ const COLUMNS: { key: SortKey; label: string; title: string; numeric: boolean }[
   { key: 'cover', label: 'Cover', title: 'Days of supply at current demand', numeric: true },
 ];
 
-export function ReorderTable({
+const REPLENISH_COLUMNS = [
+  COLUMNS[0],
+  BOX_COLUMN,
+  { ...COLUMNS[1], label: 'FBA total', title: 'Full FBA inventory; expand a cell for the breakdown' },
+  COLUMNS[2],
+  COLUMNS[3],
+  COLUMNS[5],
+  { ...COLUMNS[6], label: 'Amazon cover', title: 'Days of policy-counted FBA and AWD supply at current demand; excludes SVD' },
+];
+
+const ORDER_COLUMNS = COLUMNS.map((column) =>
+  column.key === 'cover'
+    ? {
+        ...column,
+        label: 'Total cover',
+        title: 'Days of policy-eligible FBA, AWD, and SVD supply at current demand',
+      }
+    : column,
+);
+
+export function RecommendationTable({
   rows,
   trailingHeader,
   variant,
   svdToFbaTargetDays,
   shipmentMonthYear,
   momentumBySku,
+  userId,
 }: {
   rows: RecommendationRow[];
   trailingHeader: string;
-  variant: ReorderTableVariant;
+  variant: RecommendationTableVariant;
   svdToFbaTargetDays?: number;
   shipmentMonthYear?: string;
   momentumBySku?: Record<string, MomentumSignal>;
+  /** The current user scopes browser-only transfer-session drafts. */
+  userId?: string;
 }) {
   if (variant === 'replenish' && svdToFbaTargetDays === undefined) {
     throw new Error('Replenish tables require an SVD-to-FBA target.');
   }
   if (variant === 'replenish' && shipmentMonthYear === undefined) {
     throw new Error('Replenish tables require a shipment month and year.');
+  }
+  if (variant === 'replenish' && !userId) {
+    throw new Error('Replenish tables require the current user.');
   }
   const replenishTargetDays = svdToFbaTargetDays ?? 0;
   const [coverageMonths, setCoverageMonths] = useState<number | null>(null);
@@ -363,35 +411,75 @@ export function ReorderTable({
   const [expandedFba, setExpandedFba] = useState<string | null>(null);
   const showFbaBreakdown = variant === 'replenish';
   // The replenish list gets two extra columns: the SVD Box name (after SKU) and
-  // a free-text Notes field (far right). Notes are intentionally NOT persisted —
-  // they are scratch space for a picking session and reset on reload.
+  // a free-text Notes field (far right). Notes persist only within this browser
+  // session for the signed-in user, and never become shared operational data.
   const showBoxName = variant === 'replenish';
   const showNotes = variant === 'replenish';
   const showBoxesToSend = variant === 'replenish';
   const showMomentum =
     (variant === 'order' || variant === 'replenish') &&
     momentumBySku !== undefined;
-  const visibleColumns = showBoxName
-    ? [COLUMNS[0], BOX_COLUMN, ...COLUMNS.slice(1)]
-    : COLUMNS;
+  const visibleColumns =
+    variant === 'replenish'
+      ? REPLENISH_COLUMNS
+      : variant === 'order'
+        ? ORDER_COLUMNS
+        : COLUMNS;
   const initialBoxCounts = initialSvdShipmentBoxCounts(
     rows,
     replenishTargetDays,
   );
   const [boxesToSend, setBoxesToSend] =
     useState<SvdShipmentBoxCounts>(initialBoxCounts);
-  const [emailDraft, setEmailDraft] = useState(() =>
-    showBoxesToSend
-      ? buildSvdShipmentEmail(
-          shipmentMonthYear ?? '',
-          rows.map((row) => ({
-            box: row.boxName ?? '(not set)',
-            numberOfBoxes: initialBoxCounts[svdShipmentRowKey(row)] ?? '',
-          })),
-        )
-      : '',
-  );
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [draftHtml, setDraftHtml] = useState<string | null>(null);
+  const [draftResetVersion, setDraftResetVersion] = useState(0);
+  const shipmentStorageLoading = useRef(showBoxesToSend);
+  const shipmentStorageKey = showBoxesToSend
+    ? svdShipmentStorageKey(userId ?? '', rows, replenishTargetDays, shipmentMonthYear ?? '')
+    : null;
   const emailDraftRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!shipmentStorageKey) return;
+    shipmentStorageLoading.current = true;
+    const frame = window.requestAnimationFrame(() => {
+      try {
+        const saved = window.sessionStorage.getItem(shipmentStorageKey);
+        if (!saved) return;
+        const parsed = JSON.parse(saved) as {
+          boxesToSend?: SvdShipmentBoxCounts;
+          notes?: Record<string, string>;
+          draftHtml?: string;
+        };
+        if (parsed.boxesToSend) setBoxesToSend(parsed.boxesToSend);
+        if (parsed.notes) setNotes(parsed.notes);
+        if (parsed.draftHtml && emailDraftRef.current) {
+          const safeHtml = sanitizeShipmentEmailHtml(parsed.draftHtml);
+          emailDraftRef.current.innerHTML = safeHtml;
+          setDraftHtml(safeHtml);
+        }
+      } catch {
+        // Session storage is a convenience. The live recommendation remains valid
+        // when it is unavailable or corrupt.
+      } finally {
+        shipmentStorageLoading.current = false;
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [shipmentStorageKey]);
+
+  useEffect(() => {
+    if (!shipmentStorageKey || shipmentStorageLoading.current) return;
+    try {
+      window.sessionStorage.setItem(
+        shipmentStorageKey,
+        JSON.stringify({ boxesToSend, notes, draftHtml }),
+      );
+    } catch {
+      // See the read path above.
+    }
+  }, [boxesToSend, draftHtml, notes, shipmentStorageKey]);
   const [copyStatus, setCopyStatus] = useState('');
   // Fixed (non-Notes) columns: data + trailing + boxes-to-send when replenishing.
   const fixedColumnCount =
@@ -474,8 +562,13 @@ export function ReorderTable({
       numberOfBoxes: value,
     });
     setBoxesToSend(next.boxesToSend);
-    setEmailDraft(next.emailDraft);
+    setDraftHtml(null);
+    setDraftResetVersion((version) => version + 1);
     setCopyStatus('');
+  }
+
+  function updateNote(rowKey: string, value: string) {
+    setNotes((current) => ({ ...current, [rowKey]: value }));
   }
 
   async function copyEmail() {
@@ -560,7 +653,7 @@ export function ReorderTable({
             }
             className="rounded-md border border-border bg-panel px-2 py-1.5 text-xs text-foreground focus:border-accent focus:outline-none"
           >
-            <option value="">Configured per SKU</option>
+            <option value="">Use SKU settings</option>
             {[1, 2, 3, 6, 12].map((months) => (
               <option key={months} value={months}>
                 {months} {months === 1 ? 'month' : 'months'}
@@ -702,17 +795,25 @@ export function ReorderTable({
                   >
                     {num(row.sources.svd)}
                   </td>,
-                  <td
-                    key="total"
-                    className="px-3 py-2 text-right tabular-nums text-foreground"
-                  >
-                    {num(row.usableSupply)}
-                  </td>,
+                  ...(variant === 'replenish'
+                    ? []
+                    : [
+                        <td
+                          key="total"
+                          className="px-3 py-2 text-right tabular-nums text-foreground"
+                        >
+                          {num(row.usableSupply)}
+                        </td>,
+                      ]),
                   <td key="perDay" className="px-3 py-2 text-right tabular-nums text-muted">
                     {row.dailyDemand === null ? '—' : row.dailyDemand.toFixed(1)}
                   </td>,
                   <td key="cover" className="px-3 py-2 text-right tabular-nums text-muted">
-                    {num(coverDays(row.usableSupply, row.dailyDemand))}
+                    {num(
+                      variant === 'replenish'
+                        ? amazonSideCover(row)
+                        : coverDays(row.usableSupply, row.dailyDemand),
+                    )}
                   </td>,
                   <td key="trailing" className="px-3 py-2 text-right">
                     {variant === 'order' || variant === 'replenish' ? (
@@ -794,11 +895,10 @@ export function ReorderTable({
                     <td key="notes" className="px-3 py-2">
                       <input
                         type="text"
-                        aria-label={`Notes for ${row.sku} (not saved)`}
+                        aria-label={`Notes for ${row.sku}`}
                         placeholder="Note…"
-                        // Uncontrolled and unpersisted on purpose: scratch space
-                        // for a picking session. React keeps the value across
-                        // re-sorts via the row's stable key; it clears on reload.
+                        value={notes[rowKey] ?? ''}
+                        onChange={(event) => updateNote(rowKey, event.currentTarget.value)}
                         className="w-full min-w-[8rem] rounded-md border border-border bg-panel px-2 py-1 text-xs text-foreground placeholder:text-faint focus:border-accent focus:outline-none"
                       />
                     </td>,
@@ -833,7 +933,11 @@ export function ReorderTable({
         </table>
       </div>
       {showBoxesToSend ? (
-        <div className="flex flex-col gap-2 rounded-panel border border-border bg-panel p-4">
+        <details className="rounded-panel border border-border bg-panel p-4">
+          <summary className="cursor-pointer text-sm font-semibold text-foreground">
+            Shipment email draft <span className="font-normal text-muted">(editable after opening)</span>
+          </summary>
+          <div className="mt-3 flex flex-col gap-2">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h3 className="text-sm font-semibold text-foreground">
@@ -858,10 +962,13 @@ export function ReorderTable({
             </div>
           </div>
           <div
-            key={emailDraft}
+            key={draftResetVersion}
             ref={emailDraftRef}
             contentEditable
             suppressContentEditableWarning
+            onInput={(event) =>
+              setDraftHtml(sanitizeShipmentEmailHtml(event.currentTarget.innerHTML))
+            }
             role="textbox"
             aria-multiline="true"
             aria-label="SVD shipment email draft"
@@ -909,7 +1016,8 @@ export function ReorderTable({
               5107171898
             </p>
           </div>
-        </div>
+          </div>
+        </details>
       ) : null}
     </div>
   );

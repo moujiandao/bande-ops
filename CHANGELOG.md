@@ -1,5 +1,16 @@
 # Changelog
 
+## [2026-09-17] Separate replenishment workflows
+
+### Added
+- Add the protected `/replenishment` FBA Replenishment workspace for SVD-to-FBA transfer recommendations, shipment review, and a session-only shipment email draft.
+- Add compact source status and mobile workflow navigation shared by FBA Replenishment and Supplier Reorder.
+
+### Changed
+- Split supplier purchasing into `/reorder`, leaving FBA transfer planning in `/replenishment`; each workflow now uses the supply and coverage definition that fits its decision.
+- Scope browser-only shipment draft counts, notes, and edits to the signed-in operator and the current recommendation inputs.
+- Move the shared inventory planning table out of a route-private folder so both workflow routes consume one shared component.
+
 ## [2026-09-17] Advanced sales analytics
 
 ### Added
@@ -37,7 +48,7 @@
 
 ### Changed
 - The replenish table's Box column previously showed the SVD item id; it now shows the operator box name.
-- `app/(app)/reorder/reorder-table.tsx` builds header and body cells as keyed arrays so the Notes column can be spliced in at any position; the other table variants render unchanged.
+- `components/inventory-planning/recommendation-table.tsx` builds header and body cells as keyed arrays so the Notes column can be spliced in at any position; the other table variants render unchanged.
 
 ## [2026-07-23] FBA incoming in the replenish math
 

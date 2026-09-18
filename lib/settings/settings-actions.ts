@@ -122,6 +122,7 @@ async function writeSetting(params: {
 
   revalidatePath('/settings');
   revalidatePath('/reorder');
+  revalidatePath('/replenishment');
 }
 
 /** Save the global default (lead time + safety stock) for all SKUs. */
@@ -221,6 +222,7 @@ export async function saveSvdUnitsPerBoxAction(formData: FormData): Promise<void
 
   revalidatePath('/settings');
   revalidatePath('/reorder');
+  revalidatePath('/replenishment');
 }
 
 /**
@@ -270,6 +272,7 @@ export async function saveBoxNameAction(formData: FormData): Promise<void> {
 
   revalidatePath('/settings');
   revalidatePath('/reorder');
+  revalidatePath('/replenishment');
 }
 
 /** Save the global replenishment policy that controls velocity and supply rules. */
@@ -320,6 +323,7 @@ export async function savePolicyAction(formData: FormData): Promise<void> {
 
   revalidatePath('/settings');
   revalidatePath('/reorder');
+  revalidatePath('/replenishment');
 }
 
 /**
@@ -377,6 +381,7 @@ export async function saveSourceMappingAction(formData: FormData): Promise<void>
 
   revalidatePath('/settings');
   revalidatePath('/reorder');
+  revalidatePath('/replenishment');
 }
 
 /** Remove a manual mapping, falling back to automatic matching. */
@@ -398,4 +403,5 @@ export async function deleteSourceMappingAction(formData: FormData): Promise<voi
 
   revalidatePath('/settings');
   revalidatePath('/reorder');
+  revalidatePath('/replenishment');
 }

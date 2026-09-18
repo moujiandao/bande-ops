@@ -55,6 +55,7 @@ describe('archive SKU actions', () => {
     expect(mocks.revalidatePath.mock.calls.map(([path]) => path)).toEqual([
       '/catalog',
       '/reorder',
+      '/replenishment',
       '/settings',
     ]);
   });

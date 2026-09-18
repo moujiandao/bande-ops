@@ -17,4 +17,5 @@ export async function refreshSvdInventoryAction(): Promise<void> {
     });
   });
   revalidatePath('/reorder');
+  revalidatePath('/replenishment');
 }

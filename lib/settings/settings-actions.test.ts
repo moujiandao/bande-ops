@@ -82,6 +82,7 @@ describe('savePolicyAction', () => {
     );
     expect(mocks.revalidatePath).toHaveBeenCalledWith('/settings');
     expect(mocks.revalidatePath).toHaveBeenCalledWith('/reorder');
+    expect(mocks.revalidatePath).toHaveBeenCalledWith('/replenishment');
   });
 
   it('persists unchecked inbound checkboxes as false', async () => {

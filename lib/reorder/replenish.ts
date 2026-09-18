@@ -138,6 +138,20 @@ export function svdShipmentDraftKey(
   ]);
 }
 
+/**
+ * Browser-only transfer drafts are scoped to the signed-in operator as well as
+ * the current recommendation inputs. A shared browser can therefore never
+ * restore one operator's picking notes into another operator's session.
+ */
+export function svdShipmentStorageKey(
+  userId: string,
+  rows: RecommendationRow[],
+  targetDays: number,
+  monthYear: string,
+): string {
+  return `bande-ops:shipment:${userId}:${svdShipmentDraftKey(rows, targetDays, monthYear)}`;
+}
+
 export function formatShipmentMonthYear(date: Date): string {
   return new Intl.DateTimeFormat('en-US', {
     month: 'long',

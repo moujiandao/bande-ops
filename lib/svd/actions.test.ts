@@ -60,6 +60,7 @@ describe('refreshSvdInventoryAction', () => {
     });
     expect(mocks.rpc).toHaveBeenCalledTimes(2);
     expect(mocks.revalidatePath).toHaveBeenCalledWith('/reorder');
+    expect(mocks.revalidatePath).toHaveBeenCalledWith('/replenishment');
   });
 
   it('does not create clients or refresh when authentication fails', async () => {

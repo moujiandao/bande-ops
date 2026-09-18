@@ -14,6 +14,7 @@ function readSku(formData: FormData): string {
 function revalidateArchiveViews(): void {
   revalidatePath('/catalog');
   revalidatePath('/reorder');
+  revalidatePath('/replenishment');
   revalidatePath('/settings');
 }
 

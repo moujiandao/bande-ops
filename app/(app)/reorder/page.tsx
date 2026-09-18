@@ -1,318 +1,118 @@
-import { Badge } from '@/components/ui/badge';
-import { ReorderTable } from './reorder-table';
-import {
-  formatShipmentMonthYear,
-  shouldReplenishFromSvd,
-  svdShipmentDraftKey,
-} from '@/lib/reorder/replenish';
-import { assembleRecommendations, type RecommendationRow } from '@/lib/reorder/service';
-import { refreshSvdInventoryAction } from '@/lib/svd/actions';
-import { createClient } from '@/lib/supabase/server';
-import {
-  analyticsSourceIssue,
-  buildSalesAnalytics,
-  momentumSignalsBySku,
-  readAnalyticsHistory,
-} from '@/lib/analytics/service';
-import { archivedSkuKeys, isSkuArchived } from '@/lib/archive/skus';
 import Link from 'next/link';
-
-function reorderQty(row: RecommendationRow): number {
-  return row.recommendation.status === 'ok' ? row.recommendation.recommendedQty : 0;
-}
-
-
-const refreshButtonClass =
-  'rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-panel-muted';
-
-
-
-function formatTimestamp(iso: string): string {
-  return new Intl.DateTimeFormat('en-US', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(iso));
-}
-
-
+import { Badge } from '@/components/ui/badge';
+import { SourceStatus } from '@/components/replenishment/source-status';
+import { WorkflowSwitch } from '@/components/replenishment/workflow-switch';
+import { RefreshSvdButton } from '@/components/replenishment/refresh-svd-button';
+import { loadReorderWorkflowData } from '@/lib/reorder/workflow-data';
+import { RecommendationTable } from '@/components/inventory-planning/recommendation-table';
 
 export default async function ReorderPage() {
-  const supabase = await createClient();
-  const [recommendations, analyticsHistory, archivedRes] = await Promise.all([
-    assembleRecommendations({ supabase }),
-    readAnalyticsHistory({ supabase, historyDays: 90 }),
-    supabase.from('archived_skus').select('marketplace_id, sku'),
-  ]);
-  const {
-    rows: sourceRows,
-    errors,
-    sourceHealth,
-    policy,
-  } = recommendations;
-  const archivedKeys = archivedSkuKeys(archivedRes.data ?? []);
-  const rows = archivedRes.error
-    ? []
-    : sourceRows.filter(
-        (row) =>
-          !isSkuArchived(archivedKeys, row.marketplaceId, row.sku),
-      );
-  const analyticsIssue = analyticsSourceIssue(sourceHealth);
-  const analytics = analyticsHistory.error || analyticsIssue
-    ? []
-    : buildSalesAnalytics({
-        products: rows,
-        ledgerRows: analyticsHistory.rows,
-        windowDays: 7,
-        historyDays: 90,
-        dataThroughDate: analyticsHistory.dataThroughDate,
-      });
-  const momentumBySku = analyticsHistory.error || analyticsIssue
-    ? undefined
-    : momentumSignalsBySku(analytics);
-  const svdToFbaTargetDays = policy.svdToFbaTargetDays;
-  const shipmentMonthYear = formatShipmentMonthYear(new Date());
-
-  // Legacy SKUs are excluded from every working list. They stay reachable in a
-  // collapsed section so an excluded SKU is never silently invisible.
-  const legacy = rows.filter((row) => row.isLegacy);
-  const active = rows.filter((row) => !row.isLegacy);
-
-  // Stock sitting at SVD that FBA needs now. Coverage here counts only what is
-  // already at or heading to Amazon (FBA + AWD) — including SVD would mask the
-  // very SKUs that need shipping, since their stock is what we are looking at.
-  const replenishFromSvd = active.filter((row) =>
-    shouldReplenishFromSvd(row, svdToFbaTargetDays),
-  );
-
-  const toReorder = active
-    .filter((row) => row.recommendation.status === 'ok' && reorderQty(row) > 0)
-    .sort((a, b) => reorderQty(b) - reorderQty(a));
-  const trendingCount = toReorder.filter((row) => {
-    const kind = momentumBySku?.[row.sku]?.kind;
-    return kind === 'trending-up' || kind === 'sustained-growth';
-  }).length;
-  const wellStocked = active.filter(
-    (row) => row.recommendation.status === 'ok' && reorderQty(row) === 0,
-  );
-  const needsReview = active.filter(
-    (row) => row.recommendation.status === 'needs-review',
-  );
-
-  const loadErrors = Object.entries(errors).filter(([, message]) => Boolean(message));
+  const data = await loadReorderWorkflowData();
 
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            Reorder recommendations
-          </h1>
+          <p className="text-xs font-medium uppercase tracking-wide text-faint">Supplier purchasing</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Supplier Reorder</h1>
           <p className="max-w-prose text-sm text-muted">
-            Recommended order quantities from FBA, AWD, SVD, sales velocity,
-            lead time, and safety stock. Decision support only, nothing here
-            writes back to Amazon.
+            Plan purchases using stock across FBA, AWD, and SVD. These recommendations are decision support only and never place an order.
           </p>
         </div>
-        <form action={refreshSvdInventoryAction}>
-          <button type="submit" className={refreshButtonClass}>
-            Refresh SVD
-          </button>
-        </form>
+        <RefreshSvdButton />
       </header>
 
-      {sourceHealth.length > 0 ? (
-        <section className="grid gap-2 md:grid-cols-3">
-          {sourceHealth.map((source) => (
-            <div
-              key={source.source}
-              className="rounded-panel border border-border bg-panel p-3"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-medium uppercase tracking-wide text-faint">
-                  {source.source.replaceAll('_', ' ')}
-                </span>
-                <Badge
-                  className={
-                    source.status === 'success'
-                      ? 'border-accent-soft bg-accent-soft text-accent-strong'
-                      : 'border-border bg-panel-muted text-muted'
-                  }
-                >
-                  {source.status}
-                </Badge>
-              </div>
-              <p className="mt-2 text-xs text-muted">
-                {source.lastSuccessAt ? (
-                  <>
-                    Last refreshed{' '}
-                    <time dateTime={source.lastSuccessAt}>
-                      {formatTimestamp(source.lastSuccessAt)}
-                    </time>
-                  </>
-                ) : (
-                  'Never refreshed'
-                )}
-                {source.rowCount === null ? '' : ` · ${source.rowCount} rows`}
-              </p>
-            </div>
-          ))}
-        </section>
-      ) : null}
+      <WorkflowSwitch current="reorder" />
 
-      {loadErrors.length > 0 ? (
+      <SourceStatus sourceHealth={data.sourceHealth} loadErrors={data.loadErrors} />
+
+      {data.archiveError ? (
         <div className="rounded-panel border border-border bg-panel-muted p-3 text-xs text-foreground">
-          ⚠ A source failed to load:{' '}
-          {loadErrors.map(([name, message]) => `${name}: ${message}`).join('; ')}.
-          Some rows may read &ldquo;Needs review&rdquo; because of this load error.
+          Archived products could not be loaded ({data.archiveError}). Product lists are hidden so archived SKUs cannot reappear accidentally.
         </div>
       ) : null}
 
-      {archivedRes.error ? (
+      {data.analyticsError ? (
         <div className="rounded-panel border border-border bg-panel-muted p-3 text-xs text-foreground">
-          Archived products could not be loaded ({archivedRes.error.message}).
-          Product lists are hidden so archived SKUs cannot reappear accidentally.
+          Sales momentum is unavailable ({data.analyticsError}). Reorder math is unchanged.
         </div>
-      ) : null}
-
-      {analyticsHistory.error || analyticsIssue ? (
-        <div className="rounded-panel border border-border bg-panel-muted p-3 text-xs text-foreground">
-          Sales momentum is unavailable ({analyticsHistory.error ?? analyticsIssue}).
-          Reorder math is unchanged. Apply migration 0020 if needed, then refresh
-          the FBA ledger to restore current analytics evidence.
-        </div>
-      ) : trendingCount > 0 ? (
+      ) : data.trendingCount > 0 ? (
         <Link
           href="/analytics?filter=trending"
-          className="rounded-panel border border-accent-soft bg-accent-soft p-3 text-xs font-medium text-accent-strong transition-colors hover:border-accent"
+          className="self-start text-xs font-medium text-accent underline underline-offset-2 hover:text-accent-strong"
         >
-          {trendingCount} reorder {trendingCount === 1 ? 'candidate is' : 'candidates are'}{' '}
-          trending up. Review the dated evidence and inventory scenarios in Advanced Analytics.
+          {data.trendingCount} reorder {data.trendingCount === 1 ? 'candidate is' : 'candidates are'} trending up. Review the evidence in Analytics.
         </Link>
       ) : null}
 
-      {archivedRes.error ? null : rows.length === 0 ? (
+      {data.archiveError ? null : data.rows.length === 0 ? (
         <div className="flex flex-col items-start gap-3 rounded-panel border border-dashed border-border bg-panel p-8">
           <h2 className="text-sm font-medium text-foreground">
-            {sourceRows.length === 0
-              ? 'Nothing to recommend yet'
-              : 'All products are archived'}
+            {data.sourceRows.length === 0 ? 'Nothing to recommend yet' : 'All products are archived'}
           </h2>
           <p className="max-w-prose text-sm text-muted">
-            {sourceRows.length === 0 ? (
-              <>
-                No catalog SKUs found. Sync Amazon catalog, FBA inventory, AWD
-                inventory, sales velocity, and SVD inventory first.
-              </>
-            ) : (
-              <>
-                Restore a product from <Link href="/settings" className="text-accent underline underline-offset-2">Settings</Link>{' '}
-                to show it here again.
-              </>
-            )}
+            {data.sourceRows.length === 0
+              ? 'No catalog SKUs found. Sync the inventory sources before reviewing supplier purchases.'
+              : <>Restore a product from <Link href="/settings" className="text-accent underline underline-offset-2">Settings</Link> to show it here again.</>}
           </p>
         </div>
       ) : (
-        <div className="flex flex-col gap-8">
-          {replenishFromSvd.length > 0 ? (
-            <section className="flex flex-col gap-3">
-              <div className="flex items-baseline justify-between gap-3">
-                <h2 className="text-sm font-semibold text-foreground">
-                  Replenish from SVD to FBA
-                </h2>
-                <Badge variant="accent">{replenishFromSvd.length}</Badge>
-              </div>
-              <p className="max-w-prose text-xs text-muted">
-                Under {svdToFbaTargetDays} days of cover from stock already at
-                or heading to Amazon (FBA + AWD), with units available at SVD.
-                The quantity is what it takes to reach {svdToFbaTargetDays}{' '}
-                days, capped at what SVD actually holds — no supplier order
-                needed.
-              </p>
-              <ReorderTable
-                key={svdShipmentDraftKey(
-                  replenishFromSvd,
-                  svdToFbaTargetDays,
-                  shipmentMonthYear,
-                )}
-                rows={replenishFromSvd}
-                trailingHeader="Ship"
-                variant="replenish"
-                svdToFbaTargetDays={svdToFbaTargetDays}
-                shipmentMonthYear={shipmentMonthYear}
-                momentumBySku={momentumBySku}
-              />
-            </section>
-          ) : null}
-
+        <>
           <section className="flex flex-col gap-3">
-            <div className="flex items-baseline justify-between gap-3">
-              <h2 className="text-sm font-semibold text-foreground">Reorder now</h2>
-              <Badge variant="accent">{toReorder.length}</Badge>
+            <div className="flex flex-wrap items-baseline justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold text-foreground">Reorder now</h2>
+                <p className="mt-1 text-xs text-muted">
+                  Suggested quantities count policy-eligible supply at FBA, AWD, and SVD. Change the scenario without changing saved SKU settings, or update SKU coverage in <Link href="/settings" className="text-accent underline underline-offset-2">Settings</Link>.
+                </p>
+              </div>
+              <Badge variant="accent">{data.toReorder.length}</Badge>
             </div>
-            {toReorder.length === 0 ? (
+            {data.toReorder.length === 0 ? (
               <p className="rounded-panel border border-dashed border-border bg-panel p-4 text-xs text-muted">
                 No SKUs are at or below their reorder point.
               </p>
             ) : (
-              <ReorderTable
-                rows={toReorder}
-                trailingHeader="Order"
-                variant="order"
-                momentumBySku={momentumBySku}
-              />
+              <RecommendationTable rows={data.toReorder} trailingHeader="Suggested order (units)" variant="order" momentumBySku={data.momentumBySku} />
             )}
           </section>
 
-          <section className="flex flex-col gap-3">
-            <div className="flex items-baseline justify-between gap-3">
-              <h2 className="text-sm font-semibold text-foreground">Needs review</h2>
-              <Badge className="border-border bg-panel-muted text-muted">
-                {needsReview.length}
-              </Badge>
+          <details
+            open={data.loadErrors.length > 0 || data.sourceHealth.some((source) => source.status !== 'success')}
+            className="rounded-panel border border-border bg-panel p-4"
+          >
+            <summary className="cursor-pointer text-sm font-semibold text-foreground">
+              Needs review <span className="font-normal text-muted">({data.needsReview.length})</span>
+            </summary>
+            <div className="mt-3">
+              {data.needsReview.length === 0 ? (
+                <p className="text-xs text-muted">Every active SKU has usable supply, SVD mapping, and velocity.</p>
+              ) : <RecommendationTable rows={data.needsReview} trailingHeader="Status" variant="status" />}
             </div>
-            {needsReview.length === 0 ? (
-              <p className="rounded-panel border border-dashed border-border bg-panel p-4 text-xs text-muted">
-                Every SKU has usable supply, SVD mapping, and velocity.
-              </p>
-            ) : (
-              <ReorderTable rows={needsReview} trailingHeader="Status" variant="status" />
-            )}
-          </section>
+          </details>
 
-          <section className="flex flex-col gap-3">
-            <div className="flex items-baseline justify-between gap-3">
-              <h2 className="text-sm font-semibold text-foreground">Well stocked</h2>
-              <Badge className="border-border bg-panel-muted text-muted">
-                {wellStocked.length}
-              </Badge>
+          <details className="rounded-panel border border-border bg-panel p-4">
+            <summary className="cursor-pointer text-sm font-semibold text-foreground">
+              Well stocked <span className="font-normal text-muted">({data.wellStocked.length})</span>
+            </summary>
+            <div className="mt-3">
+              {data.wellStocked.length === 0 ? (
+                <p className="text-xs text-muted">No SKUs are above their reorder point yet.</p>
+              ) : <RecommendationTable rows={data.wellStocked} trailingHeader="Status" variant="status" />}
             </div>
-            {wellStocked.length === 0 ? (
-              <p className="rounded-panel border border-dashed border-border bg-panel p-4 text-xs text-muted">
-                No SKUs are above their reorder point yet.
-              </p>
-            ) : (
-              <ReorderTable rows={wellStocked} trailingHeader="Status" variant="status" />
-            )}
-          </section>
-        </div>
+          </details>
+        </>
       )}
 
-      {legacy.length > 0 ? (
+      {data.legacy.length > 0 ? (
         <details className="rounded-panel border border-border bg-panel p-4">
           <summary className="cursor-pointer text-sm font-semibold text-foreground">
-            Legacy{' '}
-            <span className="font-normal text-muted">
-              ({legacy.length} SKUs with no sales in ~18 months)
-            </span>
+            Legacy <span className="font-normal text-muted">({data.legacy.length} SKUs with no sales in about 18 months)</span>
           </summary>
           <p className="mt-2 text-xs text-muted">
-            Excluded from the lists above. A listing created in the last 12
-            months is never treated as legacy, and a SKU with no known listing
-            date is left in the lists rather than hidden.
+            Excluded from the working lists. Listings created in the last 12 months are never treated as legacy.
           </p>
-          <div className="mt-3">
-            <ReorderTable rows={legacy} trailingHeader="Status" variant="legacy" />
-          </div>
+          <div className="mt-3"><RecommendationTable rows={data.legacy} trailingHeader="Status" variant="legacy" /></div>
         </details>
       ) : null}
     </div>
