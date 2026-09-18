@@ -1,11 +1,11 @@
 # Changelog
 
-## [2026-09-18] Catalog thumbnails (unreleased)
+## [2026-09-18] Catalog thumbnails
 
 ### Changed
 - Prefer Amazon's MAIN catalog image and deliver optimized product thumbnails instead of full source images.
 
-## [2026-09-18] Medical Basics branding (unreleased)
+## [2026-09-18] Medical Basics branding
 
 ### Changed
 - Replace the sidebar's placeholder Ops App mark with the Medical Basics logo.
