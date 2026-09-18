@@ -1,3 +1,4 @@
+import Image from "next/image";
 import type { ReactNode } from "react";
 import { DataSourceBanner } from "@/components/data-source-banner";
 import { Nav } from "@/components/nav";
@@ -38,16 +39,15 @@ export function AppShell({
     <div className="min-h-screen bg-surface text-foreground">
       {/* Sidebar — fixed, constant ink chrome. Hidden on small screens. */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col bg-ink text-ink-foreground md:flex">
-        <div className="flex h-14 items-center gap-2.5 border-b border-ink-border px-4">
-          <span
-            aria-hidden="true"
-            className="flex h-7 w-7 items-center justify-center rounded-md bg-accent text-sm font-bold text-accent-foreground"
-          >
-            b
-          </span>
-          <span className="text-xs font-medium uppercase tracking-[0.16em] text-ink-muted">
-            Ops App
-          </span>
+        <div className="flex h-14 items-center border-b border-ink-border px-4">
+          <Image
+            src="/medical-basics-logo.avif"
+            alt="Medical Basics"
+            width={450}
+            height={76}
+            priority
+            className="h-auto w-[174px] brightness-0 invert"
+          />
         </div>
 
         <div className="flex-1 overflow-y-auto">

@@ -1,5 +1,10 @@
 # Changelog
 
+## [2026-09-18] Medical Basics branding (unreleased)
+
+### Changed
+- Replace the sidebar's placeholder Ops App mark with the Medical Basics logo.
+
 ## [2026-09-18] Reorder analytics evidence
 
 ### Added
