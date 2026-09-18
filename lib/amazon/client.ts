@@ -14,6 +14,8 @@ import { getAccessToken } from './lwa';
 import {
   buildLedgerReportBody,
   buildMerchantListingsReportBody,
+  buildShipmentEvidenceReportBody,
+  type ShipmentEvidenceReportKind,
   type ReportDocument,
   type ReportStatus,
 } from './reports';
@@ -342,6 +344,26 @@ export class SpApiClient implements AmazonClient {
         'createMerchantListingsReport: SP-API did not return reportId.',
       );
     }
+    return data.reportId;
+  }
+
+  /** Approved read-only report validation. No Orders API or restricted roles. */
+  async createShipmentEvidenceReport(opts: CreateLedgerReportOptions & {
+    kind: ShipmentEvidenceReportKind;
+  }): Promise<string> {
+    const marketplace = opts.marketplace ?? DEFAULT_MARKETPLACE;
+    const data = await this.request<{ reportId?: string }>({
+      method: 'POST',
+      path: '/reports/2021-06-30/reports',
+      marketplace,
+      body: buildShipmentEvidenceReportBody({
+        kind: opts.kind,
+        marketplaceId: marketplace.id,
+        dataStartTime: opts.dataStartTime,
+        dataEndTime: opts.dataEndTime,
+      }),
+    });
+    if (!data.reportId) throw new Error('Shipment evidence report has no report id.');
     return data.reportId;
   }
 

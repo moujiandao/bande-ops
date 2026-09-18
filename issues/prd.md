@@ -3,9 +3,10 @@
 Date: 2026-09-17
 
 Status: Implementation in progress on `feat/vine-sales-momentum`. Brian requested
-execution on 2026-09-17. No production change is authorized by this document.
-Source feasibility and the order-data boundary remain unresolved. Independent
-settings and metric work is implemented; the Amazon integration is not complete.
+execution and approved narrow report access on 2026-09-17. No production change
+is authorized by this document. Report access works; reliable Vine identification
+and reconciliation remain unresolved. Settings and metric work is implemented;
+the automatic Amazon integration is not complete.
 
 ## Problem Statement
 
@@ -180,6 +181,16 @@ budgets, then reconcile overlapping recent ranges for late corrections. A page
 view must never initiate the backfill. This integration does not add an unattended
 SVD refresh.
 
+Ongoing behavior is part of this feature, not a one-time historical cleanup.
+After deployment, each scheduled sync must discover newly shipped Vine units
+across all report SKUs, including future products, without an operator maintaining
+a SKU list. Continue preparing evidence while the exclusion preference is off so
+changing the preference does not start a new source fetch. Revisit an overlapping
+recent period for delayed shipment/promotion records and corrected classifications;
+publish only reconciled generations. The existing daily cron is the initial
+cadence. Source lag and incomplete runs remain visible rather than implying
+real-time identification or guaranteed zero Vine activity.
+
 ### Presentation and workflow
 
 Place the toggle in an **Analytics** section of Settings, with this copy:
@@ -304,11 +315,19 @@ Implemented locally:
   evidence, best-period recomputation, and all-shipment parity.
 - Display raw, excluded, and observed units in daily evidence and period totals.
 
-Source validation remains blocked. The pending user question asks for a narrow
-exception to AGENTS.md's "Do not touch Orders/PII data" rule for report matching
-fields, plus a seller-confirmed Vine SKU/date. No order reports have been fetched.
-No marker, Amazon parser, external fixture, sync, backfill, adjustment mirror,
-or automatic exclusion has been invented. `vineAdjustmentIssue` deliberately
+Brian approved the narrow report-access exception on 2026-09-17: fetch shipment
+sales and promotion reports, retain only matching identifiers, SKU, date,
+quantity and promotion details, and discard destination fields before logging
+or storage. This supersedes the AGENTS.md Orders/PII restriction only for this
+purpose. It does not authorize a broader Orders API or restricted-role design.
+A seller-confirmed Vine SKU/date is still needed for comparison. Source validation
+is now proceeding under that approval.
+Both reports were retrieved successfully for Aug 18 through Sep 17 (UTC): 4,121
+sales rows and 609 promotion rows. No explicit Vine marker was observed. Captured
+sanitized fixture subsets and matching limitations are recorded in
+`docs/vine-source-validation.md`. Bounded request transport is implemented, but
+there is no validated Vine classifier, sync, backfill, or adjustment mirror.
+`vineAdjustmentIssue` deliberately
 keeps the on state unavailable pending a validated source integration. The pure
 calculation accepts confirmed daily domain inputs, but production readers do not
 yet supply these inputs.
@@ -327,14 +346,20 @@ Official source findings:
   contains no documented VINE program value. Do not assume `programs` identifies
   Vine or expand to the Orders API without a separately approved design.
 
-Remaining: resolve report-access permission, obtain a known Vine example,
-capture/sanitize real evidence, validate marker and ledger inclusion, design
+Remaining: obtain a known Vine example,
+capture its real evidence, validate marker and ledger inclusion, design
 generation-safe reconciliation and coverage storage from those findings, wire
 bounded sync/backfill, validate live examples and authenticated UI, then complete
 review and release. Migration 0022 is not applied; no merge or deployment has
 been performed. This branch is an incomplete foundation, not release-ready.
 
 Verification:
+
+- After report-access validation: all 508 tests passed, along with lint,
+  TypeScript, instruction policy, diff whitespace, and production build. The
+  read-only transport/fixture review passed. Both real candidate reports were
+  successfully retrieved; a Vine-positive sample and complete reconciliation
+  are still unverified, so scheduled Vine processing is not enabled.
 
 - All 501 tests across 62 files passed. Lint, TypeScript, instruction-policy
   check, diff whitespace check, and production build passed.

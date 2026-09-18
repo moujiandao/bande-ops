@@ -1,0 +1,9 @@
+shipment-date	currency	item-promotion-discount	item-promotion-id	description	promotion-rule-value	amazon-order-id	shipment-id	shipment-item-id
+2026-09-16T00:00:00-07:00	USD	0.19	34218657401	Nagle Item Discount Promotion US Jul 2026	59	sample-f453431bd3cc2e6d61aa	sample-0bbfc9a71d35bcdf757d	sample-a1d01f587a36926bc77e
+2026-09-16T00:00:00-07:00	USD	2.99	24193161201	AtD Promotion - https://issues.amazon.com/issues/CLMTech-699	70	sample-39cddcc03f8b02ec48e9	sample-dc68fb0ccccf11b7b40d	sample-48611a44aacb51fbdc32
+2026-09-16T00:00:00-07:00	USD	3.08	20644321801	US Core Free Shipping Promotion, based off Policies	70	sample-a4f76003a51aeae4cf42	sample-d7779ce27a1abc479811	sample-deb030f1027fcd7c6c1e
+2026-09-16T00:00:00-07:00	USD	0.75	232148511	Free Sub SameDay Promotion	70	sample-68fd3016bc338e9da963	sample-9708d8035f99808a2f5e	sample-6b8966b7275b91493082
+2026-09-13T00:00:00-07:00	USD	5.46	432614501	Exports Free Shipping	70	sample-9d3296ca4a1a10023686	sample-7d1cff7c64bc5bfdc0f9	sample-3277042dd0d744ed7b8e
+2026-09-13T00:00:00-07:00	USD	1.00	232148511	Free Sub SameDay Promotion	70	sample-fac87b3e148833f278b0	sample-78bd1553ca67fbbabf84	sample-beeb5f7d7e82de389e1b
+2026-09-08T00:00:00-07:00	USD	1.75	20644321801	US Core Free Shipping Promotion, based off Policies	70	sample-7aa69d43198a9cf0b7ae	sample-5a1c210dfeb7e997edd1	sample-09c7a05cd96117b05720
+2026-09-01T00:00:00-07:00	USD	11.04	16397946801	Exports Prime Shipping	70	sample-38470759308962e8d10d	sample-d39f7d1a5b65ba96e507	sample-2d0d162d6998750ada94

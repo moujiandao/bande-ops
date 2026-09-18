@@ -5,6 +5,7 @@
 ### Added
 - Add the marketplace-wide Analytics setting and migration 0022, defaulting to all shipments and recording authenticated changes.
 - Add confirmed-Vine adjustment arithmetic, eligibility rules, and raw/excluded/observed evidence presentation.
+- Add bounded candidate-report requests and sanitized real source samples; document successful access and unresolved Vine identification and shipment matching.
 
 ### Changed
 - Read the saved momentum basis consistently on Analytics and both planning pages while preserving operational forecasts and quantities.
