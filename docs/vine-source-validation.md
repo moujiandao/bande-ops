@@ -82,6 +82,14 @@ Old coverage does not become current merely because a report finished today.
 
 Automated captured-source classification/reconciliation checks pass. All 538 tests, lint, TypeScript and the production build passed after review fixes.
 Local PostgreSQL 18 migration tests verify permissions, RLS, fenced publication,
-failed-write isolation and replacement with zero. The required read-only code review passed; details are recorded in `issues/prd.md`. Hosted migrations, authenticated UI verification, production
-sync and deployment remain release work; this document does not claim that the
-currently deployed app retrieves future giveaway shipments yet.
+failed-write isolation and replacement with zero. The required read-only code review passed; details are recorded in `issues/prd.md`. Brian applied migrations 0022/0023, and hosted verification confirmed the schema
+and anonymous read denial. The first production sync published August 19 through
+September 15 coverage: 1,364 reconciled product-day records and 135 unknown records.
+No confirmed giveaway units were excluded in this interval; the known March
+launch is still outside this initial historical coverage. July 29–August 18 is
+queued for a later sync. The shared toggle remains off.
+
+Merge/deployment authorization and signed-in feature UI verification remain.
+The deployed app's daily cron does not contain this feature yet, so queued jobs
+will continue automatically only after deployment (or another authorized local
+sync).

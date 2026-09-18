@@ -200,13 +200,29 @@ instruction-policy checks, whitespace checks and production build passed.
 Captured live-source replay passed. Migration
 0023 and SQL privilege/publication tests passed against isolated local PostgreSQL
 18 with Supabase-like roles/default grants. PostgreSQL 14 cannot run the
-security-invoker view; no hosted Supabase migration has been attempted.
+security-invoker view. Brian subsequently applied both hosted migrations; the
+new tables and view were verified through the Supabase API.
 
 The required read-only review passed after fixes for outage date coverage,
 coverage-date freshness, and forward progress through unavailable intervals.
 Regression tests cover these cases, mixed promotions, and explicit source
 timezones. The reviewer made no file or memory writes. Authenticated end-to-end
-UI verification is still unavailable in this session. Migrations 0022 and 0023 remain unapplied to
-hosted Supabase. No merge, deployment or production evidence writes have occurred.
-Once migrations and release are authorized, run the initial refresh, inspect
-coverage/unknown states in the signed-in app, and allow the daily sync to continue.
+UI verification of the feature branch is still unavailable in this session.
+
+Hosted verification after Brian applied migrations 0022/0023:
+- Confirm the saved preference is false and both new mirror tables/view are present.
+- Run the production shipment sync through the reviewed implementation. Publish
+  September 9–15 recent coverage and August 19–September 8 historical coverage.
+- Reconcile 1,364 of 1,499 product-day records. Retain 135 unknown records for
+  missing subtotals, non-USD currency, shipment/ledger differences or ambiguous
+  item matches. This interval has zero confirmed giveaway exclusions; that does
+  not classify the unknown records as paid or prove that no giveaways occurred.
+- Queue July 29–August 18 as the next historical interval. It needs a later sync
+  to collect, and the deployed cron does not yet contain this feature branch.
+- Verify anonymous reads of the setting, batches and adjustment view are denied
+  with PostgreSQL privilege code 42501. No saved preference was changed.
+
+Implementation commit: `ded9a18`. No merge or deployment has occurred. Remaining:
+obtain explicit merge/deployment authorization, release this commit plus handoff
+notes, verify the signed-in Settings/Analytics UI, and continue the queued
+historical reports through the new daily sync or authenticated refresh.
