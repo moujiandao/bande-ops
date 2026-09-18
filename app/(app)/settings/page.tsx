@@ -17,6 +17,8 @@ import {
 import { assembleRecommendations } from '@/lib/reorder/service';
 import { unarchiveSkuAction } from '@/lib/archive/actions';
 import type { ArchivedSkuRow } from '@/lib/archive/skus';
+import { AnalyticsSettingsForm } from '@/components/analytics/settings-form';
+import { readAnalyticsSettings } from '@/lib/analytics/settings';
 
 /**
  * Replenishment settings, the operational layer behind the reorder math.
@@ -61,7 +63,7 @@ const primaryButtonClass =
 export default async function SettingsPage() {
   const supabase = await createClient();
 
-  const [settingsRes, policyRes, mappingsRes, archivedRes] = await Promise.all([
+  const [settingsRes, policyRes, mappingsRes, archivedRes, analyticsSettings] = await Promise.all([
     supabase
       .from('replenishment_settings')
       .select(
@@ -83,6 +85,7 @@ export default async function SettingsPage() {
       .select('marketplace_id, sku, archived_at, archived_by')
       .eq('marketplace_id', 'ATVPDKIKX0DER')
       .order('archived_at', { ascending: false }),
+    readAnalyticsSettings(supabase),
   ]);
 
   const mappings = (mappingsRes.data ?? []) as {
@@ -150,7 +153,7 @@ export default async function SettingsPage() {
     <div className="flex flex-col gap-8">
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-          Replenishment settings
+          Settings
         </h1>
         <p className="max-w-prose text-sm text-muted">
           The inputs to the reorder math. The global default applies to every
@@ -158,6 +161,8 @@ export default async function SettingsPage() {
           nothing here writes back to Amazon.
         </p>
       </header>
+
+      <AnalyticsSettingsForm settings={analyticsSettings} />
 
       {settingsRes.error || policyRes.error ? (
         <div className="rounded-panel border border-border bg-panel-muted p-3 text-xs text-foreground">

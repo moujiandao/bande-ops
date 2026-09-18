@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { AnalyticsBasisNote } from '@/components/analytics/basis-note';
 import { Badge } from '@/components/ui/badge';
 import { SourceStatus } from '@/components/replenishment/source-status';
 import { WorkflowSwitch } from '@/components/replenishment/workflow-switch';
@@ -26,6 +27,13 @@ export default async function ReplenishmentPage() {
       </header>
 
       <WorkflowSwitch current="replenishment" />
+
+      <AnalyticsBasisNote settings={data.analyticsSettings} />
+      {data.analyticsError ? (
+        <p className="rounded-panel border border-border bg-panel-muted p-3 text-xs text-foreground">
+          Sales momentum is unavailable ({data.analyticsError}). Transfer quantities are unchanged.
+        </p>
+      ) : null}
 
       <SourceStatus sourceHealth={data.sourceHealth} loadErrors={data.loadErrors} />
 

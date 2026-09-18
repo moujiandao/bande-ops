@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import { AnalyticsBasisNote } from '@/components/analytics/basis-note';
+import { readAnalyticsSettings, vineAdjustmentIssue } from '@/lib/analytics/settings';
 import {
   ANALYTICS_CLASSIFICATION_OPTIONS,
   ClassificationLegend,
@@ -82,6 +84,9 @@ function analyticsHref(
 }
 
 function evidenceLabel(day: ClassifiedSalesDay): string {
+  if (day.adjustmentIssue === 'unavailable') return 'Vine evidence unavailable';
+  if (day.adjustmentIssue === 'reconciliation-error') return 'Vine reconciliation error';
+  if (day.adjustmentIssue === 'ambiguous-stock') return 'Vine-only, stock unknown';
   switch (day.classification) {
     case 'eligible-stocked':
       return 'Stocked';
@@ -119,6 +124,7 @@ function PeriodCard({
       {period ? (
         <p className="mt-2 text-[11px] text-faint">
           {period.unitsShipped} units across {period.eligibleDays} eligible days
+          {` · ${period.totalShipments} total shipments · ${period.excludedVineUnits} Vine excluded`}
           {period.possibleSelloutDays > 0
             ? ` · ${period.possibleSelloutDays} possible sellout`
             : ''}
@@ -221,11 +227,13 @@ function ProductDetail({ product }: { product: SalesAnalyticsProduct }) {
           interrupts a qualifying window.
         </p>
         <div className="mt-3 max-h-[32rem] overflow-auto rounded-panel border border-border">
-          <table className="w-full min-w-[720px] text-xs">
+          <table className="w-full min-w-[900px] whitespace-nowrap text-xs">
             <thead className="sticky top-0 border-b border-border bg-panel text-faint">
               <tr>
                 <th className="px-3 py-2 text-left font-medium">Date</th>
                 <th className="px-3 py-2 text-right font-medium">Shipments</th>
+                <th className="px-3 py-2 text-right font-medium">Vine excluded</th>
+                <th className="px-3 py-2 text-right font-medium">Observed units</th>
                 <th className="px-3 py-2 text-right font-medium">Start</th>
                 <th className="px-3 py-2 text-right font-medium">End</th>
                 <th className="px-3 py-2 text-left font-medium">Evidence</th>
@@ -240,8 +248,15 @@ function ProductDetail({ product }: { product: SalesAnalyticsProduct }) {
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-foreground">
                     {day.customerShipmentsValid === false
+                      || (day.customerShipmentsValid === null && day.customerShipments === 0)
                       ? 'Unknown'
                       : day.customerShipments}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-muted">
+                    {formatUnits(day.excludedVineUnits)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-muted">
+                    {formatUnits(day.observedUnits)}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-muted">
                     {day.startingBalanceValid === true
@@ -263,7 +278,7 @@ function ProductDetail({ product }: { product: SalesAnalyticsProduct }) {
               ))}
               {product.momentum.days.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-3 py-8 text-center text-muted">
+                  <td colSpan={8} className="px-3 py-8 text-center text-muted">
                     No ledger evidence in the selected history.
                   </td>
                 </tr>
@@ -293,18 +308,21 @@ export default async function AnalyticsPage({
   } = viewQuery;
 
   const supabase = await createClient();
-  const [recommendations, history] = await Promise.all([
+  const [recommendations, history, analyticsSettings] = await Promise.all([
     assembleRecommendations({ supabase }),
     readAnalyticsHistory({ supabase, historyDays }),
+    readAnalyticsSettings(supabase),
   ]);
   const sourceIssue = analyticsSourceIssue(recommendations.sourceHealth);
+  const adjustmentIssue = vineAdjustmentIssue(analyticsSettings);
   const products = buildSalesAnalytics({
     products: recommendations.rows,
-    ledgerRows: history.error ? [] : history.rows,
+    ledgerRows: history.error || analyticsSettings.excludeVine === null ? [] : history.rows,
     windowDays,
     historyDays,
     dataThroughDate: history.error ? null : history.dataThroughDate,
-    currentEvidenceAvailable: !sourceIssue,
+    currentEvidenceAvailable: !sourceIssue && !adjustmentIssue,
+    excludeVine: analyticsSettings.excludeVine === true,
   });
   const current = viewQuery;
   const { selected, visible, summary } = buildAnalyticsViewModel(
@@ -334,6 +352,13 @@ export default async function AnalyticsPage({
           </p>
         </div>
       </header>
+
+      <AnalyticsBasisNote settings={analyticsSettings} />
+      {adjustmentIssue ? (
+        <p className="rounded-panel border border-border bg-panel-muted p-4 text-xs text-foreground">
+          {adjustmentIssue} Configured forecasts and order quantities are unchanged.
+        </p>
+      ) : null}
 
       {history.error || sourceIssue ? (
         <div className="rounded-panel border border-border bg-panel-muted p-4 text-xs text-foreground">

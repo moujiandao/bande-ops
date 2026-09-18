@@ -118,6 +118,7 @@ export interface BuildSalesAnalyticsInput {
   dataThroughDate: string | null;
   /** False preserves dated evidence but prevents it from claiming a current trend. */
   currentEvidenceAvailable?: boolean;
+  excludeVine?: boolean;
 }
 
 /** Block current momentum labels when the daily ledger mirror is unhealthy. */
@@ -266,6 +267,7 @@ export function buildSalesAnalytics(
       {
         windowDays: input.windowDays,
         historyDays: input.historyDays,
+        excludeVine: input.excludeVine,
         ...(input.dataThroughDate
           ? { analysisDate: input.dataThroughDate }
           : {}),

@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { AnalyticsBasisNote } from '@/components/analytics/basis-note';
 import { Badge } from '@/components/ui/badge';
 import { SourceStatus } from '@/components/replenishment/source-status';
 import { WorkflowSwitch } from '@/components/replenishment/workflow-switch';
@@ -23,6 +24,8 @@ export default async function ReorderPage() {
       </header>
 
       <WorkflowSwitch current="reorder" />
+
+      <AnalyticsBasisNote settings={data.analyticsSettings} />
 
       <SourceStatus sourceHealth={data.sourceHealth} loadErrors={data.loadErrors} />
 

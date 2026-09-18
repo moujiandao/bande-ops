@@ -12,6 +12,8 @@ export interface SalesLedgerDay {
   startingBalanceValid: boolean | null;
   endingBalance: number | null;
   endingBalanceValid: boolean | null;
+  /** Only populated from complete, reconciled evidence for this ledger day. */
+  confirmedVineUnits?: number | null;
 }
 
 export type SalesDayClassification =
@@ -25,6 +27,9 @@ export type SalesDayClassification =
 export interface ClassifiedSalesDay extends SalesLedgerDay {
   classification: SalesDayClassification;
   eligible: boolean;
+  observedUnits: number | null;
+  excludedVineUnits: number | null;
+  adjustmentIssue: 'unavailable' | 'reconciliation-error' | 'ambiguous-stock' | null;
 }
 
 export interface VelocityPeriod {
@@ -33,6 +38,8 @@ export interface VelocityPeriod {
   eligibleDays: number;
   calendarDays: number;
   unitsShipped: number;
+  totalShipments: number;
+  excludedVineUnits: number;
   dailyVelocity: number;
   possibleSelloutDays: number;
   restockDays: number;
@@ -71,6 +78,7 @@ export interface SalesMomentumOptions {
   historyDays: AnalyticsHistoryDays;
   /** Latest completed ledger date across the dataset. Defaults to this SKU's latest row. */
   analysisDate?: string;
+  excludeVine?: boolean;
 }
 
 const MS_PER_DAY = 86_400_000;
@@ -101,15 +109,31 @@ function zeroKnownBalance(value: number | null, valid: boolean | null): boolean 
  * old parser could only produce a positive number from a parseable source cell.
  * A stored zero with null validity stays unknown until the source is reprocessed.
  */
-export function classifySalesDay(day: SalesLedgerDay): ClassifiedSalesDay {
+export function classifySalesDay(
+  day: SalesLedgerDay,
+  excludeVine = false,
+): ClassifiedSalesDay {
+  const excludedVineUnits = excludeVine ? day.confirmedVineUnits ?? null : 0;
+  const validAdjustment = excludedVineUnits !== null &&
+    Number.isSafeInteger(excludedVineUnits) && excludedVineUnits >= 0 &&
+    excludedVineUnits <= day.customerShipments;
+  const classified = {
+    ...day,
+    observedUnits: validAdjustment ? day.customerShipments - excludedVineUnits : null,
+    excludedVineUnits: validAdjustment ? excludedVineUnits : null,
+    adjustmentIssue: (excludedVineUnits === null ? 'unavailable' : validAdjustment ? null : 'reconciliation-error') as ClassifiedSalesDay['adjustmentIssue'],
+  };
+  if (!validAdjustment) {
+    return { ...classified, classification: 'unknown', eligible: false };
+  }
   const shipmentsKnown =
     day.customerShipmentsValid === true ||
     (day.customerShipmentsValid === null && day.customerShipments > 0);
   if (!shipmentsKnown || day.customerShipmentsValid === false) {
-    return { ...day, classification: 'unknown', eligible: false };
+    return { ...classified, observedUnits: null, excludedVineUnits: null, classification: 'unknown', eligible: false };
   }
 
-  const positiveShipments = day.customerShipments > 0;
+  const positiveShipments = classified.observedUnits! > 0;
   const positiveStarting = positiveKnownBalance(
     day.startingBalance,
     day.startingBalanceValid,
@@ -118,6 +142,13 @@ export function classifySalesDay(day: SalesLedgerDay): ClassifiedSalesDay {
     day.endingBalance,
     day.endingBalanceValid,
   );
+
+  // Vine-only shipments prove stock moved, not that shoppers had a selling day.
+  // Keep this distinct from a known zero-stock day, which windows may skip.
+  if (excludeVine && day.customerShipments > 0 && !positiveShipments &&
+      !positiveStarting && !positiveEnding) {
+    return { ...classified, adjustmentIssue: 'ambiguous-stock', classification: 'unknown', eligible: false };
+  }
 
   if (positiveShipments || positiveStarting || positiveEnding) {
     const knownZeroEnding = zeroKnownBalance(
@@ -131,22 +162,22 @@ export function classifySalesDay(day: SalesLedgerDay): ClassifiedSalesDay {
 
     if (knownZeroEnding && (positiveStarting || positiveShipments)) {
       return {
-        ...day,
+        ...classified,
         classification: 'eligible-possible-sellout',
         eligible: true,
       };
     }
     if (knownZeroStarting && positiveEnding) {
-      return { ...day, classification: 'eligible-restock', eligible: true };
+      return { ...classified, classification: 'eligible-restock', eligible: true };
     }
     if (!positiveStarting && !positiveEnding && positiveShipments) {
       return {
-        ...day,
+        ...classified,
         classification: 'eligible-shipment-evidence',
         eligible: true,
       };
     }
-    return { ...day, classification: 'eligible-stocked', eligible: true };
+    return { ...classified, classification: 'eligible-stocked', eligible: true };
   }
 
   if (
@@ -154,10 +185,10 @@ export function classifySalesDay(day: SalesLedgerDay): ClassifiedSalesDay {
     zeroKnownBalance(day.endingBalance, day.endingBalanceValid) &&
     day.customerShipments === 0
   ) {
-    return { ...day, classification: 'out-of-stock', eligible: false };
+    return { ...classified, classification: 'out-of-stock', eligible: false };
   }
 
-  return { ...day, classification: 'unknown', eligible: false };
+  return { ...classified, classification: 'unknown', eligible: false };
 }
 
 function buildPeriod(days: ClassifiedSalesDay[]): VelocityPeriod | null {
@@ -165,7 +196,7 @@ function buildPeriod(days: ClassifiedSalesDay[]): VelocityPeriod | null {
   const startDate = days[0].activityDate;
   const endDate = days.at(-1)!.activityDate;
   const unitsShipped = days.reduce(
-    (sum, day) => sum + day.customerShipments,
+    (sum, day) => sum + day.observedUnits!,
     0,
   );
   return {
@@ -174,6 +205,8 @@ function buildPeriod(days: ClassifiedSalesDay[]): VelocityPeriod | null {
     eligibleDays: days.length,
     calendarDays: dayDifference(startDate, endDate) + 1,
     unitsShipped,
+    totalShipments: days.reduce((sum, day) => sum + day.customerShipments, 0),
+    excludedVineUnits: days.reduce((sum, day) => sum + day.excludedVineUnits!, 0),
     dailyVelocity: unitsShipped / days.length,
     possibleSelloutDays: days.filter(
       (day) => day.classification === 'eligible-possible-sellout',
@@ -312,7 +345,7 @@ export function calculateSalesMomentum(
       (row) =>
         row.activityDate >= historyStart && row.activityDate <= dataThroughDate,
     )
-    .map(classifySalesDay);
+    .map((day) => classifySalesDay(day, options.excludeVine));
   const segments = knownSegments(days);
   const latestSegment = [...segments]
     .reverse()

@@ -38,6 +38,8 @@ function product(
               eligibleDays: 7,
               calendarDays: 7,
               unitsShipped: recent * 7,
+              totalShipments: recent * 7,
+              excludedVineUnits: 0,
               dailyVelocity: recent,
               possibleSelloutDays: 0,
               restockDays: 0,

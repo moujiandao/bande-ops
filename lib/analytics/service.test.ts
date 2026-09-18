@@ -145,6 +145,33 @@ describe('readAnalyticsHistory', () => {
 });
 
 describe('buildSalesAnalytics', () => {
+  it('keeps configured supply and forecast while unverified adjusted metrics stay unknown', () => {
+    const product = recommendation();
+    const original = structuredClone(product);
+    const ledgerRows = Array.from({ length: 7 }, (_, index) => ({
+      marketplace_id: 'ATVPDKIKX0DER', sku: 'SKU-1',
+      activity_date: `2026-09-${String(index + 10).padStart(2, '0')}`,
+      customer_shipments: 5, customer_shipments_valid: true,
+      sellable_starting_balance: 100, starting_balance_valid: true,
+      sellable_ending_balance: 95, ending_balance_valid: true,
+    }));
+    const common = {
+      products: [product], ledgerRows, windowDays: 7 as const,
+      historyDays: 90 as const, dataThroughDate: '2026-09-16',
+    };
+    const [adjusted] = buildSalesAnalytics({ ...common, excludeVine: true, currentEvidenceAvailable: false });
+    expect(adjusted.momentum.recent).toBeNull();
+    expect(adjusted.momentum.best).toBeNull();
+    expect(adjusted.momentum.trend).toBe('insufficient-data');
+    expect(adjusted.coverDays).toEqual({ configured: 35, recent: null, best: null });
+    expect(adjusted.usableSupply).toBe(70);
+    expect(adjusted.configuredVelocity).toBe(2);
+    expect(adjusted.stockConstrained).toBe(false);
+    expect(product).toEqual(original);
+    const [all] = buildSalesAnalytics({ ...common, excludeVine: false });
+    expect(all.momentum.recent?.dailyVelocity).toBe(5);
+  });
+
   it('combines canonical usable supply with observed and best velocity scenarios', () => {
     const dates = Array.from({ length: 14 }, (_, index) =>
       new Date(Date.parse('2026-09-04T00:00:00.000Z') + index * 86_400_000)

@@ -6,6 +6,7 @@ import {
   readAnalyticsHistory,
 } from '@/lib/analytics/service';
 import { createClient } from '@/lib/supabase/server';
+import { readAnalyticsSettings, vineAdjustmentIssue } from '@/lib/analytics/settings';
 import { shouldReplenishFromSvd } from './replenish';
 import { assembleRecommendations } from './service';
 
@@ -38,10 +39,11 @@ export function transferCandidates(
  */
 export async function loadReorderWorkflowData() {
   const supabase = await createClient();
-  const [recommendations, analyticsHistory, archivedRes] = await Promise.all([
+  const [recommendations, analyticsHistory, archivedRes, analyticsSettings] = await Promise.all([
     assembleRecommendations({ supabase }),
     readAnalyticsHistory({ supabase, historyDays: 90 }),
     supabase.from('archived_skus').select('marketplace_id, sku'),
+    readAnalyticsSettings(supabase),
   ]);
   const { rows: sourceRows, errors, sourceHealth, policy } = recommendations;
   const archivedKeys = archivedSkuKeys(archivedRes.data ?? []);
@@ -50,7 +52,7 @@ export async function loadReorderWorkflowData() {
     : sourceRows.filter(
         (row) => !isSkuArchived(archivedKeys, row.marketplaceId, row.sku),
       );
-  const analyticsIssue = analyticsSourceIssue(sourceHealth);
+  const analyticsIssue = vineAdjustmentIssue(analyticsSettings) ?? analyticsSourceIssue(sourceHealth);
   const analytics = analyticsHistory.error || analyticsIssue
     ? []
     : buildSalesAnalytics({
@@ -59,6 +61,7 @@ export async function loadReorderWorkflowData() {
         windowDays: 7,
         historyDays: 90,
         dataThroughDate: analyticsHistory.dataThroughDate,
+        excludeVine: analyticsSettings.excludeVine === true,
       });
   const momentumBySku = analyticsHistory.error || analyticsIssue
     ? undefined
@@ -78,6 +81,7 @@ export async function loadReorderWorkflowData() {
     loadErrors: Object.entries(errors).filter(([, message]) => Boolean(message)),
     archiveError: archivedRes.error?.message ?? null,
     analyticsError: analyticsHistory.error ?? analyticsIssue ?? null,
+    analyticsSettings,
     momentumBySku,
     policy,
     active,

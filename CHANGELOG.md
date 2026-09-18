@@ -1,5 +1,15 @@
 # Changelog
 
+## [2026-09-17] Vine momentum foundation (unreleased)
+
+### Added
+- Add the marketplace-wide Analytics setting and migration 0022, defaulting to all shipments and recording authenticated changes.
+- Add confirmed-Vine adjustment arithmetic, eligibility rules, and raw/excluded/observed evidence presentation.
+
+### Changed
+- Read the saved momentum basis consistently on Analytics and both planning pages while preserving operational forecasts and quantities.
+- Keep Vine-adjusted results unavailable until real Amazon identification and reconciliation are validated; leave source integration and backfill pending.
+
 ## [2026-09-17] Separate replenishment workflows
 
 ### Added
