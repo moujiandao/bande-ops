@@ -293,5 +293,11 @@ without error, with data through 2026-09-15. Targeted rendering, analytics, and
 workflow tests passed, including the compact FBA Replenishment variant. The full
 567-test suite, lint, TypeScript, instruction checks, whitespace check, and
 production build passed. Required read-only code review passed after confirming
-the workflow regression and production timing closed both review notes. Merge and
-deployment remain pending.
+the workflow regression and production timing closed both review notes.
+
+Released as `c4d8fd1`. GitHub CI run 35325891538 and Vercel deployment
+DKAVqsQLnt3dEtsHcsCc19biLAxJ passed. Live verification on
+ops.medicalbasics.com confirmed the three sortable headers and row values. For
+example, `emtnotepad-3pack` showed Best 7.1, Signal `Trending up +60%`, and Best
+dates 2026-08-14 to 2026-08-20. Rows without a complete qualifying period showed
+the explicit `Unknown` and `No qualifying period` fallbacks.

@@ -1,6 +1,6 @@
 # Changelog
 
-## [2026-09-18] Reorder analytics evidence (unreleased)
+## [2026-09-18] Reorder analytics evidence
 
 ### Added
 - Add Best velocity, Signal, and Best dates columns to Supplier Reorder using the shared 365-day analytics evidence.
