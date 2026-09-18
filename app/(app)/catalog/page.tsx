@@ -1,6 +1,6 @@
 import { fbaOnHand } from '@/lib/inventory/on-hand';
 import { createClient } from '@/lib/supabase/server';
-import { syncCatalogAction } from './actions';
+import { CatalogSyncControl } from './sync-control';
 import { CatalogTable, type CatalogTableRow } from './catalog-table';
 import { archivedSkuKeys, isSkuArchived } from '@/lib/archive/skus';
 
@@ -148,25 +148,18 @@ export default async function CatalogPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col items-start gap-3">
           {lastSynced ? (
             <span className="text-xs text-muted">
-              Last synced{' '}
+              Catalog last synced{' '}
               <time dateTime={lastSynced} className="font-medium text-foreground">
                 {formatTimestamp(lastSynced)}
               </time>
             </span>
           ) : (
-            <span className="text-xs text-faint">Never synced</span>
+            <span className="text-xs text-faint">Catalog never synced</span>
           )}
-          <form action={syncCatalogAction}>
-            <button
-              type="submit"
-              className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-panel-muted"
-            >
-              Sync now
-            </button>
-          </form>
+          <CatalogSyncControl />
         </div>
       </header>
 
@@ -195,17 +188,9 @@ export default async function CatalogPage() {
             No catalog items yet
           </h2>
           <p className="max-w-prose text-sm text-muted">
-            The mirror is empty. Run a sync to pull your catalog from Amazon into
+            The mirror is empty. Use Sync now above to pull your catalog from Amazon into
             this view.
           </p>
-          <form action={syncCatalogAction}>
-            <button
-              type="submit"
-              className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground transition-colors hover:opacity-90"
-            >
-              Sync now
-            </button>
-          </form>
         </div>
       ) : rows.length === 0 ? (
         <div className="flex flex-col items-start gap-3 rounded-panel border border-dashed border-border bg-panel p-8">

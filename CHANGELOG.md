@@ -1,6 +1,12 @@
 # Changelog
 
-## [2026-09-18] FBA on-hand inventory (unreleased)
+## [2026-09-18] Catalog refresh recovery
+
+### Changed
+- Refresh FBA inventory independently of catalog lookup failures and report each mirror's result without crashing the page.
+- Disable repeat sync submissions while pending and identify the catalog-only freshness timestamp.
+
+## [2026-09-18] FBA on-hand inventory
 
 ### Added
 - Retain Amazon FC-transfer quantities with migration 0024 and a captured live-response regression.

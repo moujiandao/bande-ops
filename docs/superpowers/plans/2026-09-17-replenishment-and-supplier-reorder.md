@@ -214,12 +214,28 @@ negative transfer quantities passed. Browser checks on a temporary local preview
 used the real shared components to expand supplier, replenishment and catalog
 breakdowns simultaneously. The preview route/server/tab were removed afterward.
 Required read-only review passed after table-specific accessible detail IDs were
-added for repeated SKUs. No production data or app deployment was changed.
+added for repeated SKUs.
 
-Release pending: Brian applies `0024_fba_fc_transfer_inventory.sql`, explicitly
-authorizes merge/deploy, then the new deployment runs Catalog & Inventory > Sync
-now or the full scheduled sync. Applying SQL alone cannot populate the field, and
-the old deployment will not write it. Verify the live SKU against a fresh Amazon
-snapshot after the first new-code FBA sync. The prior AGENTS inventory description
-still describes fulfillable-only stock; these task notes and CONTEXT.md record
-the approved change without rewriting protected agent instructions.
+Released: Brian applied migration 0024, and commit `4d7b650` was fast-forward
+merged to main and deployed to ops.medicalbasics.com. GitHub CI run 35319234346
+and Vercel deployment A3iXdM1tW9ENq8azkwLkZPc6S4Kt succeeded. A production FBA
+sync at 2026-09-18 07:26 UTC refreshed 191 SKUs. The live Catalog breakdown and
+planning service now show `hp_notebook_single` at 3,430 on hand (426 available +
+3,004 FC transfer), matching Brian's on-hand report. The earlier captured fixture
+remains 3,431 because it was a different snapshot. The prior AGENTS inventory
+description still describes fulfillable-only stock; these notes and CONTEXT.md
+record the approved change without rewriting protected agent instructions.
+
+Release follow-up: Catalog's manual Sync now failed before FBA ran. Vercel logs
+at 07:25:13 UTC captured Catalog Items HTTP 429 QuotaExceeded, digest 473089291.
+The new transfer field was not the cause. Branch `fix/catalog-sync-recovery`
+runs the independent FBA sync first, then attempts catalog enrichment, reporting
+each outcome with a pending button and preserving auth and source-health gates.
+The captured failure signature reproduced the action error before the fix; the
+regression now verifies partial success, both failures, auth, safe messages,
+and invalidation. Amazon's existing bounded retries remain unchanged: a catalog
+quota exhaustion is reported honestly and can be retried later. No new migration
+or API permissions are needed. All 563 tests, TypeScript, lint, instruction checks,
+production build and required read-only code review passed. Live Supplier Reorder
+also shows the correct 3,430 on-hand breakdown. Deployment of the follow-up and
+live manual-action verification are the remaining release checks.
