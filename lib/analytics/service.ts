@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { reconciledExcludedUnits, type AdjustmentRow } from '@/lib/shipments/read';
 import { DEFAULT_MARKETPLACE, type Marketplace } from '@/lib/amazon/types';
 import type {
   RecommendationRow,
@@ -119,6 +120,8 @@ export interface BuildSalesAnalyticsInput {
   /** False preserves dated evidence but prevents it from claiming a current trend. */
   currentEvidenceAvailable?: boolean;
   excludeVine?: boolean;
+  adjustmentRows?: AdjustmentRow[];
+  adjustmentThroughDate?: string | null;
 }
 
 /** Block current momentum labels when the daily ledger mirror is unhealthy. */
@@ -255,6 +258,7 @@ export function buildSalesAnalytics(
   input: BuildSalesAnalyticsInput,
 ): SalesAnalyticsProduct[] {
   const ledgerBySku = new Map<string, LedgerDbRow[]>();
+  const adjustments = new Map((input.adjustmentRows ?? []).map(r => [JSON.stringify([r.marketplace_id, r.sku, r.activity_date]), r]));
   for (const row of input.ledgerRows) {
     const rows = ledgerBySku.get(row.sku) ?? [];
     rows.push(row);
@@ -263,7 +267,10 @@ export function buildSalesAnalytics(
 
   return input.products.map((product) => {
     const calculatedMomentum = calculateSalesMomentum(
-      (ledgerBySku.get(product.sku) ?? []).map(ledgerDay),
+      (ledgerBySku.get(product.sku) ?? []).map(row => ({
+        ...ledgerDay(row),
+        confirmedExcludedUnits: reconciledExcludedUnits(row, adjustments.get(JSON.stringify([row.marketplace_id, row.sku, row.activity_date]))),
+      })),
       {
         windowDays: input.windowDays,
         historyDays: input.historyDays,
@@ -277,8 +284,14 @@ export function buildSalesAnalytics(
       calculatedMomentum.recent !== null ||
       calculatedMomentum.early !== null ||
       calculatedMomentum.best !== null;
+    // Do not use a segment before an unresolved day as a current signal.
+    // Expected report lag stays visible and never shifts the analysis date.
+    const periodEnd = calculatedMomentum.recent?.endDate ?? calculatedMomentum.early?.endDate;
+    const unresolvedAfterPeriod = input.excludeVine && periodEnd && calculatedMomentum.days.some(day =>
+      day.activityDate > periodEnd && day.activityDate <= (input.adjustmentThroughDate ?? input.dataThroughDate ?? '') && day.classification === 'unknown');
+    const currentEvidenceAvailable = input.currentEvidenceAvailable !== false && !unresolvedAfterPeriod;
     const momentum =
-      input.currentEvidenceAvailable === false && hasObservedHistory
+      !currentEvidenceAvailable && hasObservedHistory
         ? { ...calculatedMomentum, trend: 'historical-only' as const }
         : calculatedMomentum;
     const observedVelocity =
@@ -302,9 +315,9 @@ export function buildSalesAnalytics(
       configuredVelocity: product.dailyDemand,
       momentum,
       coverDays: scenarios,
-      currentEvidenceAvailable: input.currentEvidenceAvailable !== false,
+      currentEvidenceAvailable,
       stockConstrained:
-        input.currentEvidenceAvailable !== false &&
+        currentEvidenceAvailable &&
         scenarios.recent !== null &&
         scenarios.recent < 30,
     };

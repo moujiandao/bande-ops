@@ -55,3 +55,23 @@ When applying by hand, run files in `NNNN` order and never skip one.
   from day one, even though only the US marketplace is exercised now.
 - Enable RLS on every table and add explicit policies; default-deny.
 - Mirror tables get a `synced_at timestamptz`; operational tables do not.
+
+
+## Giveaway analytics migrations
+
+Apply `0022_analytics_settings.sql`, then `0023_shipment_adjustments.sql` before
+releasing the giveaway-exclusion feature. Migration 0023 requires PostgreSQL 15+
+for its security-invoker view (Supabase projects must meet that version).
+The toggle defaults off. Mirror/RPC writes require the service role; ordinary
+authenticated users can save the shared setting and trigger the protected refresh.
+
+After deployment, Settings → Analytics → Refresh shipment evidence requests or
+collects the next report jobs. Pending reports may need a later refresh; the daily
+cron continues both lanes automatically, even with the toggle off. Inspect the
+coverage dates and unknown days before relying on adjusted results. No production
+backfill is performed by applying the SQL alone.
+
+`tests/0023_shipment_adjustments.sql` exercises privileges and transactional
+publication on an isolated local database with Supabase-like roles. It rolls back
+its test data. Local validation is not a substitute for the hosted migration and
+authenticated application check.

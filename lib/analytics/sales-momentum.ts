@@ -13,7 +13,7 @@ export interface SalesLedgerDay {
   endingBalance: number | null;
   endingBalanceValid: boolean | null;
   /** Only populated from complete, reconciled evidence for this ledger day. */
-  confirmedVineUnits?: number | null;
+  confirmedExcludedUnits?: number | null;
 }
 
 export type SalesDayClassification =
@@ -28,7 +28,7 @@ export interface ClassifiedSalesDay extends SalesLedgerDay {
   classification: SalesDayClassification;
   eligible: boolean;
   observedUnits: number | null;
-  excludedVineUnits: number | null;
+  excludedGiveawayUnits: number | null;
   adjustmentIssue: 'unavailable' | 'reconciliation-error' | 'ambiguous-stock' | null;
 }
 
@@ -39,7 +39,7 @@ export interface VelocityPeriod {
   calendarDays: number;
   unitsShipped: number;
   totalShipments: number;
-  excludedVineUnits: number;
+  excludedGiveawayUnits: number;
   dailyVelocity: number;
   possibleSelloutDays: number;
   restockDays: number;
@@ -113,15 +113,15 @@ export function classifySalesDay(
   day: SalesLedgerDay,
   excludeVine = false,
 ): ClassifiedSalesDay {
-  const excludedVineUnits = excludeVine ? day.confirmedVineUnits ?? null : 0;
-  const validAdjustment = excludedVineUnits !== null &&
-    Number.isSafeInteger(excludedVineUnits) && excludedVineUnits >= 0 &&
-    excludedVineUnits <= day.customerShipments;
+  const excludedGiveawayUnits = excludeVine ? day.confirmedExcludedUnits ?? null : 0;
+  const validAdjustment = excludedGiveawayUnits !== null &&
+    Number.isSafeInteger(excludedGiveawayUnits) && excludedGiveawayUnits >= 0 &&
+    excludedGiveawayUnits <= day.customerShipments;
   const classified = {
     ...day,
-    observedUnits: validAdjustment ? day.customerShipments - excludedVineUnits : null,
-    excludedVineUnits: validAdjustment ? excludedVineUnits : null,
-    adjustmentIssue: (excludedVineUnits === null ? 'unavailable' : validAdjustment ? null : 'reconciliation-error') as ClassifiedSalesDay['adjustmentIssue'],
+    observedUnits: validAdjustment ? day.customerShipments - excludedGiveawayUnits : null,
+    excludedGiveawayUnits: validAdjustment ? excludedGiveawayUnits : null,
+    adjustmentIssue: (excludedGiveawayUnits === null ? 'unavailable' : validAdjustment ? null : 'reconciliation-error') as ClassifiedSalesDay['adjustmentIssue'],
   };
   if (!validAdjustment) {
     return { ...classified, classification: 'unknown', eligible: false };
@@ -130,7 +130,7 @@ export function classifySalesDay(
     day.customerShipmentsValid === true ||
     (day.customerShipmentsValid === null && day.customerShipments > 0);
   if (!shipmentsKnown || day.customerShipmentsValid === false) {
-    return { ...classified, observedUnits: null, excludedVineUnits: null, classification: 'unknown', eligible: false };
+    return { ...classified, observedUnits: null, excludedGiveawayUnits: null, classification: 'unknown', eligible: false };
   }
 
   const positiveShipments = classified.observedUnits! > 0;
@@ -206,7 +206,7 @@ function buildPeriod(days: ClassifiedSalesDay[]): VelocityPeriod | null {
     calendarDays: dayDifference(startDate, endDate) + 1,
     unitsShipped,
     totalShipments: days.reduce((sum, day) => sum + day.customerShipments, 0),
-    excludedVineUnits: days.reduce((sum, day) => sum + day.excludedVineUnits!, 0),
+    excludedGiveawayUnits: days.reduce((sum, day) => sum + day.excludedGiveawayUnits!, 0),
     dailyVelocity: unitsShipped / days.length,
     possibleSelloutDays: days.filter(
       (day) => day.classification === 'eligible-possible-sellout',

@@ -23,3 +23,20 @@ are preserved; line endings are normalized for repository storage.
 The full sanitized samples were inspected locally; raw reports were never
 written to disk. No report data was written to Supabase. See
 `docs/vine-source-validation.md` for findings and the remaining validation gate.
+
+## Positive launch and discount captures
+
+`giveaway-launch-sales.tsv` and `giveaway-launch-promotions.tsv` are selected
+real rows from the March 10–19 UTC reports (917 sales / 294 promotions), captured
+in the same authorized session. They include all 30 sales rows for ASIN
+B0GNZQ147T, all matching promotions, observed promotion-description examples,
+and a multi-row promoted order. Prices, shipping and gift-wrap amounts remain
+because Brian explicitly asked for full-discount comparison. Destinations and
+fulfillment-center values remain redacted. Identifiers use a separate consistent
+HMAC salt for this pair. Source structure/quoting is preserved, with LF endings.
+
+`giveaway-launch-ledger.json` contains the actual catalog match and March 10–18
+ledger rows for the same SKU. The four nonzero days total 30 shipments, of which
+28 match the captured Vine promotion. These are captured facts, not hand-built
+Amazon fixtures. Additional edge cases in tests mutate normalized domain inputs
+and are explicitly labeled as such.

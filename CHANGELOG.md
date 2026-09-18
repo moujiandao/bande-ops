@@ -1,5 +1,17 @@
 # Changelog
 
+## [2026-09-17] Giveaway evidence integration (unreleased)
+
+### Added
+- Add captured positive Vine and discount fixtures, conservative item classification, and Pacific-day ledger reconciliation.
+- Add migration 0023 with daily adjustment mirrors, atomic generation publication, fenced leases, and authenticated read-only access.
+- Add resumable recent/catch-up and historical report jobs to the daily sync, plus an authenticated Settings refresh action.
+
+### Changed
+- Expand the analytics exclusion to Vine and fully discounted item shipments, preserving operational forecasts and raw stock facts.
+- Read reconciled evidence across analytics and planning views; retain unknown days and dated historical evidence when source matching or freshness is incomplete.
+- Replace the foundation-only unavailable gate with source coverage, version, ledger-count and freshness checks.
+
 ## [2026-09-17] Vine momentum foundation (unreleased)
 
 ### Added

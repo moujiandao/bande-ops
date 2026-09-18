@@ -285,14 +285,14 @@ describe('confirmed Vine adjustment (domain inputs, not Amazon fixtures)', () =>
   const options = { windowDays: 7, historyDays: 90, excludeVine: true } as const;
   const vineDay = (date: string, shipments: number, vine: number | null,
     start: number | null = 100, end: number | null = 100) =>
-    day(date, shipments, start, end, { confirmedVineUnits: vine });
+    day(date, shipments, start, end, { confirmedExcludedUnits: vine });
 
   it('keeps raw facts and stocked Vine-only days in the denominator', () => {
     const rows = dates(7).map((date) => vineDay(date, 4, 4));
     const result = calculateSalesMomentum(rows, options);
     expect(result.recent).toMatchObject({
       eligibleDays: 7, unitsShipped: 0, totalShipments: 28,
-      excludedVineUnits: 28, dailyVelocity: 0,
+      excludedGiveawayUnits: 28, dailyVelocity: 0,
     });
     expect(result.days[0]).toMatchObject({
       customerShipments: 4, startingBalance: 100, endingBalance: 100,
@@ -303,7 +303,7 @@ describe('confirmed Vine adjustment (domain inputs, not Amazon fixtures)', () =>
 
   it('includes the non-Vine portion of a genuine sellout day', () => {
     expect(classifySalesDay(vineDay('2026-08-01', 10, 4, 10, 0), true)).toMatchObject({
-      observedUnits: 6, excludedVineUnits: 4,
+      observedUnits: 6, excludedGiveawayUnits: 4,
       classification: 'eligible-possible-sellout', eligible: true,
     });
   });
@@ -330,7 +330,7 @@ describe('confirmed Vine adjustment (domain inputs, not Amazon fixtures)', () =>
   });
 
   it.each([undefined, null])('does not treat missing coverage %s as zero Vine', (vine) => {
-    expect(classifySalesDay(day('2026-08-01', 4, 100, 100, { confirmedVineUnits: vine }), true))
+    expect(classifySalesDay(day('2026-08-01', 4, 100, 100, { confirmedExcludedUnits: vine }), true))
       .toMatchObject({ classification: 'unknown', observedUnits: null, adjustmentIssue: 'unavailable' });
   });
 
@@ -345,14 +345,14 @@ describe('confirmed Vine adjustment (domain inputs, not Amazon fixtures)', () =>
     const result = calculateSalesMomentum(rows, options);
     expect(result.best).toBeNull();
     expect(result.recent).toBeNull();
-    expect(result.early).toMatchObject({ eligibleDays: 6, unitsShipped: 18, excludedVineUnits: 6 });
+    expect(result.early).toMatchObject({ eligibleDays: 6, unitsShipped: 18, excludedGiveawayUnits: 6 });
   });
 
   it('recomputes recent, previous, best dates, and trend on one consistent basis', () => {
     const rows = dates(14).map((date, index) => vineDay(date, index < 7 ? 10 : 4, index < 7 ? 9 : 0));
     const result = calculateSalesMomentum(rows, options);
-    expect(result.previous).toMatchObject({ dailyVelocity: 1, excludedVineUnits: 63 });
-    expect(result.recent).toMatchObject({ dailyVelocity: 4, excludedVineUnits: 0 });
+    expect(result.previous).toMatchObject({ dailyVelocity: 1, excludedGiveawayUnits: 63 });
+    expect(result.recent).toMatchObject({ dailyVelocity: 4, excludedGiveawayUnits: 0 });
     expect(result.best).toMatchObject({ startDate: '2026-08-08', endDate: '2026-08-14' });
     expect(result.percentageChange).toBe(300);
     expect(result.trend).toBe('trending-up');
@@ -360,7 +360,7 @@ describe('confirmed Vine adjustment (domain inputs, not Amazon fixtures)', () =>
 
   it('preserves the all-shipment result when the toggle is off, even with bad Vine evidence', () => {
     const raw = dates(14).map((date) => day(date, 4, 100, 100));
-    const unverified = raw.map((row) => ({ ...row, confirmedVineUnits: -100 }));
+    const unverified = raw.map((row) => ({ ...row, confirmedExcludedUnits: -100 }));
     const result = calculateSalesMomentum(unverified, { ...options, excludeVine: false });
     const original = calculateSalesMomentum(raw, { ...options, excludeVine: false });
     expect(result.recent).toEqual(original.recent);

@@ -1,378 +1,212 @@
-# PRD: Exclude confirmed Amazon Vine shipments from sales momentum
+# PRD: Exclude Vine and fully discounted giveaways from sales momentum
 
 Date: 2026-09-17
+Status: Implemented on `feat/vine-sales-momentum`; verification and release gates below.
 
-Status: Implementation in progress on `feat/vine-sales-momentum`. Brian requested
-execution and approved narrow report access on 2026-09-17. No production change
-is authorized by this document. Report access works; reliable Vine identification
-and reconciliation remain unresolved. Settings and metric work is implemented;
-the automatic Amazon integration is not complete.
+## Problem and outcome
 
-## Problem Statement
+Free product giveaways can inflate launch velocity and sales momentum. Brian
+wants a marketplace-wide Settings toggle that removes Vine and fully discounted
+item shipments from descriptive analytics while retaining raw inventory facts,
+stockout-aware day eligibility, and existing supplier/transfer forecasts.
 
-Brian uses sales momentum to identify growing products and guide supplier
-purchasing and FBA replenishment. Free Amazon Vine units can make a launch look
-like it has stronger customer demand than it actually does, particularly when
-initial inventory is limited and the product subsequently sells out.
+On 2026-09-17 Brian broadened the original Vine-only scope: other fully discounted
+promotions count as giveaways for this feature. The remainder must not be called
+paid, organic, or full-price sales. Partial discounts and free shipping do not by
+themselves qualify an item as a giveaway.
 
-The current analytics implementation uses daily FBA ledger customer shipments
-and stock evidence. It includes a shipment day that ends at zero inventory,
-excludes confirmed stockout days without shipments, and preserves dated recent,
-previous, and best observed periods. It has no Vine classification or exclusion.
-The captured ledger summary format has no order or promotion identifiers.
+## User experience
 
-We have not yet demonstrated how a known Vine shipment appears in this seller's
-ledger or supplemental reports. The earlier proposal that all Vine units are
-included in Customer Shipments is a hypothesis to verify, not an established
-mapping. Subtracting a unit already excluded by Amazon would understate demand.
+Place a saved switch in **Settings → Analytics** labeled **Exclude Vine and
+full-discount giveaways from sales momentum**. Default off. The setting is
+shared by all authenticated users and applies to Analytics plus Momentum badges
+on Supplier Reorder and FBA Replenishment. It persists in the database across
+sessions/devices. No competing local or URL preference exists.
 
-## Solution
+Show pending, saved, unsaved, and failure feedback. Revalidate all affected
+views after saving. Another user's next page refresh reads the persisted value.
+A read failure leaves the basis unavailable rather than assuming on or off.
+The setting may be enabled before reports finish, but unavailable evidence must
+remain visibly unknown. Settings also offers an authenticated **Refresh shipment
+evidence** action that advances persisted report jobs without a full inventory sync.
 
-Add a saved toggle in **Settings → Analytics** labeled **Exclude Amazon Vine
-shipments from sales momentum**. When on, recent, previous, best, early-launch,
-and trend metrics exclude confirmed Vine units. When off, they include all
-shipments, including Vine. The setting applies to all users and products in the
-current marketplace, including Momentum badges on both planning pages.
+Display the active basis with a Settings link on analytics and planning views.
+For selected-product evidence, show total shipments, giveaways excluded, observed
+units, eligibility, and dates. Recent, previous, early, and best period totals
+retain raw and excluded units. Show report coverage through a Pacific calendar
+date, processing state, and incomplete history. Do not move the ledger analysis
+date backward to hide report lag.
 
-Proposed initial value: off, preserving the existing calculation until an
-operator explicitly enables exclusion. Once saved, the choice persists across
-sessions and devices. Analytics displays the active basis with a link to Settings;
-it does not have a competing local toggle or URL override.
+## Source evidence and access decision
 
-Identify Vine using verified Amazon evidence, reconcile those units to the same
-SKU and shipment dates as the ledger, and subtract only matched units. Preserve
-the raw shipment and inventory facts. Show the number of Vine units excluded,
-the dates covered, and any incomplete evidence beside the adjusted results.
+Brian approved a narrow exception to the repository's Orders/PII restriction:
+request the FBA customer shipment sales and promotion reports, keep identifiers
+needed for matching, SKU/FNSKU/ASIN, dates, quantities and promotion details, and
+discard destination fields before storage or logging. His subtotal/discount
+comparison additionally authorizes the necessary item, shipping and gift-wrap
+amounts. No broader Orders API, restricted roles, RDT, or customer PII storage is
+in scope. All Amazon calls remain within `lib/amazon`.
 
-Do not describe the remainder as paid or organic sales. Other promotions,
-replacements, and non-Vine free units are not classified by this feature.
+The known Vine ASIN **B0GNZQ147T**, SKU **hp_notepad_2pack**, validates the source:
+30 units shipped March 11–16, of which 28 have the observed Amazon description
+`Auto-generated promotion for Amazon Vine enrollment` and a $19.99 discount
+against a $19.99 item subtotal. Two shipments have no promotion. Pacific-day
+shipment totals 15, 13, 1 and 1 exactly match the ledger. Sanitized captured
+fixtures preserve this example and shipping/partial-discount counterexamples.
+See `docs/vine-source-validation.md` for provenance and limitations.
 
-Success means a known Vine launch no longer creates a misleading momentum signal,
-ordinary demand remains measurable through stockouts, and each adjustment can be
-explained from source evidence. If Vine identification or report coverage cannot
-be established, display adjustment unavailable rather than a guessed result.
+The description is observed evidence, not a guaranteed stable enum. The primary
+business rule is a fully discounted item subtotal. When shipping and gift-wrap
+charges are zero, total promotion discounts equaling item subtotal suffice even
+if the description changes. The report also puts shipping offers in its discount
+column: fee-bearing cases require enough evidence to prove the item itself is
+fully discounted. Ambiguous item-versus-fee attribution stays unknown. Zero price
+alone does not qualify. Money comparisons use integer cents.
 
-## User Stories
+## Classification and reconciliation contract
 
-1. As an operator, I want confirmed Vine units removed from momentum so giveaways do not look like growing customer demand.
-2. As an operator, I want recent and previous periods calculated on the same basis so their change is meaningful.
-3. As an operator, I want best velocity recalculated after exclusion so a Vine launch does not remain the historical peak.
-4. As an operator, I want early-launch pace to exclude Vine so limited launch data remains useful.
-5. As an operator, I want a stocked day with no non-Vine shipments to count as zero demand so the calculation does not select only days with sales.
-6. As an operator, I want non-Vine shipments on a day ending at zero inventory included so genuine sellout activity remains visible.
-7. As an operator, I want known stockout days skipped so time without inventory does not depress the rate.
-8. As an operator, I want Vine-only shipment activity distinguished from customer-demand evidence so missing stock data does not fabricate a selling day.
-9. As an operator, I want total shipments, excluded units, and adjusted units shown together so I can audit a change.
-10. As an operator, I want a Settings toggle to include or exclude Vine so I can choose the sales-momentum basis for the app.
-11. As an operator, I want unavailable or partial Vine data labeled so I do not mistake an unadjusted number for a corrected one.
-12. As an operator, I want momentum links on Supplier Reorder and FBA Replenishment to use the same basis as Analytics so the pages agree.
-13. As an operator, I want recent and best inventory-cover scenarios to use the selected basis so their assumptions are visible.
-14. As an operator, I want historical data corrected after backfill so existing launch peaks and trends can be reassessed.
-15. As an operator, I want refreshes and retries to avoid duplicate exclusions so the same Vine unit is never subtracted twice.
-16. As an operator, I want existing order quantities clearly separated from the new momentum basis so a descriptive analytics change does not silently alter purchasing policy.
-17. As an operator, I want the toggle saved across sessions and devices so the app consistently uses our chosen basis.
-18. As an operator, I want the active basis visible on Analytics and planning pages so I can interpret their numbers without reopening Settings.
-19. As an operator, I want clear save progress, confirmation, and failure feedback so I know whether a setting change actually took effect.
+- Parse only the approved two report formats. Validate required headers, dates,
+  quantities, currency and amounts. A changed or empty report does not establish
+  zero giveaway activity.
+- Match promotions only to an unambiguous single shipment-sales row and single
+  shipment-item identity for the order. Multi-item/order ambiguity stays unknown.
+  Partial shipments must not cause an entire order to be subtracted.
+- Deduplicate identical promotion identities. Conflicting duplicate records stay
+  unresolved. Sum related promotion amounts before classification.
+- Use quantity × unit price for item subtotal. Keep shipping and gift-wrap charges
+  separate. Mismatched Vine amounts or mixed-unit discounts that cannot be
+  attributed stay unknown.
+- Resolve canonical SKU by unique FNSKU, then exact SKU. Conflicting or unresolved
+  identity prevents a zero-exclusion assertion on the affected day.
+- Convert full shipment timestamps to `America/Los_Angeles` with DST-aware dates.
+  Request padding around each published range to check adjacent order activity.
+- Reconcile all shipment units to the same canonical SKU/day in the FBA ledger.
+  A mismatch, invalid count, unmatched promotion, ambiguous classification or
+  impossible exclusion makes that day's adjusted evidence unknown. Never clamp.
+- Persist only daily aggregates, report/job metadata, classification version,
+  issue codes, and coverage. Do not persist order IDs, shipment IDs, customer
+  destinations, raw report text, or signed download URLs.
 
-## Implementation Decisions
+## Metric behavior
 
-### Source validation is the first delivery phase
+Adjusted units equal valid ledger customer shipments minus reconciled giveaway
+units. Apply this basis before day classification, all eligible-day windows,
+trend thresholds, best-period selection, and inventory-cover scenarios.
 
-The candidate feeds are Amazon's FBA customer shipment sales report and customer
-shipment promotion report. Their existence is documented; a reliable Vine marker,
-join keys, date semantics, quantity granularity, report availability, retention,
-and required permissions have not been established for this seller.
-
-Before choosing the final integration:
-
-- Compare a seller-confirmed Vine shipment, an ordinary shipment, and a non-Vine zero-value or discounted shipment against actual report output.
-- Confirm that Vine units appear in the ledger's Customer Shipments and determine whether all relevant Vine cases carry the same reliable identifying evidence.
-- Verify shipment-level matching, partial shipments, promotion rows, cancellations, marketplace identity, SKU mapping, and timezone/date alignment.
-- Prove how a complete report range establishes zero Vine units for an unmatched SKU-day. An absent row alone is insufficient.
-- Record report delivery delay and available history; do not promise a 365-day backfill until supported by the source.
-- Capture sanitized real fixtures retaining their original structure. Do not invent Amazon headers, marker strings, or report examples.
-
-Zero price, a 100% discount, an enrollment total, or a product's launch date alone
-must never classify a shipment as Vine. Unknown classifications stay unresolved.
-Failure to find a reliable marker blocks automatic exclusion. A manual import or
-correction workflow would require a separate proposal, not an implicit fallback.
-
-### Data-access boundary
-
-The repository currently prohibits Orders/PII access. The proposed report joins
-may introduce order identifiers or other order data even without an Orders API
-call. Before fetching samples or integrating these reports, identify their exact
-fields and permissions and obtain approval for any required exception to that
-boundary. Approval to write this PRD is not approval to ingest order data.
-
-Prefer the minimum source evidence needed for classification and reconciliation.
-Customer names, contact details, and addresses are unnecessary and must not enter
-the analytics mirror, UI, logs, or fixtures. Restricted Data Tokens, new restricted
-roles, or a broader Orders API integration require a separate approved design.
-Any proposed repository instruction amendment is a draft for Brian's approval.
-
-### Metric contract
-
-For a reconciled SKU-day:
-
-- Adjusted units equal valid ledger customer shipments minus confirmed, matched Vine shipment units.
-- Vine units must be a nonnegative integer no greater than ledger shipments. An impossible result is a reconciliation error, not a value to clamp to zero.
-- Adjusted velocity equals adjusted units across eligible days divided by the number of eligible days.
-- Inventory balances and total shipments remain physical facts; subtracting Vine does not restore stock.
-- Refunding a shipment does not erase physical shipment demand in this version. Use shipped quantities; do not subtract an entire order on its purchase date.
-
-The chosen basis applies before day classification, window construction, best
-period selection, and trend thresholds. The adjusted basis uses non-Vine shipment
-activity as its shipment evidence. The all-shipment basis retains today's behavior.
-Both bases require valid raw shipment counts.
-
-| Evidence for a fully reconciled day | Adjusted treatment |
+| Daily evidence | Adjusted treatment |
 | --- | --- |
-| Positive starting or ending sellable stock; 5 total units, 3 Vine | Include one day and 2 units. |
-| Positive stock evidence; 5 total units, all Vine | Include one day and 0 units. |
-| Positive stock evidence; no shipments | Include one day and 0 units. |
-| Ending stock zero; at least one non-Vine shipment | Include one day and non-Vine units; retain the possible-sellout flag. |
-| Stock evidence incomplete; only Vine shipments | Mark eligibility unknown; Vine alone does not establish a commercial selling day. |
-| Starting and ending stock zero; only Vine shipments | Mark availability ambiguous and interrupt the window; do not infer a full stockout or customer selling day from the giveaway. |
-| Starting and ending stock zero; no shipments | Exclude as a known stockout day. |
-| Missing/invalid shipments or incomplete Vine classification | Adjusted evidence is unknown; retain available raw facts for inspection. |
+| Positive starting or ending stock; 5 units, 3 giveaways | Include one day and 2 units. |
+| Positive stock; all shipments giveaways | Include one day and zero observed units. |
+| Positive stock; no shipments | Include one day and zero units. |
+| Ending stock zero; non-giveaway shipment evidence | Include the day and observed units; retain possible-sellout flag. |
+| Only giveaways, without positive stock evidence | Mark eligibility unknown and interrupt the window. |
+| Starting and ending stock zero; no shipments | Skip the known stockout day. |
+| Invalid shipments or incomplete adjustment evidence | Keep adjusted evidence unknown; retain available raw facts. |
 
-Positive stock remains an availability proxy. Neither basis claims verified hours
-of buyable inventory or estimates hypothetical full-day demand. AWD and SVD never
-qualify a selling day.
+Preserve 7/14/28 eligible-day windows, 90/180/365-day history controls, span limits,
+freshness conventions and existing trend thresholds. Unknown dates interrupt
+windows rather than being bridged as stockouts. Zero previous velocity never
+produces an infinite percentage change. Recompute best dates after exclusions.
+Positive stock is a day-level proxy, not verified hours of buyable availability.
+AWD and SVD never establish a selling day.
 
-Retain the existing 7/14/28 eligible-day windows, 90/180/365-day history controls,
-span limits, freshness limits, early-launch minimum samples, and trend thresholds.
-Apply shipment-volume thresholds to adjusted units in the adjusted basis.
-Unknown dates interrupt windows; do not bridge them as if they were stockouts.
-Historical best and comparison dates may change after Vine exclusion and must be
-recomputed, not relabeled. A zero previous rate must not produce an infinite
-percentage change.
+Off retains the previous all-shipment calculation, even if giveaway reports are
+unavailable. Neither setting changes physical inventory, archive visibility,
+configured forecasts, recommended supplier quantities or transfer quantities.
 
-### Completeness, freshness, and correction
+## Durable sync, coverage and corrections
 
-Track coverage by marketplace, date range, source generation, and classification
-version. A report downloaded successfully is not proof that all required dates,
-pages, or related reports were reconciled.
+Use the existing daily sync, independently of the toggle. Discover all report
+SKUs, including future products, without maintaining a Vine SKU list. No page
+render initiates an Amazon request. SVD remains user-triggered only.
 
-- Treat an unclassified historical day as unknown, never as zero Vine units.
-- Publish daily adjustments only after required inputs are complete and reconciled. Consumers must not combine incompatible generations of ledger and adjustment data.
-- Deduplicate at validated shipment-item identity before aggregation. Multiple promotion rows and overlapping report windows must not multiply excluded units.
-- Reprocessing a completed range must replace its derived totals, including corrections to zero, so removed or corrected source rows do not leave stale exclusions.
-- Preserve the last completed generation during an incomplete or failed refresh; expose its age and failure state.
-- A failed, missing, or more-than-48-hours-old required source prevents a current adjusted momentum claim. Dated validated history may remain labeled historical, using existing analytics conventions.
-- Show the common completed-through date and lag of required sources. Report lag must not silently move the analysis date backward and make old evidence appear current.
-- Do not quietly fall back to all shipments. If a recent adjusted period cannot be formed, explain why and link to the Settings toggle. Missing evidence must not change the saved choice.
-- When the toggle is off, unavailable Vine data must not block the existing all-shipment calculation; its existing ledger and inventory checks still apply.
-- A zero-row parse is not a successful sync. A legitimate no-activity range needs a validated source signal and complete coverage evidence, with no conflicting ledger activity.
+Maintain two bounded, resumable lanes. Recent work overlaps the last completed
+coverage and catches up forward after outages, at most 21 published days per
+job. A separate lane walks backward through up to 365 days, 21 days per job.
+Reports are requested with padding and within the 31-day transport bound. Leave
+a two-day delay for source reporting; polling happens once per sync, without
+sleeping for report generation. Persist each report ID immediately. Queue the
+next interval after publication so subsequent daily runs can collect it.
 
-### Module responsibilities
+Failed ranges retry up to three times, then remain an explicit gap
+while older work continues. Retention is not guaranteed; do not promise full
+365-day recovery. Empty/no-activity ranges cannot be certified by these samples
+and remain unavailable. Recent catch-up retries keep the same interval; after
+three failures, the job records that gap and advances to avoid blocking all future
+shipments behind an unrecoverable interval. A stalled job expires after three days.
 
-1. **Amazon transport:** request and retrieve the validated reports through the existing server-only Amazon client and retry policy.
-2. **Shipment classification and reconciliation:** own source parsing, Vine identification, deduplication, canonical SKU/marketplace matching, date alignment, completeness, and daily totals behind one testable boundary.
-3. **Synced mirrors and sync tracking:** retain minimally necessary source evidence, daily adjustments, generation/coverage metadata, and freshness. Use additive migrations, service-role writes, authenticated read-only RLS, and the existing structural sync writer contract.
-4. **Analytics:** consume raw ledger facts plus validated daily adjustments; own basis-aware day classification, windows, trends, inventory scenarios, and evidence explanations.
-5. **Analytics and planning views:** consume shared results, preserving archive rules and source blocking. No calculations or Amazon report requests belong in page rendering.
-6. **Analytics settings:** persist the marketplace-wide toggle in the authoritative operational layer, with an explicit false default. Use the existing authenticated Settings write permissions and server-side authentication checks, validate the submitted boolean, and record who changed it and when. A setting read error is unavailable configuration, not permission to assume either basis.
+Use a marketplace lease to prevent competing jobs. Publish daily rows and batch
+completion in one database transaction guarded by the lease token. An old worker
+cannot publish or change a batch after losing its lease. Readers use the newest
+completed request per SKU/day, preserving the prior generation during pending
+or failed writes. A corrected zero replaces the prior exclusion. Stored ledger
+counts must still equal the current ledger, and classification versions must
+match before analytics uses an adjustment.
 
-Schedule validated Amazon report refreshes with the existing sync workflow.
-Backfill in bounded resumable ranges appropriate to report limits and runtime
-budgets, then reconcile overlapping recent ranges for late corrections. A page
-view must never initiate the backfill. This integration does not add an unattended
-SVD refresh.
+A failed recent refresh, evidence older than 48 hours, or report coverage more
+than three Pacific calendar days behind prevents a current adjusted claim.
+Dated validated history can remain inspectable. An unresolved day after the
+selected observed period also prevents presenting that period as a current
+trend. Recent report lag is shown, not filled with fabricated zero exclusions.
 
-Ongoing behavior is part of this feature, not a one-time historical cleanup.
-After deployment, each scheduled sync must discover newly shipped Vine units
-across all report SKUs, including future products, without an operator maintaining
-a SKU list. Continue preparing evidence while the exclusion preference is off so
-changing the preference does not start a new source fetch. Revisit an overlapping
-recent period for delayed shipment/promotion records and corrected classifications;
-publish only reconciled generations. The existing daily cron is the initial
-cadence. Source lag and incomplete runs remain visible rather than implying
-real-time identification or guaranteed zero Vine activity.
+## Boundaries
 
-### Presentation and workflow
+Amazon transport owns report requests/status/download and shared retries.
+`lib/shipments` owns parsing, matching, reconciliation, jobs, publication and
+mirror reads. Analytics consumes validated daily adjustments and owns metric
+math. Pages display shared results and do not duplicate calculations.
 
-Place the toggle in an **Analytics** section of Settings, with this copy:
+Migration 0022 stores the authoritative marketplace preference with authenticated
+RLS and server-stamped actor/time metadata. Migration 0023 stores rebuildable
+batch/daily mirrors and fenced leases. Authenticated users can read mirrors;
+only the service role may write them or invoke publication RPCs. The shared
+`SyncWriter` contract remains unchanged; additional reads/RPCs are narrowed at
+the shipment store boundary. View security requires PostgreSQL 15 or newer.
 
-- Label: **Exclude Amazon Vine shipments from sales momentum**.
-- Helper text: “When on, confirmed Vine giveaway units are excluded from recent, previous, best, and trend calculations. This applies to all users. Recommended order and transfer quantities are unchanged.”
-- On: display **Excluding confirmed Vine** as the active basis.
-- Off: display **All shipments, including Vine** as the active basis.
+## Acceptance evidence
 
-Use a labeled accessible switch and a Save action with pending, success, and
-failure states. Enable saving an on preference even while backfill is incomplete,
-but explain that adjusted metrics will remain unavailable until the required
-evidence is ready. Do not present a saved preference as proof of complete data.
+- Replay captured launch data: 30 raw units, 28 excluded, 2 remaining, exact
+  Pacific ledger reconciliation. Keep real partial discounts and shipping offers.
+- Keep financial full-discount classification when description wording changes.
+- Reject ambiguous joins, contradictory promotions, empty reports, unknown
+  quantities/currency, and mismatched source totals.
+- Exercise stocked giveaway-only days, genuine sellout days, known stockouts,
+  missing evidence, best-period recomputation, off-mode parity, and forecast parity.
+- Exercise pending jobs, persisted report resumption, retry-safe publication,
+  correction to zero, failed generations, lease fencing and outage catch-up.
+- Verify mirror RLS/privileges, authenticated setting writes, ordinary-user
+  manual refresh, and refusal before admin access for unauthenticated requests.
+- Run the full project tests, lint, TypeScript, production build, required
+  read-only review, and authenticated UI checks before release. Missing services
+  or unavailable sessions are verification gaps, not passes.
 
-Persist the setting in the database, not browser storage. Apply it consistently
-to Analytics, SKU detail, filters and summary counts, inventory scenarios, and
-Momentum badges on Supplier Reorder and FBA Replenishment. Invalidate affected
-cached results after a successful save and refresh the saving user's current
-view. Other sessions adopt the new value on their next navigation or refresh;
-real-time broadcasting is not required. Failed saves leave the persisted basis
-and displayed results unchanged. Toggling must not trigger an Amazon sync.
+## Out of scope
 
-Keep the existing window/history controls in Advanced Analytics. Add a compact
-read-only basis indicator with a **Change in Settings** link. Navigation and
-bookmarked URLs must read the saved setting; they cannot override it. Basis must
-be part of any derived-result cache identity so results from opposite settings
-cannot be reused accidentally.
+Changing the operational demand forecast; classifying all remaining shipments
+as paid or organic; deleting physical shipment facts after refunds; lost-sales
+estimation; Vine enrollment/reviews; Amazon write-back; unrestricted Orders/PII
+access; manual overrides/imports; per-user or per-SKU exclusion preferences;
+strongest-historical-increase analytics; guaranteed complete report retention.
 
-Keep the main table compact. Show an adjustment summary such as “12 Vine units
-excluded” on the selected period/product, and put daily total, Vine, adjusted
-units, eligibility, and matching/coverage status in product detail. Different
-periods need their own exclusion totals. Avoid adding several always-visible
-columns to the main comparison table.
+## Implementation handoff
 
-Momentum badges on Supplier Reorder and FBA Replenishment use the saved basis
-and link to Analytics, which reads the same setting. If unavailable, show that state explicitly.
-Recent/best cover scenarios use the selected demand basis and canonical current
-supply. The configured reorder forecast, recommended purchase/transfer quantities,
-legacy classification, and last-sold date retain their current definitions in
-this release. Label that distinction where forecasts and adjusted pace appear
-together. Changing operational demand forecasts is a separate decision.
+Branch `feat/vine-sales-momentum`, based on main `2949e54`. Earlier commits
+`d68152f` and `cb1a383` contain settings/math foundations and validated transport.
+Current integration adds classification, generation-safe mirrors, resumable
+cron/manual refresh, evidence reads, UI copy and the expanded business rule.
 
-## Testing Decisions
+Verification complete locally: all 538 tests across 66 files, lint, TypeScript,
+instruction-policy checks, whitespace checks and production build passed.
+Captured live-source replay passed. Migration
+0023 and SQL privilege/publication tests passed against isolated local PostgreSQL
+18 with Supabase-like roles/default grants. PostgreSQL 14 cannot run the
+security-invoker view; no hosted Supabase migration has been attempted.
 
-Test observable results and failure behavior. Use captured, sanitized reports for
-external parser and source-integration tests. Small synthetic domain inputs are
-appropriate for arithmetic and eligibility tests, but must not masquerade as
-Amazon report fixtures. Follow the existing analytics, ledger-parser, sync, and
-source-blocking test patterns.
-
-Required acceptance cases:
-
-| Case | Expected result |
-| --- | --- |
-| Seven stocked days; 35 total units, 21 verified Vine | Adjusted velocity is 2/day; all-shipment velocity is 5/day. |
-| Seven stocked days; every shipment confirmed Vine | Adjusted rate is 0/day; denominator remains seven; no positive growth signal caused by Vine. |
-| Non-Vine sellout day followed by known zero-stock days | Include sellout units and one eligible day; skip the subsequent stockout days within existing span limits. |
-| Vine-only activity with unknown inventory | No inferred commercial selling day; an unknown gap interrupts the window. |
-| Known non-Vine zero-value shipment | Do not classify as Vine merely because its price is zero. |
-| Historical peak driven by Vine | Recompute the best adjusted period and its exact dates; raw best remains available in All shipments. |
-| Incomplete report, missing page, ambiguous match, or conflicting totals | Affected adjusted evidence is unavailable with an explanation; no assumed-zero exclusion. |
-| Duplicate promotion rows or repeat sync | Identical adjusted totals; each shipped unit excluded at most once. |
-| Same SKU text in different marketplaces; split shipments over two dates | Keep marketplace/date boundaries and subtract only matched shipped quantities. |
-| Corrected source removes a prior Vine classification | Reprocessing removes the prior exclusion and invalidates dependent analytics. |
-| Adjustment exceeds ledger units | Surface reconciliation failure; never emit negative units or silently clamp. |
-| Required source fails or becomes stale | Suppress current adjusted trend claims; keep explicitly dated validated history inspectable. |
-| Save the toggle on, then navigate to Analytics and both planning pages | Table, detail, dates, filters, badges, and inventory scenarios use the saved adjusted basis. |
-| Save the toggle off while Vine reports are unavailable | All-shipment calculations remain available subject to their original source checks. |
-| Reload, sign in on another device, or open a bookmarked SKU URL | Read the saved marketplace setting; no local or URL override changes the basis. |
-| Save fails, unauthenticated caller attempts a write, or setting cannot be read | Failed/unauthorized writes do not change the setting; a read failure produces an explicit unavailable state. |
-| Saved basis changes after results have been cached | Invalidate affected views; do not reuse opposite-basis results. Another user's next refresh sees the saved value. |
-| Feature enabled | Raw ledger/inventory, archive visibility, and existing recommended order/transfer quantities remain unchanged. |
-
-Before release, replay seller-confirmed Vine and ordinary shipments and reconcile
-their daily totals against Seller Central. Test RLS and authentication on any new
-read or manual-refresh paths. Run the full project suite, lint, TypeScript, and
-production build before committing code. Obtain the required read-only code
-review and inspect the authenticated UI, including unavailable/backfill states.
-Unavailable credentials or missing real fixtures are verification gaps, not passes.
-
-## Out of Scope
-
-- Automatically changing reorder or transfer demand forecasts to adjusted velocity.
-- Classifying all remaining shipments as paid, organic, or full-price sales.
-- Excluding every zero-price order, replacement, discount, return, or other promotion.
-- Managing Vine enrollment, reviews, customer messages, or Amazon write-back.
-- Estimating hours in stock, lost sales, or unconstrained demand.
-- Manual exclusion overrides/imports without a separately agreed workflow.
-- New customer PII storage, restricted-role access, or an unrestricted Orders API integration.
-- Changing trend thresholds or implementing the deferred strongest-historical-increase metric.
-- Per-user or per-SKU Vine preferences, a separate Analytics-page override, or real-time cross-session updates.
-
-## Further Notes
-
-Delivery phases:
-
-1. **Validate the source:** establish the identifier, ledger inclusion, reconciliation, coverage, permissions, and real fixtures. Record the decision and any required boundary approval before ingesting order data.
-2. **Build the adjustment mirror:** add migrations, bounded backfill, retry-safe reconciliation, and source status. Keep the current analytics accessible while evidence is prepared.
-3. **Integrate adjusted analytics:** implement the saved Settings toggle, active-basis indicators, shared metric contract, daily audit evidence, planning-page signals, and failure states.
-4. **Validate and release:** compare known examples with Seller Central, complete automated/manual checks and review, then request the separately authorized migration/merge/deployment actions.
-
-Reference: Amazon's [SP-API seller use-case directory](https://developer-docs.amazon.com/sp-api/lang-es_ES/docs/sp-api-seller-use-cases)
-lists the candidate FBA shipment sales and promotion reports. It does not by
-itself establish a Vine-specific marker or this seller's access. No external
-report was requested and no production record was inspected for this PRD.
-
-## Implementation handoff (2026-09-17)
-
-Branch: `feat/vine-sales-momentum`, based on main at `2949e54`.
-
-Implemented locally:
-
-- Add migration 0022 for a marketplace-wide analytics preference, default off,
-  authenticated reads/writes, and database-stamped actor/time metadata.
-- Add Settings switch with pending/save/error feedback and shared read semantics.
-  Missing migration or read failures do not silently select a basis.
-- Apply the saved basis to Analytics and planning-page Momentum. Display active
-  basis and unavailable evidence explicitly. Preserve operational forecasts and
-  purchase/transfer calculations.
-- Add pure daily adjustment rules and period totals. Test stocked Vine-only days,
-  non-Vine sellouts, ambiguous Vine-only stock, invalid quantities, missing
-  evidence, best-period recomputation, and all-shipment parity.
-- Display raw, excluded, and observed units in daily evidence and period totals.
-
-Brian approved the narrow report-access exception on 2026-09-17: fetch shipment
-sales and promotion reports, retain only matching identifiers, SKU, date,
-quantity and promotion details, and discard destination fields before logging
-or storage. This supersedes the AGENTS.md Orders/PII restriction only for this
-purpose. It does not authorize a broader Orders API or restricted-role design.
-A seller-confirmed Vine SKU/date is still needed for comparison. Source validation
-is now proceeding under that approval.
-Both reports were retrieved successfully for Aug 18 through Sep 17 (UTC): 4,121
-sales rows and 609 promotion rows. No explicit Vine marker was observed. Captured
-sanitized fixture subsets and matching limitations are recorded in
-`docs/vine-source-validation.md`. Bounded request transport is implemented, but
-there is no validated Vine classifier, sync, backfill, or adjustment mirror.
-`vineAdjustmentIssue` deliberately
-keeps the on state unavailable pending a validated source integration. The pure
-calculation accepts confirmed daily domain inputs, but production readers do not
-yet supply these inputs.
-
-Official source findings:
-
-- [FBA report types](https://developer-docs.amazon.com/sp-api/docs/report-type-values-fba)
-  documents shipment sales (`GET_FBA_FULFILLMENT_CUSTOMER_SHIPMENT_SALES_DATA`)
-  with SKU, date, quantity and order ID, but also destination city/state/postal
-  code. The promotions report
-  (`GET_FBA_FULFILLMENT_CUSTOMER_SHIPMENT_PROMOTION_DATA`) documents promotion,
-  order, shipment and shipment-item identifiers, but no SKU or quantity. Their
-  join cardinality and a Vine marker cannot be inferred from these field lists.
-  Sales may lag up to 24 hours; promotions update daily. The latter is NA-only.
-- The [official Orders 2026 model](https://github.com/amzn/selling-partner-api-models/blob/main/models/orders-api-model/orders_2026-01-01.json)
-  contains no documented VINE program value. Do not assume `programs` identifies
-  Vine or expand to the Orders API without a separately approved design.
-
-Remaining: obtain a known Vine example,
-capture its real evidence, validate marker and ledger inclusion, design
-generation-safe reconciliation and coverage storage from those findings, wire
-bounded sync/backfill, validate live examples and authenticated UI, then complete
-review and release. Migration 0022 is not applied; no merge or deployment has
-been performed. This branch is an incomplete foundation, not release-ready.
-
-Verification:
-
-- After report-access validation: all 508 tests passed, along with lint,
-  TypeScript, instruction policy, diff whitespace, and production build. The
-  read-only transport/fixture review passed. Both real candidate reports were
-  successfully retrieved; a Vine-positive sample and complete reconciliation
-  are still unverified, so scheduled Vine processing is not enabled.
-
-- All 501 tests across 62 files passed. Lint, TypeScript, instruction-policy
-  check, diff whitespace check, and production build passed.
-- Migration 0022 ran successfully against an isolated local PostgreSQL cluster
-  with Supabase-like auth roles and default grants. Checked default off,
-  authenticated upsert, shared visibility across two users, server-stamped audit
-  fields despite spoofed input, anonymous denial, no delete/truncate privileges,
-  and RLS enabled. The cluster was stopped and removed. This is not hosted
-  Supabase validation and does not establish live source access.
-- The required read-only reviewer passed the foundation with notes about the
-  incomplete integration and UI verification. Fixed its stale-switch finding:
-  refreshed server settings now reset the local draft, and action feedback no
-  longer overrides another user's saved preference.
-- Browser verification reached the local login page. No authenticated browser
-  session was available, so real save/error/cross-user UI behavior is still
-  unverified. The temporary development server was stopped.
+The required read-only review passed after fixes for outage date coverage,
+coverage-date freshness, and forward progress through unavailable intervals.
+Regression tests cover these cases, mixed promotions, and explicit source
+timezones. The reviewer made no file or memory writes. Authenticated end-to-end
+UI verification is still unavailable in this session. Migrations 0022 and 0023 remain unapplied to
+hosted Supabase. No merge, deployment or production evidence writes have occurred.
+Once migrations and release are authorized, run the initial refresh, inspect
+coverage/unknown states in the signed-in app, and allow the daily sync to continue.

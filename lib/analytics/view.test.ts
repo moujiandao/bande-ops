@@ -39,7 +39,7 @@ function product(
               calendarDays: 7,
               unitsShipped: recent * 7,
               totalShipments: recent * 7,
-              excludedVineUnits: 0,
+              excludedGiveawayUnits: 0,
               dailyVelocity: recent,
               possibleSelloutDays: 0,
               restockDays: 0,

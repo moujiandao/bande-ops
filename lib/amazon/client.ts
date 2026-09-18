@@ -44,6 +44,8 @@ export interface AmazonClient {
     opts?: ListAwdInventoryOptions,
   ): Promise<AwdInventorySummary[]>;
   createLedgerReport(opts: CreateLedgerReportOptions): Promise<string>;
+  createShipmentEvidenceReport(opts: CreateLedgerReportOptions & { kind: ShipmentEvidenceReportKind }): Promise<string>;
+  getReportStatus(opts: Pick<GetReportUntilDoneOptions, 'marketplace' | 'reportId'>): Promise<ReportStatus>;
   createMerchantListingsReport(opts?: {
     marketplace?: Marketplace;
   }): Promise<string>;
@@ -365,6 +367,17 @@ export class SpApiClient implements AmazonClient {
     });
     if (!data.reportId) throw new Error('Shipment evidence report has no report id.');
     return data.reportId;
+  }
+
+  async getReportStatus(opts: Pick<GetReportUntilDoneOptions, 'marketplace' | 'reportId'>): Promise<ReportStatus> {
+    const report = await this.request<ReportStatus>({
+      path: `/reports/2021-06-30/reports/${encodeURIComponent(opts.reportId)}`,
+      marketplace: opts.marketplace ?? DEFAULT_MARKETPLACE,
+    });
+    if (report.reportId !== opts.reportId || !['IN_QUEUE', 'IN_PROGRESS', 'DONE', 'FATAL', 'CANCELLED'].includes(report.processingStatus)) {
+      throw new Error('Unexpected Amazon report status.');
+    }
+    return report;
   }
 
   async getReportUntilDone(

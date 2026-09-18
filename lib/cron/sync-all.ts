@@ -1,6 +1,7 @@
 import { syncCatalog, type SyncCatalogDeps } from '@/lib/catalog/sync';
 import { syncAwdInventory, type SyncAwdInventoryDeps } from '@/lib/awd/sync';
 import { syncInventory, type SyncInventoryDeps } from '@/lib/inventory/sync';
+import { syncShipmentEvidence, type ShipmentSyncDeps, type ShipmentSyncResult } from '@/lib/shipments/sync';
 import {
   syncFbaLedgerVelocity,
   type SyncFbaLedgerVelocityDeps,
@@ -41,7 +42,7 @@ import {
 type FullSyncAmazonClient = SyncCatalogDeps['client'] &
   SyncInventoryDeps['client'] &
   SyncAwdInventoryDeps['client'] &
-  SyncFbaLedgerVelocityDeps['client'];
+  SyncFbaLedgerVelocityDeps['client'] & ShipmentSyncDeps['client'];
 
 /** The Advertising client surface the full sync needs (campaigns + metrics). */
 type FullSyncAdsClient = SyncCampaignsDeps['client'] &
@@ -84,6 +85,7 @@ export interface FullSyncCounts {
   adsCampaigns: number;
   /** Ads campaign-metrics mirror rows upserted. */
   adsCampaignMetrics: number;
+  shipmentEvidence: ShipmentSyncResult;
 }
 
 /**
@@ -110,6 +112,7 @@ export async function runFullSync(
     client: amazonClient,
     admin,
   });
+  const shipmentEvidence = await syncShipmentEvidence({ client: amazonClient, admin });
   const adsCampaigns = await syncCampaigns({ client: adsClient, admin });
   const adsCampaignMetrics = await syncCampaignMetrics({
     client: adsClient,
@@ -124,5 +127,6 @@ export async function runFullSync(
     salesVelocity: velocity.velocityRows,
     adsCampaigns: adsCampaigns.count,
     adsCampaignMetrics: adsCampaignMetrics.count,
+    shipmentEvidence,
   };
 }

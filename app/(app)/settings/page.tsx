@@ -19,6 +19,7 @@ import { unarchiveSkuAction } from '@/lib/archive/actions';
 import type { ArchivedSkuRow } from '@/lib/archive/skus';
 import { AnalyticsSettingsForm } from '@/components/analytics/settings-form';
 import { readAnalyticsSettings } from '@/lib/analytics/settings';
+import { readShipmentEvidenceStatus } from '@/lib/shipments/read';
 
 /**
  * Replenishment settings, the operational layer behind the reorder math.
@@ -162,7 +163,7 @@ export default async function SettingsPage() {
         </p>
       </header>
 
-      <AnalyticsSettingsForm settings={analyticsSettings} />
+      <AnalyticsSettingsForm settings={analyticsSettings} evidence={await readShipmentEvidenceStatus(supabase)} />
 
       {settingsRes.error || policyRes.error ? (
         <div className="rounded-panel border border-border bg-panel-muted p-3 text-xs text-foreground">

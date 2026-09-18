@@ -7,6 +7,7 @@ import {
 } from '@/lib/analytics/service';
 import { createClient } from '@/lib/supabase/server';
 import { readAnalyticsSettings, vineAdjustmentIssue } from '@/lib/analytics/settings';
+import { readShipmentAdjustments } from '@/lib/shipments/read';
 import { shouldReplenishFromSvd } from './replenish';
 import { assembleRecommendations } from './service';
 
@@ -52,7 +53,11 @@ export async function loadReorderWorkflowData() {
     : sourceRows.filter(
         (row) => !isSkuArchived(archivedKeys, row.marketplaceId, row.sku),
       );
-  const analyticsIssue = vineAdjustmentIssue(analyticsSettings) ?? analyticsSourceIssue(sourceHealth);
+  const adjustment = analyticsSettings.excludeVine ? await readShipmentAdjustments({
+    supabase, startDate: analyticsHistory.rows[0]?.activity_date ?? null,
+    endDate: analyticsHistory.dataThroughDate,
+  }) : undefined;
+  const analyticsIssue = vineAdjustmentIssue(analyticsSettings, adjustment) ?? analyticsSourceIssue(sourceHealth);
   const analytics = analyticsHistory.error || analyticsIssue
     ? []
     : buildSalesAnalytics({
@@ -62,6 +67,8 @@ export async function loadReorderWorkflowData() {
         historyDays: 90,
         dataThroughDate: analyticsHistory.dataThroughDate,
         excludeVine: analyticsSettings.excludeVine === true,
+        adjustmentRows: adjustment?.rows,
+        adjustmentThroughDate: adjustment?.throughDate,
       });
   const momentumBySku = analyticsHistory.error || analyticsIssue
     ? undefined

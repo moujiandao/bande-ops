@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { AnalyticsBasisNote } from '@/components/analytics/basis-note';
 import { readAnalyticsSettings, vineAdjustmentIssue } from '@/lib/analytics/settings';
+import { readShipmentAdjustments } from '@/lib/shipments/read';
 import {
   ANALYTICS_CLASSIFICATION_OPTIONS,
   ClassificationLegend,
@@ -84,9 +85,9 @@ function analyticsHref(
 }
 
 function evidenceLabel(day: ClassifiedSalesDay): string {
-  if (day.adjustmentIssue === 'unavailable') return 'Vine evidence unavailable';
-  if (day.adjustmentIssue === 'reconciliation-error') return 'Vine reconciliation error';
-  if (day.adjustmentIssue === 'ambiguous-stock') return 'Vine-only, stock unknown';
+  if (day.adjustmentIssue === 'unavailable') return 'Giveaway evidence unavailable';
+  if (day.adjustmentIssue === 'reconciliation-error') return 'Giveaway reconciliation error';
+  if (day.adjustmentIssue === 'ambiguous-stock') return 'Giveaways only, stock unknown';
   switch (day.classification) {
     case 'eligible-stocked':
       return 'Stocked';
@@ -124,7 +125,7 @@ function PeriodCard({
       {period ? (
         <p className="mt-2 text-[11px] text-faint">
           {period.unitsShipped} units across {period.eligibleDays} eligible days
-          {` · ${period.totalShipments} total shipments · ${period.excludedVineUnits} Vine excluded`}
+          {` · ${period.totalShipments} total shipments · ${period.excludedGiveawayUnits} Giveaways excluded`}
           {period.possibleSelloutDays > 0
             ? ` · ${period.possibleSelloutDays} possible sellout`
             : ''}
@@ -232,7 +233,7 @@ function ProductDetail({ product }: { product: SalesAnalyticsProduct }) {
               <tr>
                 <th className="px-3 py-2 text-left font-medium">Date</th>
                 <th className="px-3 py-2 text-right font-medium">Shipments</th>
-                <th className="px-3 py-2 text-right font-medium">Vine excluded</th>
+                <th className="px-3 py-2 text-right font-medium">Giveaways excluded</th>
                 <th className="px-3 py-2 text-right font-medium">Observed units</th>
                 <th className="px-3 py-2 text-right font-medium">Start</th>
                 <th className="px-3 py-2 text-right font-medium">End</th>
@@ -253,7 +254,7 @@ function ProductDetail({ product }: { product: SalesAnalyticsProduct }) {
                       : day.customerShipments}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-muted">
-                    {formatUnits(day.excludedVineUnits)}
+                    {formatUnits(day.excludedGiveawayUnits)}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-muted">
                     {formatUnits(day.observedUnits)}
@@ -314,7 +315,10 @@ export default async function AnalyticsPage({
     readAnalyticsSettings(supabase),
   ]);
   const sourceIssue = analyticsSourceIssue(recommendations.sourceHealth);
-  const adjustmentIssue = vineAdjustmentIssue(analyticsSettings);
+  const adjustment = analyticsSettings.excludeVine ? await readShipmentAdjustments({
+    supabase, startDate: history.rows[0]?.activity_date ?? null, endDate: history.dataThroughDate,
+  }) : undefined;
+  const adjustmentIssue = vineAdjustmentIssue(analyticsSettings, adjustment);
   const products = buildSalesAnalytics({
     products: recommendations.rows,
     ledgerRows: history.error || analyticsSettings.excludeVine === null ? [] : history.rows,
@@ -323,6 +327,8 @@ export default async function AnalyticsPage({
     dataThroughDate: history.error ? null : history.dataThroughDate,
     currentEvidenceAvailable: !sourceIssue && !adjustmentIssue,
     excludeVine: analyticsSettings.excludeVine === true,
+    adjustmentRows: adjustment?.rows,
+    adjustmentThroughDate: adjustment?.throughDate,
   });
   const current = viewQuery;
   const { selected, visible, summary } = buildAnalyticsViewModel(
@@ -354,6 +360,14 @@ export default async function AnalyticsPage({
       </header>
 
       <AnalyticsBasisNote settings={analyticsSettings} />
+      {adjustment ? (
+        <p className="text-xs text-muted">
+          {adjustment.throughDate ? `Shipment reports through ${adjustment.throughDate} (Pacific dates).` : 'Shipment reports have not completed yet.'}{' '}
+          {adjustment.pending ? 'A refresh is processing. ' : ''}
+          Historical coverage builds gradually. Unmatched or ambiguous days stay unknown;
+          the remaining shipments are not necessarily paid or full-price sales.
+        </p>
+      ) : null}
       {adjustmentIssue ? (
         <p className="rounded-panel border border-border bg-panel-muted p-4 text-xs text-foreground">
           {adjustmentIssue} Configured forecasts and order quantities are unchanged.

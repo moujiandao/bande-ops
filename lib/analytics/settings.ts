@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { DEFAULT_MARKETPLACE } from '@/lib/amazon/types';
+import type { ShipmentEvidenceStatus } from '@/lib/shipments/read';
 
 export interface AnalyticsSettings {
   /** Null means the saved preference could not be read, not the default. */
@@ -26,16 +27,11 @@ export async function readAnalyticsSettings(
   }
 }
 
-/**
- * Source validation is intentionally a release gate. No Amazon marker or source
- * coverage has been verified yet. Do not substitute ledger totals, zero price,
- * or an empty report for confirmed, reconciled Vine evidence.
- */
-export function vineAdjustmentIssue(settings: AnalyticsSettings): string | null {
+export function vineAdjustmentIssue(settings: AnalyticsSettings, evidence?: ShipmentEvidenceStatus): string | null {
   if (settings.error) return settings.error;
   if (settings.excludeVine === null) return 'The saved analytics basis is unavailable.';
   return settings.excludeVine
-    ? 'Vine adjustment unavailable. Amazon Vine identification and shipment matching have not been verified yet. Adjusted momentum remains unknown.'
+    ? evidence?.currentIssue ?? (evidence ? null : 'Giveaway evidence unavailable. Adjusted momentum requires reconciled shipment reports.')
     : null;
 }
 
@@ -43,8 +39,8 @@ export function analyticsBasisLabel(settings: AnalyticsSettings): string {
   return settings.excludeVine === null
     ? 'Momentum basis unavailable'
     : settings.excludeVine
-      ? 'Momentum basis: exclude confirmed Vine'
-      : 'Momentum basis: all shipments (including Vine)';
+      ? 'Momentum basis: excluding Vine and full-discount giveaways'
+      : 'Momentum basis: all shipments (including giveaways)';
 }
 
 export interface SaveAnalyticsState {

@@ -145,6 +145,33 @@ describe('readAnalyticsHistory', () => {
 });
 
 describe('buildSalesAnalytics', () => {
+  it('uses reconciled exclusions for all windows and preserves the configured forecast', () => {
+    const ledgerRows = Array.from({ length: 14 }, (_, i) => ({
+      marketplace_id: 'ATVPDKIKX0DER', sku: 'SKU-1', activity_date: `2026-09-${String(i + 1).padStart(2, '0')}`,
+      customer_shipments: 10, customer_shipments_valid: true,
+      sellable_starting_balance: 100, starting_balance_valid: true,
+      sellable_ending_balance: 90, ending_balance_valid: true,
+    }));
+    const adjustmentRows = ledgerRows.map((r, i) => ({ ...r, ledger_units: 10, shipment_units: 10,
+      excluded_units: i < 7 ? 9 : 6, vine_units: 0, status: 'complete' as const, issue: null, classification_version: 1 }));
+    const common = { products: [recommendation()], ledgerRows, adjustmentRows, windowDays: 7 as const,
+      historyDays: 90 as const, dataThroughDate: '2026-09-14', adjustmentThroughDate: '2026-09-14' };
+    const [adjusted] = buildSalesAnalytics({ ...common, excludeVine: true });
+    expect(adjusted.momentum.previous?.dailyVelocity).toBe(1);
+    expect(adjusted.momentum.recent?.dailyVelocity).toBe(4);
+    expect(adjusted.momentum.best?.dailyVelocity).toBe(4);
+    expect(adjusted.momentum.trend).toBe('trending-up');
+    expect(adjusted.coverDays.configured).toBe(35);
+    const [all] = buildSalesAnalytics({ ...common, excludeVine: false });
+    expect(all.momentum.recent?.dailyVelocity).toBe(10);
+    // A corrected raw ledger count invalidates that day's older generation.
+    const [corrected] = buildSalesAnalytics({ ...common, excludeVine: true,
+      ledgerRows: ledgerRows.map((r, i) => i === 13 ? { ...r, customer_shipments: 11 } : r) });
+    expect(corrected.momentum.days.at(-1)?.adjustmentIssue).toBe('unavailable');
+    expect(corrected.momentum.trend).toBe('historical-only');
+    expect(corrected.stockConstrained).toBe(false);
+  });
+
   it('keeps configured supply and forecast while unverified adjusted metrics stay unknown', () => {
     const product = recommendation();
     const original = structuredClone(product);

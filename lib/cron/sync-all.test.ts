@@ -2,6 +2,11 @@ import { describe, it, expect, vi } from 'vitest';
 import { runFullSync, type RunFullSyncDeps } from './sync-all';
 import { FakeAmazonClient } from '@/lib/amazon/fake-client';
 import { FakeAdsClient } from '@/lib/ads/fake-client';
+import { syncShipmentEvidence } from '@/lib/shipments/sync';
+
+vi.mock('@/lib/shipments/sync', () => ({
+  syncShipmentEvidence: vi.fn().mockResolvedValue({ status: 'pending', publishedDays: 0, issue: null }),
+}));
 
 // The scheduled full-sync orchestration: SP-API + Advertising sources -> all
 // mirror upserts. We inject FakeAmazonClient + FakeAdsClient and a mocked
@@ -100,7 +105,9 @@ describe('runFullSync', () => {
       salesVelocity: 2,
       adsCampaigns: 3,
       adsCampaignMetrics: 3,
+      shipmentEvidence: { status: 'pending', publishedDays: 0, issue: null },
     });
+    expect(syncShipmentEvidence).toHaveBeenCalledWith(expect.objectContaining({ admin }));
   });
 
   it('runs the syncs in order and stops at the first failure', async () => {

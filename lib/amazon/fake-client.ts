@@ -124,6 +124,14 @@ export class FakeAmazonClient implements AmazonClient {
     return 'fake-listings-report';
   }
 
+  async createShipmentEvidenceReport(): Promise<string> {
+    throw new Error('Shipment evidence is unavailable in fake mode.');
+  }
+
+  async getReportStatus(): Promise<import('./reports').ReportStatus> {
+    throw new Error('Shipment evidence is unavailable in fake mode.');
+  }
+
   async getReportUntilDone(
     _opts: GetReportUntilDoneOptions,
   ): Promise<CompletedReport> {

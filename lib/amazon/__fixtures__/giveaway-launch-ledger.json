@@ -1,0 +1,74 @@
+{
+  "item": {
+    "marketplace_id": "ATVPDKIKX0DER",
+    "sku": "hp_notepad_2pack",
+    "asin": "B0GNZQ147T",
+    "title": "H&P Notepad 2-Pack \u2013 History & Physical Tear-Off Template Notepad for Medical Students, Residents, NP, PA",
+    "open_date": "2026-02-20"
+  },
+  "rows": [
+    {
+      "activity_date": "2026-03-10",
+      "customer_shipments": 0,
+      "customer_shipments_valid": true,
+      "sellable_starting_balance": 0,
+      "starting_balance_valid": true,
+      "sellable_ending_balance": 0,
+      "ending_balance_valid": true
+    },
+    {
+      "activity_date": "2026-03-11",
+      "customer_shipments": 15,
+      "customer_shipments_valid": true,
+      "sellable_starting_balance": 0,
+      "starting_balance_valid": true,
+      "sellable_ending_balance": 15,
+      "ending_balance_valid": true
+    },
+    {
+      "activity_date": "2026-03-12",
+      "customer_shipments": 13,
+      "customer_shipments_valid": true,
+      "sellable_starting_balance": 15,
+      "starting_balance_valid": true,
+      "sellable_ending_balance": 1,
+      "ending_balance_valid": true
+    },
+    {
+      "activity_date": "2026-03-13",
+      "customer_shipments": 1,
+      "customer_shipments_valid": true,
+      "sellable_starting_balance": 1,
+      "starting_balance_valid": true,
+      "sellable_ending_balance": 1,
+      "ending_balance_valid": true
+    },
+    {
+      "activity_date": "2026-03-14",
+      "customer_shipments": 0,
+      "customer_shipments_valid": true,
+      "sellable_starting_balance": 1,
+      "starting_balance_valid": true,
+      "sellable_ending_balance": 1,
+      "ending_balance_valid": true
+    },
+    {
+      "activity_date": "2026-03-15",
+      "customer_shipments": 0,
+      "customer_shipments_valid": true,
+      "sellable_starting_balance": 1,
+      "starting_balance_valid": true,
+      "sellable_ending_balance": 1,
+      "ending_balance_valid": true
+    },
+    {
+      "activity_date": "2026-03-16",
+      "customer_shipments": 1,
+      "customer_shipments_valid": true,
+      "sellable_starting_balance": 1,
+      "starting_balance_valid": true,
+      "sellable_ending_balance": 0,
+      "ending_balance_valid": true
+    }
+  ]
+}

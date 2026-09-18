@@ -1,0 +1,36 @@
+shipment-date	currency	item-promotion-discount	item-promotion-id	description	promotion-rule-value	amazon-order-id	shipment-id	shipment-item-id
+2026-03-18T00:00:00-07:00	USD	19.99	30618991301	Auto-generated promotion for Amazon Vine enrollment	70	sample-401eea9f32d678c5d9f0	sample-6ec6dd545d8ffaa35c68	sample-8a692f290ca9ea15468d
+2026-03-18T00:00:00-07:00	USD	0.19	29821996301	Nagle Item Discount Promotion US Jan 2026	59	sample-702082827421710049d5	sample-67d50b823d9c223595ac	sample-12515ec4d4ee866efc53
+2026-03-18T00:00:00-07:00	USD	0.19	29821996301	Nagle Item Discount Promotion US Jan 2026	59	sample-702082827421710049d5	sample-67d50b823d9c223595ac	sample-b4ca11e934ce39368517
+2026-03-18T00:00:00-07:00	USD	6.11	20644321801	US Core Free Shipping Promotion, based off Policies	70	sample-0756149a7406733b1777	sample-84229979115dfbf9d3a8	sample-994317f88bd25e6f8558
+2026-03-18T00:00:00-07:00	USD	1.50	232148511	Free Sub SameDay Promotion	70	sample-fd426676ffa6bb9e1d6c	sample-46fd00cf8991009f722b	sample-f29d03fef96ef568c283
+2026-03-13T00:00:00-07:00	USD	19.99	30618988401	Auto-generated promotion for Amazon Vine enrollment	70	sample-15d67c0a915ef08e9a8e	sample-cbe510fa023cb565d2b5	sample-ffaa3d193c25ad1be95a
+2026-03-12T00:00:00-07:00	USD	19.99	30618988401	Auto-generated promotion for Amazon Vine enrollment	70	sample-81c8d7f03554b8377575	sample-cd68b6268a1201ca3347	sample-a3a968764105107f25cf
+2026-03-12T00:00:00-07:00	USD	19.99	30618988401	Auto-generated promotion for Amazon Vine enrollment	70	sample-21bfaae4ad2b851c7874	sample-a7b3df0a14f312b54f38	sample-c6ba64c6b75763e55b18
+2026-03-12T00:00:00-07:00	USD	19.99	30618988401	Auto-generated promotion for Amazon Vine enrollment	70	sample-bdacf678410b2a235016	sample-73bc0b8b3c7de4acbd33	sample-a0555f41e3aec74348cf
+2026-03-12T00:00:00-07:00	USD	19.99	30618988401	Auto-generated promotion for Amazon Vine enrollment	70	sample-ebb292dfc9fac8682152	sample-d2ac17721381a472baa8	sample-1813dbf2a79726c2fc35
+2026-03-12T00:00:00-07:00	USD	19.99	30618988401	Auto-generated promotion for Amazon Vine enrollment	70	sample-30ebbfa9cb8f5ddcf70b	sample-6fcb4cb22f8a483f4798	sample-5d61edee6a7aeb429fcd
+2026-03-12T00:00:00-07:00	USD	19.99	30618988401	Auto-generated promotion for Amazon Vine enrollment	70	sample-49604b815747f54f2e96	sample-f704f27356775a85f00a	sample-80b82f000580925d6975
+2026-03-12T00:00:00-07:00	USD	19.99	30618988401	Auto-generated promotion for Amazon Vine enrollment	70	sample-d85e306c741c190ce3dc	sample-0b4e89d24644db200296	sample-7b6c413bcb44830a8fe2
+2026-03-12T00:00:00-07:00	USD	19.99	30618988401	Auto-generated promotion for Amazon Vine enrollment	70	sample-103bcff03580aaad597c	sample-66b42d8f195f4f38e2f8	sample-2aed5fd5df88199bc09e
+2026-03-12T00:00:00-07:00	USD	19.99	30618988401	Auto-generated promotion for Amazon Vine enrollment	70	sample-a2bcdf15242615a7129f	sample-d9a6a0e5c017c3448dd9	sample-1646bd7776ff58068675
+2026-03-12T00:00:00-07:00	USD	19.99	30618988401	Auto-generated promotion for Amazon Vine enrollment	70	sample-059d659afee4d783e3ce	sample-f8d2aaed4bdbd7c526d8	sample-aea69f5064cf10a33f59
+2026-03-12T00:00:00-07:00	USD	19.99	30618988401	Auto-generated promotion for Amazon Vine enrollment	70	sample-a3f0c41ad825d74031dc	sample-9bac3bec9fb8f229d5da	sample-7de4e7ebbdedf20043ea
+2026-03-12T00:00:00-07:00	USD	19.99	30618988401	Auto-generated promotion for Amazon Vine enrollment	70	sample-cb92e1b5c9b336926cee	sample-e9d0191d7be7f107b80e	sample-783baba2372a10000198
+2026-03-12T00:00:00-07:00	USD	19.99	30618988401	Auto-generated promotion for Amazon Vine enrollment	70	sample-4817cc3f72756687e4da	sample-63618f0c3474d6decc2f	sample-63a89a231caae29e0049
+2026-03-12T00:00:00-07:00	USD	2.99	24193161201	AtD Promotion - https://issues.amazon.com/issues/CLMTech-699	70	sample-bd17703ad08ac665862b	sample-376214b09156560f138e	sample-6b6c57ca8454ffe864f3
+2026-03-11T00:00:00-07:00	USD	19.99	30618988401	Auto-generated promotion for Amazon Vine enrollment	70	sample-e26857ff2dce298cf008	sample-a8c8707ad9b7ada06a88	sample-61f93916fbfd18bc0f5b
+2026-03-11T00:00:00-07:00	USD	19.99	30618988401	Auto-generated promotion for Amazon Vine enrollment	70	sample-dac86c2c352a185922a9	sample-316c2b2c8e7f28eac6bc	sample-84942ae46e89e7e8e866
+2026-03-11T00:00:00-07:00	USD	19.99	30618988401	Auto-generated promotion for Amazon Vine enrollment	70	sample-fe58006cbbf37c97d848	sample-b0d3d04148681e402ae2	sample-f7ec752dcdbaa839d80b
+2026-03-11T00:00:00-07:00	USD	19.99	30618988401	Auto-generated promotion for Amazon Vine enrollment	70	sample-c9e8c0c694d379328a49	sample-0934687434dbbc9daab0	sample-d749f74c53bb6330e311
+2026-03-11T00:00:00-07:00	USD	19.99	30618988401	Auto-generated promotion for Amazon Vine enrollment	70	sample-281f629f4812fbb15335	sample-5866ce77cbfbc07d3588	sample-48f2c9ae413bcc089eff
+2026-03-11T00:00:00-07:00	USD	19.99	30618988401	Auto-generated promotion for Amazon Vine enrollment	70	sample-b73172455d2f1edd6450	sample-4d766e7ae6b35ef3ca40	sample-6d856ae300a5a6ea28b4
+2026-03-11T00:00:00-07:00	USD	19.99	30618988401	Auto-generated promotion for Amazon Vine enrollment	70	sample-ec5f14a909efeae5acdd	sample-b413df3bb84cfcb0581f	sample-857b2156d593d179db70
+2026-03-11T00:00:00-07:00	USD	19.99	30618988401	Auto-generated promotion for Amazon Vine enrollment	70	sample-b53da8640c579a81771d	sample-cda4cc66037aebffa99d	sample-45186cb78da2ff6ed3c4
+2026-03-11T00:00:00-07:00	USD	19.99	30618988401	Auto-generated promotion for Amazon Vine enrollment	70	sample-675f4db5063b66f36155	sample-c118b758d6aeb1633b18	sample-d6ef2bf470afae720801
+2026-03-11T00:00:00-07:00	USD	19.99	30618988401	Auto-generated promotion for Amazon Vine enrollment	70	sample-9f6653de87e99b73baac	sample-4dba196bb74962f13111	sample-76d6832df5d7ff1bb6a5
+2026-03-11T00:00:00-07:00	USD	19.99	30618988401	Auto-generated promotion for Amazon Vine enrollment	70	sample-83f9559f506946ce8d3f	sample-272a835906d81d7c326b	sample-691fdda8199b5edf8f31
+2026-03-11T00:00:00-07:00	USD	19.99	30618988401	Auto-generated promotion for Amazon Vine enrollment	70	sample-89239ee1a7569a4c3a46	sample-393b0e908cc2d736d32b	sample-72f549e6311c96f38ddd
+2026-03-11T00:00:00-07:00	USD	19.99	30618988401	Auto-generated promotion for Amazon Vine enrollment	70	sample-f64157f29f44a0b3362f	sample-aa2feeab252e3c224f75	sample-add786a7d4bfa01df89b
+2026-03-11T00:00:00-07:00	USD	19.99	30618988401	Auto-generated promotion for Amazon Vine enrollment	70	sample-ee1facaae03a5bfba881	sample-076c47bb18edafe317ea	sample-76854429674f49bd03c1
+2026-03-10T00:00:00-07:00	USD	0.21	29821996301	Nagle Item Discount Promotion US Jan 2026	59	sample-5b9963ee04280e8f61bb	sample-9f078bcc92dbb7c04e36	sample-e329aa174dd0d2ed88c1
