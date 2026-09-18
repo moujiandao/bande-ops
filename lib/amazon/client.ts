@@ -463,7 +463,12 @@ interface RawCatalogItem {
   }>;
   images?: Array<{
     marketplaceId?: string;
-    images?: Array<{ link?: string }>;
+    images?: Array<{
+      variant?: string;
+      link?: string;
+      height?: number;
+      width?: number;
+    }>;
   }>;
 }
 
@@ -521,7 +526,16 @@ function mapCatalogItem(raw: RawCatalogItem): CatalogItem {
   const skuId = raw.identifiers
     ?.flatMap((g) => g.identifiers ?? [])
     .find((i) => i.identifierType === 'SKU')?.identifier;
-  const imageUrl = raw.images?.[0]?.images?.[0]?.link;
+  const images = (raw.images ?? []).flatMap((group) => group.images ?? []);
+  const mainImages = images.filter(
+    (image) => image.variant?.toUpperCase() === 'MAIN' && image.link,
+  );
+  // Some older responses omit the variant. Preserve that compatible fallback,
+  // but never substitute an explicitly secondary image for the product thumbnail.
+  const candidates = mainImages.length
+    ? mainImages
+    : images.filter((image) => !image.variant && image.link);
+  const imageUrl = candidates[0]?.link;
 
   return {
     sku: skuId ?? '',

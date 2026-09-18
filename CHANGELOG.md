@@ -1,5 +1,10 @@
 # Changelog
 
+## [2026-09-18] Catalog thumbnails (unreleased)
+
+### Changed
+- Prefer Amazon's MAIN catalog image and deliver optimized product thumbnails instead of full source images.
+
 ## [2026-09-18] Medical Basics branding (unreleased)
 
 ### Changed

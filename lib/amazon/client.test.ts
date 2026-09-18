@@ -148,6 +148,86 @@ describe('SpApiClient', () => {
     expect(String(fetchMock.mock.calls[1][0])).toContain('pageToken=catalog-next');
   });
 
+  it('uses the MAIN catalog image instead of relying on image order', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      response({
+        items: [
+          {
+            asin: 'ASIN-1',
+            summaries: [{ itemName: 'Item 1' }],
+            identifiers: [
+              { identifiers: [{ identifierType: 'SKU', identifier: 'SKU-1' }] },
+            ],
+            images: [
+              {
+                images: [
+                  {
+                    variant: 'PT01',
+                    link: 'https://m.media-amazon.com/images/secondary.jpg',
+                    height: 1500,
+                    width: 1500,
+                  },
+                  {
+                    variant: 'MAIN',
+                    link: 'https://m.media-amazon.com/images/main.jpg',
+                    height: 500,
+                    width: 500,
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            asin: 'ASIN-2',
+            summaries: [{ itemName: 'Item 2' }],
+            identifiers: [
+              { identifiers: [{ identifierType: 'SKU', identifier: 'SKU-2' }] },
+            ],
+            images: [
+              {
+                images: [
+                  {
+                    variant: 'PT01',
+                    link: 'https://m.media-amazon.com/images/secondary-only.jpg',
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            asin: 'ASIN-3',
+            summaries: [{ itemName: 'Item 3' }],
+            identifiers: [
+              { identifiers: [{ identifierType: 'SKU', identifier: 'SKU-3' }] },
+            ],
+            images: [
+              {
+                images: [
+                  {
+                    link: 'https://m.media-amazon.com/images/legacy-main.jpg',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const items = await new SpApiClient().listCatalogItems({
+      sellerSkus: ['SKU-1'],
+    });
+
+    expect(items[0]?.imageUrl).toBe(
+      'https://m.media-amazon.com/images/main.jpg',
+    );
+    expect(items[1]?.imageUrl).toBeUndefined();
+    expect(items[2]?.imageUrl).toBe(
+      'https://m.media-amazon.com/images/legacy-main.jpg',
+    );
+  });
+
   it('maps and paginates AWD inventory', async () => {
     const fetchMock = vi
       .fn()

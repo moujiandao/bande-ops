@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useMemo, useState, useTransition } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { formatInventoryLevel } from '@/lib/inventory/format';
@@ -105,10 +106,12 @@ export function CatalogTable({ rows }: { rows: CatalogTableRow[] }) {
                   >
                     <td className="px-4 py-3">
                       {row.image_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
+                        <Image
                           src={row.image_url}
                           alt={row.title}
+                          width={300}
+                          height={300}
+                          sizes="40px"
                           className="h-10 w-10 rounded-md border border-border object-cover"
                         />
                       ) : (
