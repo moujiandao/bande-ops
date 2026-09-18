@@ -66,7 +66,7 @@ export default async function ReorderPage() {
               <div>
                 <h2 className="text-sm font-semibold text-foreground">Reorder now</h2>
                 <p className="mt-1 text-xs text-muted">
-                  Suggested quantities count policy-eligible supply at FBA, AWD, and SVD. Change the scenario without changing saved SKU settings, or update SKU coverage in <Link href="/settings" className="text-accent underline underline-offset-2">Settings</Link>.
+                  Suggested quantities count policy-eligible supply at FBA, AWD, and SVD. Additional misc units are temporary planning inputs and reset when the page reloads. Change the scenario without changing saved SKU settings, or update SKU coverage in <Link href="/settings" className="text-accent underline underline-offset-2">Settings</Link>.
                 </p>
               </div>
               <Badge variant="accent">{data.toReorder.length}</Badge>

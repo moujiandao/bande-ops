@@ -248,3 +248,23 @@ Amazon snapshot moved to 427 available + 3,004 FC transfer = 3,431 on hand, veri
 in the expanded live Catalog cell. All release checks are complete. Future Amazon
 quota failures remain possible, but they now produce explicit partial-result
 feedback and cannot prevent the independent FBA refresh from being attempted.
+
+## 2026-09-18 Additional miscellaneous units
+
+Brian requested an editable Additional misc units column on Reorder now. It is a
+temporary per-SKU planning adjustment, not a synced inventory source or saved
+operational fact. Blank means zero; only nonnegative whole units are accepted.
+The adjusted supply is used consistently for Total, Total cover, the reorder
+trigger, the selected coverage scenario, Suggested order, and numeric sorting.
+Unknown base supply remains unknown, so a manual entry cannot bypass source-health
+gates or manufacture a recommendation. Inputs reset on page reload to prevent a
+stale manual count from surviving a later Amazon refresh. FBA Replenishment,
+Needs review, Well stocked, Legacy, Analytics, and saved SKU settings are unchanged.
+
+Targeted unit and rendering tests cover column placement, scope, adjusted math,
+trigger behavior, and unknown-supply safety. A local browser interaction verified
+that adding 1,000 units changed the example total from 6,250 to 7,250, total cover
+from 94 to 109 days, and the 6-month suggested order to 4,684. The temporary
+preview route, server, and browser tab were removed after verification. The full
+566-test suite, lint, TypeScript, instruction checks, production build, and required
+read-only code review passed with no findings. Merge and deployment remain pending.

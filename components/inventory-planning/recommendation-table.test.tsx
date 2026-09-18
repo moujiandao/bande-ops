@@ -4,6 +4,7 @@ import type { RecommendationRow } from '@/lib/reorder/service';
 import {
   copyEmailDraft,
   emailClipboardBlobs,
+  usableSupplyWithMisc,
   orderQuantityForCoverage,
   RecommendationTable,
   FbaBreakdown,
@@ -72,6 +73,25 @@ function orderRow(): RecommendationRow {
 }
 
 describe('RecommendationTable coverage selector', () => {
+  it('adds a reorder-only misc-units input between SVD and Total', () => {
+    const html = renderToStaticMarkup(
+      <RecommendationTable rows={[orderRow()]} trailingHeader="Order" variant="order" />,
+    );
+
+    const svdColumn = html.indexOf('>SVD<');
+    const miscColumn = html.indexOf('>Additional misc units<');
+    const totalColumn = html.indexOf('>Total<');
+    expect(miscColumn).toBeGreaterThan(svdColumn);
+    expect(totalColumn).toBeGreaterThan(miscColumn);
+    expect(html).toContain('aria-label="Additional misc units for SKU-1"');
+    expect(html).toContain('placeholder="0"');
+
+    const statusHtml = renderToStaticMarkup(
+      <RecommendationTable rows={[orderRow()]} trailingHeader="Status" variant="status" />,
+    );
+    expect(statusHtml).not.toContain('Additional misc units');
+  });
+
   it('offers an archive action for each row', () => {
     const html = renderToStaticMarkup(
       <RecommendationTable rows={[orderRow()]} trailingHeader="Order" variant="order" />,
@@ -145,6 +165,27 @@ describe('RecommendationTable coverage selector', () => {
     expect(orderQuantityForCoverage(row, 30)).toBe(10);
     expect(orderQuantityForCoverage(row, 180)).toBe(310);
     expect(row.recommendation).toMatchObject({ recommendedQty: 130 });
+  });
+
+  it('counts additional misc units in total, cover, and suggested order', () => {
+    const row = orderRow();
+
+    expect(usableSupplyWithMisc(row, '')).toBe(50);
+    expect(usableSupplyWithMisc(row, 20)).toBe(70);
+    expect(orderQuantityForCoverage(row, null, 5)).toBe(125);
+    // 70 units exceeds the 60-unit reorder point, so this scenario no longer
+    // triggers an order even though it remains below the 90-day target.
+    expect(orderQuantityForCoverage(row, null, 20)).toBe(0);
+    expect(row.usableSupply).toBe(50);
+  });
+
+  it('preserves unknown supply instead of letting a manual value manufacture a recommendation', () => {
+    const row = orderRow();
+    row.usableSupply = null;
+    row.recommendation = { status: 'needs-review', reason: 'unknown-usable-supply' };
+
+    expect(usableSupplyWithMisc(row, 100)).toBeNull();
+    expect(orderQuantityForCoverage(row, null, 100)).toBeNull();
   });
 });
 

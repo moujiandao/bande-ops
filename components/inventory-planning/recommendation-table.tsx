@@ -41,6 +41,7 @@ type SortKey =
   | 'fba'
   | 'awd'
   | 'svd'
+  | 'misc'
   | 'total'
   | 'perDay'
   | 'cover'
@@ -48,6 +49,7 @@ type SortKey =
   | 'trailing';
 
 export type RecommendationTableVariant = 'order' | 'status' | 'legacy' | 'replenish';
+type AdditionalMiscUnits = Record<string, number | ''>;
 
 export function emailClipboardBlobs(
   html: string,
@@ -134,20 +136,32 @@ function coverDays(supply: number | null, demand: number | null): number | null 
   return Math.floor(supply / demand);
 }
 
+export function usableSupplyWithMisc(
+  row: RecommendationRow,
+  additionalMiscUnits: number | '',
+): number | null {
+  if (row.usableSupply === null) return null;
+  const misc = additionalMiscUnits === '' ? 0 : additionalMiscUnits;
+  if (!Number.isInteger(misc) || misc < 0) return null;
+  return row.usableSupply + misc;
+}
+
 export function orderQuantityForCoverage(
   row: RecommendationRow,
   coverageDays: number | null,
+  additionalMiscUnits: number | '' = '',
 ): number | null {
   if (row.recommendation.status !== 'ok') return null;
-  if (coverageDays === null) return row.recommendation.recommendedQty;
+  const adjustedSupply = usableSupplyWithMisc(row, additionalMiscUnits);
+  if (adjustedSupply === null) return null;
 
   const { reasoning } = row.recommendation;
   const recalculated = recommend({
-    usableSupply: reasoning.usableSupply,
+    usableSupply: adjustedSupply,
     dailyDemand: reasoning.dailyDemand,
     leadTimeDays: reasoning.leadTimeDays,
     safetyStock: reasoning.safetyStock,
-    coverageDays,
+    coverageDays: coverageDays ?? reasoning.coverageDays,
   });
   return recalculated.status === 'ok' ? recalculated.recommendedQty : null;
 }
@@ -277,7 +291,10 @@ function sortValue(
   svdToFbaTargetDays: number,
   coverageDays: number | null,
   momentumBySku: Record<string, MomentumSignal> | undefined,
+  additionalMiscUnits: AdditionalMiscUnits,
 ): string | number | null {
+  const misc = additionalMiscUnits[svdShipmentRowKey(row)] ?? '';
+  const adjustedSupply = usableSupplyWithMisc(row, misc);
   switch (key) {
     case 'sku':
       return row.sku.toLowerCase();
@@ -289,20 +306,22 @@ function sortValue(
       return row.sources.awd;
     case 'svd':
       return row.sources.svd;
+    case 'misc':
+      return misc === '' ? 0 : misc;
     case 'total':
-      return row.usableSupply;
+      return adjustedSupply;
     case 'perDay':
       return row.dailyDemand;
     case 'cover':
       return variant === 'replenish'
         ? amazonSideCover(row)
-        : coverDays(row.usableSupply, row.dailyDemand);
+        : coverDays(adjustedSupply, row.dailyDemand);
     case 'momentum': {
       const signal = momentumBySku?.[row.sku];
       return signal?.absoluteChange ?? null;
     }
     case 'trailing':
-      if (variant === 'order') return orderQuantityForCoverage(row, coverageDays);
+      if (variant === 'order') return orderQuantityForCoverage(row, coverageDays, misc);
       if (variant === 'replenish') return suggestedShipQty(row, svdToFbaTargetDays);
       return statusText(row, variant);
   }
@@ -330,6 +349,13 @@ const COLUMNS: { key: SortKey; label: string; title: string; numeric: boolean }[
   { key: 'cover', label: 'Cover', title: 'Days of supply at current demand', numeric: true },
 ];
 
+const MISC_UNITS_COLUMN = {
+  key: 'misc' as const,
+  label: 'Additional misc units',
+  title: 'Temporary extra units counted in total supply, cover, and suggested order',
+  numeric: true,
+};
+
 const REPLENISH_COLUMNS = [
   COLUMNS[0],
   BOX_COLUMN,
@@ -340,7 +366,11 @@ const REPLENISH_COLUMNS = [
   { ...COLUMNS[6], label: 'Amazon cover', title: 'Days of policy-counted FBA and AWD supply at current demand; excludes SVD' },
 ];
 
-const ORDER_COLUMNS = COLUMNS.map((column) =>
+const ORDER_COLUMNS = [
+  ...COLUMNS.slice(0, 4),
+  MISC_UNITS_COLUMN,
+  ...COLUMNS.slice(4),
+].map((column) =>
   column.key === 'cover'
     ? {
         ...column,
@@ -414,6 +444,8 @@ export function RecommendationTable({
   const [boxesToSend, setBoxesToSend] =
     useState<SvdShipmentBoxCounts>(initialBoxCounts);
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [additionalMiscUnits, setAdditionalMiscUnits] =
+    useState<AdditionalMiscUnits>({});
   const [draftHtml, setDraftHtml] = useState<string | null>(null);
   const [draftResetVersion, setDraftResetVersion] = useState(0);
   const shipmentStorageLoading = useRef(showBoxesToSend);
@@ -488,6 +520,7 @@ export function RecommendationTable({
         replenishTargetDays,
         coverageDays,
         momentumBySku,
+        additionalMiscUnits,
       );
       const bv = sortValue(
         b,
@@ -496,6 +529,7 @@ export function RecommendationTable({
         replenishTargetDays,
         coverageDays,
         momentumBySku,
+        additionalMiscUnits,
       );
       // Unknown values always sink, so sorting never buries real data under
       // a wall of em dashes.
@@ -516,6 +550,7 @@ export function RecommendationTable({
     replenishTargetDays,
     coverageDays,
     momentumBySku,
+    additionalMiscUnits,
   ]);
 
   function toggle(key: SortKey) {
@@ -551,6 +586,16 @@ export function RecommendationTable({
 
   function updateNote(rowKey: string, value: string) {
     setNotes((current) => ({ ...current, [rowKey]: value }));
+  }
+
+  function updateAdditionalMiscUnits(rowKey: string, rawValue: string) {
+    let value: number | '' = '';
+    if (rawValue !== '') {
+      const parsed = Number(rawValue);
+      if (!Number.isInteger(parsed) || parsed < 0) return;
+      value = parsed;
+    }
+    setAdditionalMiscUnits((current) => ({ ...current, [rowKey]: value }));
   }
 
   async function copyEmail() {
@@ -723,6 +768,8 @@ export function RecommendationTable({
           {sorted.map((row) => {
             const rowKey = svdShipmentRowKey(row);
             const isExpanded = expandedFba === rowKey;
+            const miscUnits = additionalMiscUnits[rowKey] ?? '';
+            const adjustedSupply = usableSupplyWithMisc(row, miscUnits);
             return (
             <Fragment key={rowKey}>
             <tr className="border-b border-border/50 last:border-0">
@@ -774,6 +821,25 @@ export function RecommendationTable({
                   >
                     {num(row.sources.svd)}
                   </td>,
+                  ...(variant === 'order'
+                    ? [
+                        <td key="misc" className="px-3 py-2 text-right">
+                          <input
+                            type="number"
+                            min={0}
+                            step={1}
+                            inputMode="numeric"
+                            aria-label={`Additional misc units for ${row.sku}`}
+                            placeholder="0"
+                            value={miscUnits}
+                            onChange={(event) =>
+                              updateAdditionalMiscUnits(rowKey, event.currentTarget.value)
+                            }
+                            className="w-24 rounded-md border border-border bg-panel px-2 py-1 text-right text-xs tabular-nums text-foreground placeholder:text-faint focus:border-accent focus:outline-none"
+                          />
+                        </td>,
+                      ]
+                    : []),
                   ...(variant === 'replenish'
                     ? []
                     : [
@@ -781,7 +847,7 @@ export function RecommendationTable({
                           key="total"
                           className="px-3 py-2 text-right tabular-nums text-foreground"
                         >
-                          {num(row.usableSupply)}
+                          {num(adjustedSupply)}
                         </td>,
                       ]),
                   <td key="perDay" className="px-3 py-2 text-right tabular-nums text-muted">
@@ -791,7 +857,7 @@ export function RecommendationTable({
                     {num(
                       variant === 'replenish'
                         ? amazonSideCover(row)
-                        : coverDays(row.usableSupply, row.dailyDemand),
+                        : coverDays(adjustedSupply, row.dailyDemand),
                     )}
                   </td>,
                   <td key="trailing" className="px-3 py-2 text-right">
@@ -799,7 +865,7 @@ export function RecommendationTable({
                       <span className="text-sm font-semibold tabular-nums text-accent-strong">
                         {num(
                           variant === 'order'
-                            ? orderQuantityForCoverage(row, coverageDays)
+                            ? orderQuantityForCoverage(row, coverageDays, miscUnits)
                             : suggestedShipQty(row, replenishTargetDays),
                         )}
                       </span>

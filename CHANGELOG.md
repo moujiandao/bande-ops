@@ -1,5 +1,13 @@
 # Changelog
 
+## [2026-09-18] Reorder miscellaneous units (unreleased)
+
+### Added
+- Add a temporary per-SKU Additional misc units input to Supplier Reorder.
+
+### Changed
+- Count additional miscellaneous units in total usable supply, total cover, and suggested supplier order calculations without changing saved inventory or SKU settings.
+
 ## [2026-09-18] Catalog refresh recovery
 
 ### Changed
