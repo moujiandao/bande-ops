@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { RecommendationRow } from './service';
-import { transferCandidates } from './workflow-data';
+import {
+  REORDER_ANALYTICS_HISTORY_DAYS,
+  transferCandidates,
+} from './workflow-data';
+
+it('uses the same 365-day best-evidence horizon as Advanced Analytics', () => {
+  expect(REORDER_ANALYTICS_HISTORY_DAYS).toBe(365);
+});
 
 function row(
   recommendation: RecommendationRow['recommendation'],

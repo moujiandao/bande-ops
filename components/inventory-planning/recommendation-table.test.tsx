@@ -103,32 +103,55 @@ describe('RecommendationTable coverage selector', () => {
   });
 
   it('links an actionable row to its dated analytics evidence', () => {
+    const signal = {
+      kind: 'trending-up' as const,
+      label: 'Trending up +50%',
+      absoluteChange: 1,
+      percentageChange: 50,
+      recentVelocity: 3,
+      previousVelocity: 2,
+      recentStartDate: '2026-09-11',
+      recentEndDate: '2026-09-17',
+      previousStartDate: '2026-09-04',
+      previousEndDate: '2026-09-10',
+      bestVelocity: 4.2,
+      bestStartDate: '2026-08-08',
+      bestEndDate: '2026-08-14',
+    };
     const html = renderToStaticMarkup(
       <RecommendationTable
         rows={[orderRow()]}
         trailingHeader="Order"
         variant="order"
-        momentumBySku={{
-          'SKU-1': {
-            kind: 'trending-up',
-            label: 'Trending up +50%',
-            absoluteChange: 1,
-            percentageChange: 50,
-            recentVelocity: 3,
-            previousVelocity: 2,
-            recentStartDate: '2026-09-11',
-            recentEndDate: '2026-09-17',
-            previousStartDate: '2026-09-04',
-            previousEndDate: '2026-09-10',
-          },
-        }}
+        momentumBySku={{ 'SKU-1': signal }}
       />,
     );
 
-    expect(html).toContain('>Momentum<');
+    const bestColumn = html.indexOf('>Best<');
+    const signalColumn = html.indexOf('>Signal<');
+    const bestDatesColumn = html.indexOf('>Best dates<');
+    expect(bestColumn).toBeGreaterThan(-1);
+    expect(signalColumn).toBeGreaterThan(bestColumn);
+    expect(bestDatesColumn).toBeGreaterThan(signalColumn);
     expect(html).toContain('href="/analytics?sku=SKU-1"');
     expect(html).toContain('Trending up +50%');
     expect(html).toContain('Recent 2026-09-11 to 2026-09-17');
+    expect(html).toContain('>4.2</td>');
+    expect(html).toContain('>2026-08-08 to 2026-08-14</td>');
+
+    const replenishHtml = renderToStaticMarkup(
+      <RecommendationTable
+        rows={[replenishRow()]}
+        trailingHeader="Ship"
+        variant="replenish"
+        svdToFbaTargetDays={30}
+        shipmentMonthYear="August 2026"
+        userId="user-1"
+        momentumBySku={{ 'SKU-1': signal }}
+      />,
+    );
+    expect(replenishHtml).toContain('>Momentum<');
+    expect(replenishHtml).not.toContain('>Best dates<');
   });
 
   it('offers the legacy coverage presets on the order list only', () => {

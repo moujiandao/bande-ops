@@ -267,4 +267,31 @@ that adding 1,000 units changed the example total from 6,250 to 7,250, total cov
 from 94 to 109 days, and the 6-month suggested order to 4,684. The temporary
 preview route, server, and browser tab were removed after verification. The full
 566-test suite, lint, TypeScript, instruction checks, production build, and required
-read-only code review passed with no findings. Merge and deployment remain pending.
+read-only code review passed with no findings.
+
+Released as `b1560ca`. GitHub CI run 35324886648 and Vercel deployment
+F7BtdqatVmfyjFN9nHKBzHDr5625 passed. Live verification on
+ops.medicalbasics.com confirmed that entering 1,000 additional units for
+`hp_notebook_single` changed Total from 6,250 to 7,250, Total cover from 94 to
+109 days, and Suggested order from 9,657 to 8,657 under its configured SKU
+coverage. Reloading clears the temporary value as designed.
+
+## 2026-09-18 Reorder analytics evidence
+
+Supplier Reorder now exposes the same Best velocity, Signal, and Best dates used
+by Advanced Analytics. The shared momentum signal carries the best complete
+window's daily velocity and exact start/end dates; the reorder table only renders
+that result and links Signal to the product's Analytics evidence. Reorder planning
+now reads the default 365-day analytics horizon rather than 90 days so Best and
+Best dates are consistent between both pages. Recent and previous comparison
+windows remain seven eligible days, and giveaway exclusion settings and source
+health gates remain shared. FBA Replenishment retains its compact Momentum column.
+
+The workflow-boundary regression pins the shared horizon at 365 days. A read-only
+production measurement loaded 16,592 ledger rows across 17 pages in 3.23 seconds
+without error, with data through 2026-09-15. Targeted rendering, analytics, and
+workflow tests passed, including the compact FBA Replenishment variant. The full
+567-test suite, lint, TypeScript, instruction checks, whitespace check, and
+production build passed. Required read-only code review passed after confirming
+the workflow regression and production timing closed both review notes. Merge and
+deployment remain pending.

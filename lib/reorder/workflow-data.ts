@@ -11,6 +11,8 @@ import { readShipmentAdjustments } from '@/lib/shipments/read';
 import { shouldReplenishFromSvd } from './replenish';
 import { assembleRecommendations } from './service';
 
+export const REORDER_ANALYTICS_HISTORY_DAYS = 365 as const;
+
 function reorderQty(
   row: Awaited<ReturnType<typeof assembleRecommendations>>['rows'][number],
 ): number {
@@ -42,7 +44,7 @@ export async function loadReorderWorkflowData() {
   const supabase = await createClient();
   const [recommendations, analyticsHistory, archivedRes, analyticsSettings] = await Promise.all([
     assembleRecommendations({ supabase }),
-    readAnalyticsHistory({ supabase, historyDays: 90 }),
+    readAnalyticsHistory({ supabase, historyDays: REORDER_ANALYTICS_HISTORY_DAYS }),
     supabase.from('archived_skus').select('marketplace_id, sku'),
     readAnalyticsSettings(supabase),
   ]);
@@ -64,7 +66,7 @@ export async function loadReorderWorkflowData() {
         products: rows,
         ledgerRows: analyticsHistory.rows,
         windowDays: 7,
-        historyDays: 90,
+        historyDays: REORDER_ANALYTICS_HISTORY_DAYS,
         dataThroughDate: analyticsHistory.dataThroughDate,
         excludeVine: analyticsSettings.excludeVine === true,
         adjustmentRows: adjustment?.rows,

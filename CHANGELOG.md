@@ -1,6 +1,11 @@
 # Changelog
 
-## [2026-09-18] Reorder miscellaneous units (unreleased)
+## [2026-09-18] Reorder analytics evidence (unreleased)
+
+### Added
+- Add Best velocity, Signal, and Best dates columns to Supplier Reorder using the shared 365-day analytics evidence.
+
+## [2026-09-18] Reorder miscellaneous units
 
 ### Added
 - Add a temporary per-SKU Additional misc units input to Supplier Reorder.

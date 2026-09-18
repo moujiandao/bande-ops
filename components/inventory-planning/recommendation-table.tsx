@@ -45,7 +45,9 @@ type SortKey =
   | 'total'
   | 'perDay'
   | 'cover'
+  | 'best'
   | 'momentum'
+  | 'bestDates'
   | 'trailing';
 
 export type RecommendationTableVariant = 'order' | 'status' | 'legacy' | 'replenish';
@@ -111,6 +113,11 @@ function sanitizeShipmentEmailHtml(html: string): string {
 
 function num(value: number | null | undefined): string {
   return value === null || value === undefined ? '—' : String(Math.round(value));
+}
+
+function bestDateRange(signal: MomentumSignal | undefined): string {
+  if (!signal?.bestStartDate || !signal.bestEndDate) return 'No qualifying period';
+  return `${signal.bestStartDate} to ${signal.bestEndDate}`;
 }
 
 /**
@@ -316,10 +323,14 @@ function sortValue(
       return variant === 'replenish'
         ? amazonSideCover(row)
         : coverDays(adjustedSupply, row.dailyDemand);
+    case 'best':
+      return momentumBySku?.[row.sku]?.bestVelocity ?? null;
     case 'momentum': {
       const signal = momentumBySku?.[row.sku];
       return signal?.absoluteChange ?? null;
     }
+    case 'bestDates':
+      return momentumBySku?.[row.sku]?.bestEndDate ?? null;
     case 'trailing':
       if (variant === 'order') return orderQuantityForCoverage(row, coverageDays, misc);
       if (variant === 'replenish') return suggestedShipQty(row, svdToFbaTargetDays);
@@ -431,6 +442,11 @@ export function RecommendationTable({
   const showMomentum =
     (variant === 'order' || variant === 'replenish') &&
     momentumBySku !== undefined;
+  const analyticsEvidenceColumnCount = showMomentum
+    ? variant === 'order'
+      ? 3
+      : 1
+    : 0;
   const visibleColumns =
     variant === 'replenish'
       ? REPLENISH_COLUMNS
@@ -498,7 +514,7 @@ export function RecommendationTable({
   // Fixed (non-Notes) columns: data + trailing + boxes-to-send when replenishing.
   const fixedColumnCount =
     visibleColumns.length +
-    (showMomentum ? 1 : 0) +
+    analyticsEvidenceColumnCount +
     1 +
     (showBoxesToSend ? 1 : 0);
   // Where the draggable Notes column sits among the fixed columns (insert-before
@@ -690,26 +706,26 @@ export function RecommendationTable({
         </div>
       ) : null}
       <div className="overflow-x-auto rounded-panel border border-border bg-panel">
-        <table className="w-full min-w-[960px] text-xs">
+        <table className={`w-full text-xs ${variant === 'order' ? 'min-w-[1380px]' : 'min-w-[960px]'}`}>
           <thead className="border-b border-border text-faint">
             <tr>
               {(() => {
                 const cells = visibleColumns.map((c, i) =>
                   header(c.key, c.label, c.title, c.numeric, i),
                 );
-                if (showMomentum) {
+                if (showMomentum && variant === 'order') {
                   cells.push(
-                    header(
-                      'momentum',
-                      'Momentum',
-                      'Observed recent velocity trend; opens dated evidence',
-                      false,
-                      visibleColumns.length,
-                    ),
+                    header('best', 'Best', 'Best observed units per eligible selling day', true, visibleColumns.length),
+                    header('momentum', 'Signal', 'Observed recent velocity trend; opens dated evidence', false, visibleColumns.length + 1),
+                    header('bestDates', 'Best dates', 'Dates of the best complete observed window', false, visibleColumns.length + 2),
+                  );
+                } else if (showMomentum) {
+                  cells.push(
+                    header('momentum', 'Momentum', 'Observed recent velocity trend; opens dated evidence', false, visibleColumns.length),
                   );
                 }
                 const trailingIndex =
-                  visibleColumns.length + (showMomentum ? 1 : 0);
+                  visibleColumns.length + analyticsEvidenceColumnCount;
                 cells.push(
                   header(
                     'trailing',
@@ -911,9 +927,7 @@ export function RecommendationTable({
                         .filter(Boolean)
                         .join('. ')
                     : 'No observed momentum evidence yet';
-                  cells.splice(
-                    cells.length - 1,
-                    0,
+                  const signalCell = (
                     <td key="momentum" className="px-3 py-2">
                       <Link
                         href={`/analytics?sku=${encodeURIComponent(row.sku)}`}
@@ -922,8 +936,22 @@ export function RecommendationTable({
                       >
                         {signal?.label ?? 'Needs evidence'}
                       </Link>
-                    </td>,
+                    </td>
                   );
+                  const evidenceCells = variant === 'order'
+                    ? [
+                        <td key="best" className="px-3 py-2 text-right tabular-nums text-muted">
+                          {signal?.bestVelocity === null || signal?.bestVelocity === undefined
+                            ? 'Unknown'
+                            : signal.bestVelocity.toFixed(1)}
+                        </td>,
+                        signalCell,
+                        <td key="best-dates" className="whitespace-nowrap px-3 py-2 tabular-nums text-muted">
+                          {bestDateRange(signal)}
+                        </td>,
+                      ]
+                    : [signalCell];
+                  cells.splice(cells.length - 1, 0, ...evidenceCells);
                 }
                 if (showBoxesToSend) {
                   cells.push(

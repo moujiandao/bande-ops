@@ -112,6 +112,9 @@ export interface MomentumSignal {
   recentEndDate: string | null;
   previousStartDate: string | null;
   previousEndDate: string | null;
+  bestVelocity: number | null;
+  bestStartDate: string | null;
+  bestEndDate: string | null;
 }
 
 export interface BuildSalesAnalyticsInput {
@@ -208,6 +211,9 @@ export function momentumSignal(momentum: SalesMomentumResult): MomentumSignal {
     recentEndDate: momentum.recent?.endDate ?? momentum.early?.endDate ?? null,
     previousStartDate: momentum.previous?.startDate ?? null,
     previousEndDate: momentum.previous?.endDate ?? null,
+    bestVelocity: momentum.best?.dailyVelocity ?? null,
+    bestStartDate: momentum.best?.startDate ?? null,
+    bestEndDate: momentum.best?.endDate ?? null,
   };
 }
 

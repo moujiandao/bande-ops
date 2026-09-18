@@ -3,6 +3,7 @@ import type { RecommendationRow } from '@/lib/reorder/service';
 import {
   analyticsSourceIssue,
   buildSalesAnalytics,
+  momentumSignal,
   readAnalyticsHistory,
   type ReadAnalyticsHistoryDeps,
 } from './service';
@@ -231,6 +232,11 @@ describe('buildSalesAnalytics', () => {
       configured: 35,
       recent: 14,
       best: 14,
+    });
+    expect(momentumSignal(result.momentum)).toMatchObject({
+      bestVelocity: 5,
+      bestStartDate: '2026-09-11',
+      bestEndDate: '2026-09-17',
     });
     expect(result.stockConstrained).toBe(true);
   });
