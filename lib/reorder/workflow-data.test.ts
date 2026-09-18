@@ -16,6 +16,7 @@ function row(
     marketplaceId: 'ATVPDKIKX0DER',
     sku: 'SKU',
     title: 'Product',
+    imageUrl: null,
     usableSupply: 100,
     dailyDemand: 4,
     velocitySampleDays: 90,

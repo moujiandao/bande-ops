@@ -1,6 +1,13 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { RecommendationRow } from '@/lib/reorder/service';
+
+vi.mock('next/image', () => ({
+  default: ({ src, alt, width, height, sizes }: { src: string; alt: string; width: number; height: number; sizes: string }) => (
+    <span role="img" aria-label={alt} data-src={src} data-width={width} data-height={height} data-sizes={sizes} />
+  ),
+}));
+
 import {
   copyEmailDraft,
   emailClipboardBlobs,
@@ -15,6 +22,7 @@ function replenishRow(): RecommendationRow {
     marketplaceId: 'ATVPDKIKX0DER',
     sku: 'SKU-1',
     title: 'Product',
+    imageUrl: 'https://m.media-amazon.com/images/main.jpg',
     usableSupply: 159,
     dailyDemand: 4,
     velocitySampleDays: 90,
@@ -90,6 +98,31 @@ describe('RecommendationTable coverage selector', () => {
       <RecommendationTable rows={[orderRow()]} trailingHeader="Status" variant="status" />,
     );
     expect(statusHtml).not.toContain('Additional misc units');
+  });
+
+  it('shows optimized catalog thumbnails only on Reorder now rows', () => {
+    const html = renderToStaticMarkup(
+      <RecommendationTable rows={[orderRow()]} trailingHeader="Order" variant="order" />,
+    );
+
+    expect(html).toContain('aria-label="Product"');
+    expect(html).toContain('data-src="https://m.media-amazon.com/images/main.jpg"');
+    expect(html).toContain('data-width="300"');
+    expect(html).toContain('data-height="300"');
+    expect(html).toContain('data-sizes="40px"');
+
+    const missingImageRow = orderRow();
+    missingImageRow.imageUrl = null;
+    const missingHtml = renderToStaticMarkup(
+      <RecommendationTable rows={[missingImageRow]} trailingHeader="Order" variant="order" />,
+    );
+    expect(missingHtml).toContain('>N/A</span>');
+
+    const statusHtml = renderToStaticMarkup(
+      <RecommendationTable rows={[orderRow()]} trailingHeader="Status" variant="status" />,
+    );
+    expect(statusHtml).not.toContain('role="img"');
+    expect(statusHtml).not.toContain('>N/A</span>');
   });
 
   it('offers an archive action for each row', () => {

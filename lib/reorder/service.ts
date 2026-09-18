@@ -35,6 +35,8 @@ export interface RecommendationRow {
   marketplaceId: string;
   sku: string;
   title: string;
+  /** Amazon catalog image URL. The synced mirror stores the URL, never image bytes. */
+  imageUrl: string | null;
   usableSupply: number | null;
   dailyDemand: number | null;
   velocitySampleDays: number | null;
@@ -135,6 +137,7 @@ type CatalogRow = {
   marketplace_id: string;
   sku: string;
   title: string;
+  image_url: string | null;
   open_date: string | null;
 };
 type FbaRow = {
@@ -276,7 +279,7 @@ export async function assembleRecommendations(
   ] = await Promise.all([
     deps.supabase
       .from('catalog_items')
-      .select('marketplace_id, sku, title, open_date')
+      .select('marketplace_id, sku, title, image_url, open_date')
       .eq('marketplace_id', marketplace.id),
     deps.supabase
       .from('inventory_levels')
@@ -547,6 +550,7 @@ export async function assembleRecommendations(
         marketplaceId: item.marketplace_id,
         sku: item.sku,
         title: item.title,
+        imageUrl: item.image_url ?? null,
         usableSupply: retainSupply ? supply.usableSupply : null,
         dailyDemand,
         velocitySampleDays: velocity?.in_stock_sample_days ?? null,
@@ -571,6 +575,7 @@ export async function assembleRecommendations(
         marketplaceId: item.marketplace_id,
         sku: item.sku,
         title: item.title,
+        imageUrl: item.image_url ?? null,
         usableSupply: null,
         dailyDemand,
         velocitySampleDays: velocity?.in_stock_sample_days ?? null,
@@ -606,6 +611,7 @@ export async function assembleRecommendations(
       marketplaceId: item.marketplace_id,
       sku: item.sku,
       title: item.title,
+      imageUrl: item.image_url ?? null,
       usableSupply,
       dailyDemand,
       velocitySampleDays: velocity?.in_stock_sample_days ?? null,

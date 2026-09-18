@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import {
   Fragment,
   useEffect,
@@ -793,10 +794,31 @@ export function RecommendationTable({
                 const cells = [
                   <td
                     key="sku"
-                    className="max-w-[260px] truncate px-3 py-2 font-mono text-foreground"
+                    className="max-w-[260px] px-3 py-2 text-foreground"
                     title={`${row.title} — FNSKU ${row.fnSku ?? 'unknown'}`}
                   >
-                    {row.sku}
+                    <div className="flex min-w-0 items-center gap-2">
+                      {variant === 'order' ? (
+                        row.imageUrl ? (
+                          <Image
+                            src={row.imageUrl}
+                            alt={row.title}
+                            width={300}
+                            height={300}
+                            sizes="40px"
+                            className="h-10 w-10 shrink-0 rounded-md border border-border object-cover"
+                          />
+                        ) : (
+                          <span
+                            aria-hidden="true"
+                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-dashed border-border text-[10px] text-faint"
+                          >
+                            N/A
+                          </span>
+                        )
+                      ) : null}
+                      <span className="truncate font-mono">{row.sku}</span>
+                    </div>
                   </td>,
                   ...(showBoxName
                     ? [

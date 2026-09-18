@@ -1,5 +1,10 @@
 # Changelog
 
+## [2026-09-18] Supplier reorder thumbnails (unreleased)
+
+### Added
+- Show optimized Amazon catalog thumbnails beside SKUs in the Supplier Reorder action list.
+
 ## [2026-09-18] Catalog thumbnails
 
 ### Changed

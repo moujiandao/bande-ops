@@ -42,7 +42,12 @@ function baseTables(): Record<string, TableData> {
   return {
     catalog_items: {
       data: [
-        { marketplace_id: mkt, sku: 'SKU-LOW', title: 'Low stock widget' },
+        {
+          marketplace_id: mkt,
+          sku: 'SKU-LOW',
+          title: 'Low stock widget',
+          image_url: 'https://m.media-amazon.com/images/low.jpg',
+        },
         { marketplace_id: mkt, sku: 'SKU-HIGH', title: 'Well stocked widget' },
         { marketplace_id: mkt, sku: 'SKU-MISSING-MAP', title: 'Missing map widget' },
       ],
@@ -227,6 +232,7 @@ describe('assembleRecommendations', () => {
     const low = rows.find((row) => row.sku === 'SKU-LOW');
 
     expect(low).toBeDefined();
+    expect(low!.imageUrl).toBe('https://m.media-amazon.com/images/low.jpg');
     expect(low!.sourceMapping).toEqual({
       status: 'mapped',
       svdItemId: 'svd-low',

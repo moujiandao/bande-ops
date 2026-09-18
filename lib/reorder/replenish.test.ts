@@ -41,6 +41,7 @@ function row(overrides: RowOverrides = {}): RecommendationRow {
     marketplaceId: 'ATVPDKIKX0DER',
     sku: 'SKU',
     title: 'Title',
+    imageUrl: null,
     usableSupply: null,
     dailyDemand: 4,
     velocitySampleDays: 90,

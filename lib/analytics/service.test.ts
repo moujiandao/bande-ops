@@ -66,6 +66,7 @@ function recommendation(): RecommendationRow {
     marketplaceId: 'ATVPDKIKX0DER',
     sku: 'SKU-1',
     title: 'Product',
+    imageUrl: null,
     usableSupply: 70,
     dailyDemand: 2,
     velocitySampleDays: 90,
