@@ -33,4 +33,7 @@ export async function syncCatalogAction(): Promise<void> {
   await syncInventory({ client, admin });
 
   revalidatePath('/catalog');
+  revalidatePath('/reorder');
+  revalidatePath('/replenishment');
+  revalidatePath('/analytics');
 }

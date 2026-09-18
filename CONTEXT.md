@@ -36,3 +36,15 @@ _Avoid_: purchase order, replenishment order.
 **Unknown stock**:
 An inventory value Amazon reports as non-numeric/unavailable. Distinct from a true zero; flagged for review, never computed as 0.
 _Avoid_: empty, missing, zero.
+
+
+**FBA on-hand**:
+Buyable FBA inventory: immediately fulfillable units plus units transferring
+between Amazon fulfillment centers. Both count toward planning coverage.
+Distinct from Amazon's broader total inventory (which includes other stock).
+
+**FC transfer**:
+Buyable units moving between Amazon fulfillment centers. SP-API reports this as
+`reservedQuantity.pendingTransshipmentQuantity`, inside its reserved total.
+Display it separately from other reserved units and count it exactly once.
+_Avoid_: AWD replenishment, inbound shipment (different inventory buckets).

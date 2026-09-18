@@ -178,7 +178,9 @@ function ProductDetail({ product }: { product: SalesAnalyticsProduct }) {
           <h3 className="text-sm font-semibold text-foreground">Inventory now</h3>
           <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
             {[
-              ['FBA fulfillable', product.fba],
+              ['FBA on-hand', product.fba],
+              ['Available now (part of on-hand)', product.fbaAvailable],
+              ['FC transfer (part of on-hand)', product.fbaFcTransfer],
               ['Counted FBA inbound', product.fbaInbound],
               ['AWD', product.awd],
               ['SVD', product.svd],

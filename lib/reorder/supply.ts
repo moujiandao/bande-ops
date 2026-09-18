@@ -15,6 +15,7 @@ export interface SupplyPolicy {
 export interface SupplyInput {
   fba: {
     fulfillableQuantity: number | null;
+    fcTransferQuantity: number | null;
     inboundWorkingQuantity: number | null;
     inboundShippedQuantity: number | null;
     inboundReceivingQuantity: number | null;
@@ -43,6 +44,7 @@ export type UsableSupplyResult =
       usableSupply: number;
       breakdown: {
         fbaFulfillable: number;
+        fbaFcTransfer: number;
         fbaInboundWorking: number;
         fbaInboundShipped: number;
         fbaInboundReceiving: number;
@@ -79,6 +81,11 @@ export function calculateUsableSupply(input: SupplyInput): UsableSupplyResult {
   );
   if (typeof fbaFulfillable === 'string') {
     return { status: 'needs-review', reason: fbaFulfillable };
+  }
+
+  const fbaFcTransfer = required(input.fba.fcTransferQuantity, 'unknown-fba-fc-transfer');
+  if (typeof fbaFcTransfer === 'string') {
+    return { status: 'needs-review', reason: fbaFcTransfer };
   }
 
   const fbaInboundWorking = input.policy.countInboundWorking
@@ -154,6 +161,7 @@ export function calculateUsableSupply(input: SupplyInput): UsableSupplyResult {
 
   const breakdown = {
     fbaFulfillable,
+    fbaFcTransfer,
     fbaInboundWorking,
     fbaInboundShipped,
     fbaInboundReceiving,

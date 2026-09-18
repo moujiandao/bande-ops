@@ -15,7 +15,7 @@ export interface SearchableRow {
 /** Minimal shape sortByInventory needs: the (UNKNOWN-aware) quantity. */
 export interface InventorySortableRow {
   /** null = UNKNOWN (Amazon gave no number); must never sort as 0. */
-  total_quantity: number | null;
+  fba_on_hand: number | null;
 }
 
 export type SortDirection = 'asc' | 'desc';
@@ -59,8 +59,8 @@ export function sortByInventory<T extends InventorySortableRow>(
   const factor = dir === 'asc' ? 1 : -1;
 
   return [...rows].sort((a, b) => {
-    const aUnknown = a.total_quantity === null;
-    const bUnknown = b.total_quantity === null;
+    const aUnknown = a.fba_on_hand === null;
+    const bUnknown = b.fba_on_hand === null;
 
     // UNKNOWN always sinks to the bottom, independent of direction. Two UNKNOWNs
     // are equal (stable sort preserves their relative order).
@@ -68,6 +68,6 @@ export function sortByInventory<T extends InventorySortableRow>(
     if (aUnknown) return 1;
     if (bUnknown) return -1;
 
-    return ((a.total_quantity as number) - (b.total_quantity as number)) * factor;
+    return ((a.fba_on_hand as number) - (b.fba_on_hand as number)) * factor;
   });
 }

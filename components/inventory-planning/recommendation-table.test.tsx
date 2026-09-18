@@ -6,6 +6,7 @@ import {
   emailClipboardBlobs,
   orderQuantityForCoverage,
   RecommendationTable,
+  FbaBreakdown,
 } from './recommendation-table';
 
 function replenishRow(): RecommendationRow {
@@ -30,6 +31,7 @@ function replenishRow(): RecommendationRow {
       amazonSideCounted: 59,
     },
     fbaBreakdown: {
+      fcTransfer: 0,
       available: 59,
       reserved: 0,
       inboundWorking: 0,
@@ -262,4 +264,42 @@ describe('RecommendationTable replenish shipment fields', () => {
 
     expect(writeText).toHaveBeenCalledWith('Edited');
   });
+});
+
+
+describe('FBA on-hand display', () => {
+  const row = replenishRow();
+  row.sources.fba = 3431;
+  row.fbaBreakdown = {
+    available: 427, fcTransfer: 3004, reserved: 3187,
+    inboundWorking: 0, inboundShipped: 0, inboundReceiving: 0,
+    researching: 10, unfulfillable: 5,
+  };
+
+  it.each(['order', 'status', 'legacy', 'replenish'] as const)('shows the same expandable on-hand count in %s', (variant) => {
+    const html = renderToStaticMarkup(<RecommendationTable rows={[row]} trailingHeader="Status" variant={variant} svdToFbaTargetDays={90} shipmentMonthYear="September 2026" userId="user-1" />);
+    expect(html).toContain('>FBA on-hand<');
+    expect(html).toContain('aria-label="FBA on-hand for SKU-1: 3431 units. Show breakdown"');
+    expect(html).toContain('aria-expanded="false"');
+  });
+
+  it('explains available and transferring units and removes transfers from reserved', () => {
+    const html = renderToStaticMarkup(<FbaBreakdown row={row} />);
+    expect(html).toContain('Available now');
+    expect(html).toContain('>427</span>');
+    expect(html).toContain('FC transfer (buyable)');
+    expect(html).toContain('>3004</span>');
+    expect(html).toContain('>183</span>');
+    expect(html).not.toContain('>3187</span>');
+    expect(html).toContain('On-hand = Available now + FC transfer');
+  });
+});
+
+
+it('gives duplicate SKU rows in separate tables distinct breakdown controls', () => {
+  const row = replenishRow();
+  const html = renderToStaticMarkup(<><RecommendationTable rows={[row]} variant="status" trailingHeader="Status"/><RecommendationTable rows={[row]} variant="status" trailingHeader="Status"/></>);
+  const controls = [...html.matchAll(/aria-controls="([^"]+)"/g)].map(match => match[1]);
+  expect(controls).toHaveLength(2);
+  expect(new Set(controls).size).toBe(2);
 });

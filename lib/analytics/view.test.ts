@@ -23,6 +23,8 @@ function product(
     isLegacy: options.legacy ?? false,
     usableSupply: 10,
     fba: 10,
+    fbaAvailable: 10,
+    fbaFcTransfer: 0,
     fbaInbound: 0,
     awd: 0,
     svd: 0,

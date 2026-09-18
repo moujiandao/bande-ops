@@ -88,49 +88,49 @@ describe('searchRows', () => {
 
 describe('sortByInventory', () => {
   const make = (qty: number | null): InventorySortableRow => ({
-    total_quantity: qty,
+    fba_on_hand: qty,
   });
 
   it('asc orders known quantities lowest first', () => {
     const result = sortByInventory([make(5), make(0), make(12)], 'asc');
-    expect(result.map((r) => r.total_quantity)).toEqual([0, 5, 12]);
+    expect(result.map((r) => r.fba_on_hand)).toEqual([0, 5, 12]);
   });
 
   it('desc orders known quantities highest first', () => {
     const result = sortByInventory([make(5), make(0), make(12)], 'desc');
-    expect(result.map((r) => r.total_quantity)).toEqual([12, 5, 0]);
+    expect(result.map((r) => r.fba_on_hand)).toEqual([12, 5, 0]);
   });
 
   it('UNKNOWN (null) is NOT treated as 0: it sorts to the END in asc', () => {
     // If null were folded to 0 it would lead a lowest-first sort. It must trail.
     const result = sortByInventory([make(null), make(3), make(0)], 'asc');
-    expect(result.map((r) => r.total_quantity)).toEqual([0, 3, null]);
-    expect(result[0].total_quantity).not.toBeNull();
+    expect(result.map((r) => r.fba_on_hand)).toEqual([0, 3, null]);
+    expect(result[0].fba_on_hand).not.toBeNull();
   });
 
   it('UNKNOWN (null) also sorts to the END in desc (not as highest)', () => {
     const result = sortByInventory([make(null), make(3), make(0)], 'desc');
-    expect(result.map((r) => r.total_quantity)).toEqual([3, 0, null]);
-    expect(result[result.length - 1].total_quantity).toBeNull();
+    expect(result.map((r) => r.fba_on_hand)).toEqual([3, 0, null]);
+    expect(result[result.length - 1].fba_on_hand).toBeNull();
   });
 
   it('a true 0 sorts ahead of UNKNOWN — the two stay distinguishable', () => {
     const result = sortByInventory([make(null), make(0)], 'asc');
-    expect(result.map((r) => r.total_quantity)).toEqual([0, null]);
+    expect(result.map((r) => r.fba_on_hand)).toEqual([0, null]);
   });
 
   it('keeps multiple UNKNOWN rows together at the end, stably', () => {
-    const a = { total_quantity: null, id: 'a' };
-    const b = { total_quantity: 7, id: 'b' };
-    const c = { total_quantity: null, id: 'c' };
+    const a = { fba_on_hand: null, id: 'a' };
+    const b = { fba_on_hand: 7, id: 'b' };
+    const c = { fba_on_hand: null, id: 'c' };
     const result = sortByInventory([a, b, c], 'asc');
     expect(result.map((r) => r.id)).toEqual(['b', 'a', 'c']);
   });
 
   it('does not mutate the input array', () => {
     const input = [make(5), make(1)];
-    const snapshot = input.map((r) => r.total_quantity);
+    const snapshot = input.map((r) => r.fba_on_hand);
     sortByInventory(input, 'asc');
-    expect(input.map((r) => r.total_quantity)).toEqual(snapshot);
+    expect(input.map((r) => r.fba_on_hand)).toEqual(snapshot);
   });
 });

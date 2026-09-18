@@ -15,6 +15,7 @@ describe('calculateUsableSupply', () => {
       calculateUsableSupply({
         fba: {
           fulfillableQuantity: 10,
+          fcTransferQuantity: 0,
           inboundWorkingQuantity: 99,
           inboundShippedQuantity: 3,
           inboundReceivingQuantity: 2,
@@ -37,6 +38,7 @@ describe('calculateUsableSupply', () => {
       calculateUsableSupply({
         fba: {
           fulfillableQuantity: null,
+          fcTransferQuantity: 0,
           inboundWorkingQuantity: 0,
           inboundShippedQuantity: 0,
           inboundReceivingQuantity: 0,
@@ -54,6 +56,7 @@ describe('AWD absence vs unknown', () => {
   const base = {
     fba: {
       fulfillableQuantity: 10,
+      fcTransferQuantity: 0,
       inboundWorkingQuantity: 0,
       inboundShippedQuantity: 0,
       inboundReceivingQuantity: 0,
@@ -104,6 +107,7 @@ describe('SVD box to unit conversion', () => {
   const base = {
     fba: {
       fulfillableQuantity: 10,
+      fcTransferQuantity: 0,
       inboundWorkingQuantity: 0,
       inboundShippedQuantity: 0,
       inboundReceivingQuantity: 0,
@@ -156,5 +160,20 @@ describe('SVD box to unit conversion', () => {
     expect(
       calculateUsableSupply({ ...base, svd: { quantity: null }, svdUnitsPerBox: 60 }),
     ).toEqual({ status: 'needs-review', reason: 'unknown-svd-inventory' });
+  });
+});
+
+
+describe('FC transfers in usable supply', () => {
+  const input = {
+    fba: { fulfillableQuantity: 422, fcTransferQuantity: 3008, inboundWorkingQuantity: 0, inboundShippedQuantity: 0, inboundReceivingQuantity: 0 },
+    awd: null, svd: null, svdUnitsPerBox: null, policy,
+  };
+  it('counts transfers even when inbound switches are off', () => {
+    expect(calculateUsableSupply({ ...input, policy: { ...policy, countInboundShipped: false, countInboundReceiving: false } })).toMatchObject({ status: 'ok', usableSupply: 3430 });
+  });
+  it('accepts zero transfers and keeps missing transfer evidence unknown', () => {
+    expect(calculateUsableSupply({ ...input, fba: { ...input.fba, fcTransferQuantity: 0 } })).toMatchObject({ status: 'ok', usableSupply: 422 });
+    expect(calculateUsableSupply({ ...input, fba: { ...input.fba, fcTransferQuantity: null } })).toEqual({ status: 'needs-review', reason: 'unknown-fba-fc-transfer' });
   });
 });

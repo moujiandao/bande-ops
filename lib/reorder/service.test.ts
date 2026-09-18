@@ -1,4 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import inventoryCapture from '@/lib/amazon/__fixtures__/fba-inventory-fc-transfer.json';
+import { SpApiClient } from '@/lib/amazon/client';
+import { mapInventorySummaryToRow } from '@/lib/inventory/mapping';
+import { amazonSideCover, suggestedShipQty } from './replenish';
+
+vi.mock('server-only', () => ({}));
+vi.mock('@/lib/amazon/lwa', () => ({ getAccessToken: vi.fn().mockResolvedValue('test-token') }));
+vi.mock('@/lib/amazon/config', () => ({ getAmazonConfig: () => ({ host: 'spapi.test' }) }));
+afterEach(() => vi.unstubAllGlobals());
 import { DEFAULT_MARKETPLACE } from '@/lib/amazon/types';
 import { assembleRecommendations, type AssembleRecommendationsDeps } from './service';
 
@@ -46,6 +55,7 @@ function baseTables(): Record<string, TableData> {
           sku: 'SKU-LOW',
           fn_sku: 'FNSKU-LOW',
           fulfillable_quantity: 5,
+          fc_transfer_quantity: 0,
           inbound_working_quantity: 99,
           inbound_shipped_quantity: 3,
           inbound_receiving_quantity: 2,
@@ -58,6 +68,7 @@ function baseTables(): Record<string, TableData> {
           sku: 'SKU-HIGH',
           fn_sku: 'FNSKU-HIGH',
           fulfillable_quantity: 100,
+          fc_transfer_quantity: 0,
           inbound_working_quantity: 0,
           inbound_shipped_quantity: 0,
           inbound_receiving_quantity: 0,
@@ -67,6 +78,7 @@ function baseTables(): Record<string, TableData> {
           sku: 'SKU-MISSING-MAP',
           fn_sku: 'FNSKU-MISSING-MAP',
           fulfillable_quantity: 5,
+          fc_transfer_quantity: 0,
           inbound_working_quantity: 0,
           inbound_shipped_quantity: 0,
           inbound_receiving_quantity: 0,
@@ -230,6 +242,7 @@ describe('assembleRecommendations', () => {
     expect(low!.sources.fbaInbound).toBe(5);
     expect(low!.fbaBreakdown).toEqual({
       available: 5,
+      fcTransfer: 0,
       reserved: 4,
       inboundWorking: 99,
       inboundShipped: 3,
@@ -242,6 +255,7 @@ describe('assembleRecommendations', () => {
     expect(low!.velocitySampleDays).toBe(90);
     expect(low!.supplyBreakdown).toEqual({
       fbaFulfillable: 5,
+      fbaFcTransfer: 0,
       fbaInboundWorking: 0,
       fbaInboundShipped: 3,
       fbaInboundReceiving: 2,
@@ -805,5 +819,53 @@ describe('assembleRecommendations', () => {
       }),
     );
     expect(errors.fbaInventory).toBe('boom');
+  });
+});
+
+
+describe('captured FBA on-hand inventory regression', () => {
+  async function capturedInventory() {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(inventoryCapture))));
+    const [summary] = await new SpApiClient().getInventorySummaries({ sellerSkus: ['hp_notebook_single'] });
+    return mapInventorySummaryToRow(summary);
+  }
+
+  function depsForInventory(inventory: object) {
+    // Local planning inputs isolate FBA stock. The Amazon response above is a
+    // real capture; settings and source health below belong to our domain.
+    return makeDeps({
+      catalog_items: { data: [{ marketplace_id: mkt, sku: 'hp_notebook_single', title: 'H&P notebook', open_date: '2026-01-01' }], error: null },
+      inventory_levels: { data: [inventory], error: null },
+      awd_inventory_levels: { data: [], error: null },
+      svd_inventory_levels: { data: [{ svd_item_id: 'hp_notebook_single', sku: null, fn_sku: null, quantity: 10 }], error: null },
+      sales_velocity: { data: [{ marketplace_id: mkt, sku: 'hp_notebook_single', daily_velocity: 60, status: 'ok', in_stock_sample_days: 90 }], error: null },
+      replenishment_settings: { data: [
+        { marketplace_id: mkt, sku: null, lead_time_days: 60, safety_stock: 0, target_coverage_days: 90, svd_units_per_box: null },
+        { marketplace_id: mkt, sku: 'hp_notebook_single', lead_time_days: null, safety_stock: null, target_coverage_days: null, svd_units_per_box: 60 },
+      ], error: null },
+    });
+  }
+
+  it('carries captured FC transfers from Amazon into display, supplier reorder and Amazon cover exactly once', async () => {
+    const inventory = await capturedInventory();
+    const { rows: [row] } = await assembleRecommendations(depsForInventory(inventory));
+    // Capture: 427 available + 3,004 transferring = 3,431 on hand.
+    // Amazon's totalReservedQuantity includes the transfers; other reserved,
+    // researching and unfulfillable units must NOT be counted as supply.
+    expect(row.sources.fba).toBe(3431);
+    expect(row.fbaBreakdown).toMatchObject({ available: 427, fcTransfer: 3004 });
+    expect(row.usableSupply).toBe(4031); // plus 10 boxes x 60 SVD units
+    expect(row.recommendation).toMatchObject({ status: 'ok', recommendedQty: 0 });
+    expect(row.sources.amazonSideCounted).toBe(3431);
+    expect(amazonSideCover(row)).toBe(57);
+    expect(suggestedShipQty(row, 30)).toBeNull();
+  });
+
+  it('keeps old mirrors without FC-transfer evidence unknown until inventory is refreshed', async () => {
+    const inventory = await capturedInventory();
+    const { rows: [row] } = await assembleRecommendations(depsForInventory({ ...inventory, fc_transfer_quantity: null }));
+    expect(row.sources.fba).toBeNull();
+    expect(row.usableSupply).toBeNull();
+    expect(row.recommendation).toEqual({ status: 'needs-review', reason: 'unknown-fba-fc-transfer' });
   });
 });

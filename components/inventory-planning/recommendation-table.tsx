@@ -4,6 +4,7 @@ import Link from 'next/link';
 import {
   Fragment,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -11,6 +12,7 @@ import {
 } from 'react';
 import { useFormStatus } from 'react-dom';
 import { archiveSkuAction } from '@/lib/archive/actions';
+import { reservedExcludingFcTransfers } from '@/lib/inventory/on-hand';
 import type { RecommendationRow } from '@/lib/reorder/service';
 import type { MomentumSignal } from '@/lib/analytics/service';
 import { recommend } from '@/lib/reorder/recommend';
@@ -180,30 +182,10 @@ function ArchiveButton({ sku }: { sku: string }) {
   );
 }
 
-/**
- * The full FBA count for the replenish display: Available + Reserved + all
- * Incoming + Other. Null (shown as an em dash) only when there is no FBA data
- * at all; a present row with some unknown buckets still sums what is known.
- */
-function fbaDisplayTotal(row: RecommendationRow): number | null {
-  const b = row.fbaBreakdown;
-  const parts = [
-    b.available,
-    b.reserved,
-    b.inboundWorking,
-    b.inboundShipped,
-    b.inboundReceiving,
-    b.researching,
-    b.unfulfillable,
-  ];
-  if (parts.every((v) => v === null)) return null;
-  return parts.reduce<number>((sum, v) => sum + (v ?? 0), 0);
-}
-
 /** Sum of all three FBA inbound buckets, for the display breakdown. */
 function fbaIncomingTotal(row: RecommendationRow): number | null {
   const { inboundWorking, inboundShipped, inboundReceiving } = row.fbaBreakdown;
-  if (inboundWorking === null && inboundShipped === null && inboundReceiving === null) {
+  if (inboundWorking === null || inboundShipped === null || inboundReceiving === null) {
     return null;
   }
   return (inboundWorking ?? 0) + (inboundShipped ?? 0) + (inboundReceiving ?? 0);
@@ -212,7 +194,7 @@ function fbaIncomingTotal(row: RecommendationRow): number | null {
 /** Sum of the non-sellable, non-incoming buckets: researching + unfulfillable. */
 function fbaOtherTotal(row: RecommendationRow): number | null {
   const { researching, unfulfillable } = row.fbaBreakdown;
-  if (researching === null && unfulfillable === null) return null;
+  if (researching === null || unfulfillable === null) return null;
   return (researching ?? 0) + (unfulfillable ?? 0);
 }
 
@@ -259,16 +241,18 @@ function BreakdownLine({
 
 /**
  * The full FBA picture for a row, shown when its FBA cell is expanded. Groups:
- * Available + Reserved + Incoming (working/shipped/receiving) + Other. Marks
- * which parts actually feed the replenish recommendation.
+ * On-hand (available + FC transfers), remaining reservations, incoming and
+ * other stock. Transfers are removed from API reserved totals to avoid overlap.
  */
-function FbaBreakdown({ row }: { row: RecommendationRow }) {
+export function FbaBreakdown({ row }: { row: RecommendationRow }) {
   const counted = row.sources.fbaInbound;
   return (
     <div className="flex flex-col gap-3 text-[11px] sm:flex-row sm:gap-10">
       <div className="flex min-w-[220px] flex-col gap-1">
-        <BreakdownLine label="Available" value={row.sources.fba} strong />
-        <BreakdownLine label="Reserved" value={row.fbaBreakdown.reserved} />
+        <BreakdownLine label="On-hand" value={row.sources.fba} strong />
+        <BreakdownLine label="Available now" value={row.fbaBreakdown.available} />
+        <BreakdownLine label="FC transfer (buyable)" value={row.fbaBreakdown.fcTransfer} />
+        <BreakdownLine label="Reserved (excluding FC transfer)" value={reservedExcludingFcTransfers(row.fbaBreakdown.reserved, row.fbaBreakdown.fcTransfer)} />
         <BreakdownLine label="Incoming" value={fbaIncomingTotal(row)} strong />
         <IncomingLine label="Working" value={row.fbaBreakdown.inboundWorking} />
         <IncomingLine label="Shipped" value={row.fbaBreakdown.inboundShipped} />
@@ -276,9 +260,9 @@ function FbaBreakdown({ row }: { row: RecommendationRow }) {
         <BreakdownLine label="Other" value={fbaOtherTotal(row)} />
       </div>
       <p className="max-w-[280px] text-muted">
-        Counts toward cover: Available
-        {counted !== null ? ` + ${Math.round(counted)} incoming` : ''} + AWD.
-        Reserved (held for orders) and Other (researching + unfulfillable) are
+        On-hand = Available now + FC transfer. Counts toward cover: On-hand
+        {counted !== null ? ` + ${Math.round(counted)} incoming` : ''} + policy-counted AWD.
+        Customer-order and processing reservations, and Other (researching + unfulfillable), are
         shown for context but never counted as coverage.
       </p>
     </div>
@@ -300,9 +284,7 @@ function sortValue(
     case 'box':
       return row.boxName?.toLowerCase() ?? null;
     case 'fba':
-      // The replenish FBA cell shows the full FBA total, so sort by that; every
-      // other list shows fulfillable and sorts by it.
-      return variant === 'replenish' ? fbaDisplayTotal(row) : row.sources.fba;
+      return row.sources.fba;
     case 'awd':
       return row.sources.awd;
     case 'svd':
@@ -335,7 +317,7 @@ const BOX_COLUMN = {
 
 const COLUMNS: { key: SortKey; label: string; title: string; numeric: boolean }[] = [
   { key: 'sku', label: 'SKU', title: 'Seller SKU', numeric: false },
-  { key: 'fba', label: 'FBA', title: 'Fulfillable units at FBA', numeric: true },
+  { key: 'fba', label: 'FBA on-hand', title: 'Available now + buyable FC transfers; expand for the breakdown', numeric: true },
   { key: 'awd', label: 'AWD', title: 'Units at AWD counted as supply', numeric: true },
   {
     key: 'svd',
@@ -351,7 +333,7 @@ const COLUMNS: { key: SortKey; label: string; title: string; numeric: boolean }[
 const REPLENISH_COLUMNS = [
   COLUMNS[0],
   BOX_COLUMN,
-  { ...COLUMNS[1], label: 'FBA total', title: 'Full FBA inventory; expand a cell for the breakdown' },
+  COLUMNS[1],
   COLUMNS[2],
   COLUMNS[3],
   COLUMNS[5],
@@ -406,10 +388,10 @@ export function RecommendationTable({
   const [descending, setDescending] = useState(
     variant === 'order' || variant === 'replenish',
   );
-  // Which row's FBA breakdown is expanded (replenish variant only). One at a
+  // Which row's FBA breakdown is expanded. One at a
   // time keeps the table compact.
+  const fbaDetailId = useId();
   const [expandedFba, setExpandedFba] = useState<string | null>(null);
-  const showFbaBreakdown = variant === 'replenish';
   // The replenish list gets two extra columns: the SVD Box name (after SKU) and
   // a free-text Notes field (far right). Notes persist only within this browser
   // session for the signed-in user, and never become shared operational data.
@@ -613,7 +595,7 @@ export function RecommendationTable({
       <th
         key={key}
         aria-sort={active ? (descending ? 'descending' : 'ascending') : 'none'}
-        className={`px-3 py-2 font-medium ${numeric ? 'text-right' : 'text-left'}`}
+        className={`whitespace-nowrap px-3 py-2 font-medium ${numeric ? 'text-right' : 'text-left'}`}
         {...(fixedIndex !== undefined ? dropProps(fixedIndex) : {})}
       >
         <button
@@ -764,25 +746,22 @@ export function RecommendationTable({
                         </td>,
                       ]
                     : []),
-                  showFbaBreakdown ? (
+                  (
                     <td key="fba" className="px-3 py-2 text-right tabular-nums text-muted">
                       <button
                         type="button"
                         onClick={() => setExpandedFba(isExpanded ? null : rowKey)}
                         aria-expanded={isExpanded}
-                        aria-controls={`fba-detail-${rowKey}`}
-                        title="Show the full FBA breakdown"
+                        aria-controls={`${fbaDetailId}-${rowKey}`}
+                        title="Show FBA on-hand and inventory breakdown"
+                        aria-label={`FBA on-hand for ${row.sku}: ${num(row.sources.fba)} units. Show breakdown`}
                         className="inline-flex items-center gap-1 tabular-nums hover:text-foreground"
                       >
                         <span aria-hidden="true" className="text-[9px]">
                           {isExpanded ? '▼' : '▶'}
                         </span>
-                        {num(fbaDisplayTotal(row))}
+                        {num(row.sources.fba)}
                       </button>
-                    </td>
-                  ) : (
-                    <td key="fba" className="px-3 py-2 text-right tabular-nums text-muted">
-                      {num(row.sources.fba)}
                     </td>
                   ),
                   <td key="awd" className="px-3 py-2 text-right tabular-nums text-muted">
@@ -824,6 +803,16 @@ export function RecommendationTable({
                             : suggestedShipQty(row, replenishTargetDays),
                         )}
                       </span>
+                    ) : variant !== 'legacy' &&
+                      row.recommendation.status === 'needs-review' &&
+                      row.recommendation.reason === 'unknown-fba-fc-transfer' ? (
+                      <Link
+                        href="/catalog"
+                        title="FC-transfer inventory has not been synced; on-hand is unknown"
+                        className="text-[11px] text-accent underline underline-offset-2 hover:text-accent-strong"
+                      >
+                        Refresh FBA inventory
+                      </Link>
                     ) : variant !== 'legacy' &&
                       row.recommendation.status === 'needs-review' &&
                       row.recommendation.reason === 'unknown-svd-units-per-box' ? (
@@ -915,10 +904,10 @@ export function RecommendationTable({
                 return cells;
               })()}
             </tr>
-            {showFbaBreakdown && isExpanded ? (
+            {isExpanded ? (
               <tr className="border-b border-border/50 bg-panel-muted/40">
                 <td
-                  id={`fba-detail-${rowKey}`}
+                  id={`${fbaDetailId}-${rowKey}`}
                   colSpan={detailColSpan}
                   className="px-3 py-3"
                 >

@@ -87,7 +87,10 @@ export interface SalesAnalyticsProduct {
   title: string;
   isLegacy: boolean;
   usableSupply: number | null;
+  /** On-hand = available now + FC transfers. */
   fba: number | null;
+  fbaAvailable: number | null;
+  fbaFcTransfer: number | null;
   fbaInbound: number | null;
   awd: number | null;
   svd: number | null;
@@ -309,6 +312,8 @@ export function buildSalesAnalytics(
       isLegacy: product.isLegacy,
       usableSupply: product.usableSupply,
       fba: product.sources.fba,
+      fbaAvailable: product.fbaBreakdown.available,
+      fbaFcTransfer: product.fbaBreakdown.fcTransfer,
       fbaInbound: product.sources.fbaInbound,
       awd: product.sources.awd,
       svd: product.sources.svd,

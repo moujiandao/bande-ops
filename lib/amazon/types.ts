@@ -65,6 +65,8 @@ export interface InventorySummary {
   totalQuantity: number | null;
   fnSku?: string;
   fulfillableQuantity?: number | null;
+  /** Buyable units moving between fulfillment centers; part of reservedQuantity. */
+  fcTransferQuantity?: number | null;
   inboundWorkingQuantity?: number | null;
   inboundShippedQuantity?: number | null;
   inboundReceivingQuantity?: number | null;

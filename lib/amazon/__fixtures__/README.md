@@ -40,3 +40,16 @@ ledger rows for the same SKU. The four nonzero days total 30 shipments, of which
 28 match the captured Vine promotion. These are captured facts, not hand-built
 Amazon fixtures. Additional edge cases in tests mutate normalized domain inputs
 and are explicitly labeled as such.
+
+
+## FBA FC-transfer inventory capture
+
+`fba-inventory-fc-transfer.json` is the live US FBA Inventory API response for
+`hp_notebook_single`, captured on 2026-09-18 at 07:03 UTC through `SpApiClient`.
+Only the response JSON is retained; no auth headers, credentials or customer data
+are present. It reports 427 fulfillable units and 3,004 FC-transfer units inside
+`reservedQuantity.pendingTransshipmentQuantity`. The API reserved total of 3,187
+already includes those transfers. On-hand is therefore 3,431, not 427 or the API's
+broader total quantity. Seller Central's separately observed snapshot displayed
+422 available + 3,008 transfers = 3,430 on hand; regression tests use the captured
+API values without changing them to match a different snapshot.

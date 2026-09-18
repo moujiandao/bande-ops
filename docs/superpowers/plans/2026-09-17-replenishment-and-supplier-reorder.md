@@ -184,3 +184,42 @@ Next step is implementation of the proposed organization. No new dependencies,
 schema changes, supplier ordering API, shipment execution, or recommendation
 algorithm changes are proposed. Keep broader Analytics and Settings redesigns
 outside this slice. Any AGENTS.md updates must be proposed as a separate draft.
+
+## 2026-09-18 FBA on-hand correction
+
+Brian approved showing FBA on-hand (available + buyable FC transfers) and counting
+both toward coverage after Seller Central showed 3,430 on hand while our app
+showed only 427 immediately fulfillable units. Branch:
+`fix/fba-on-hand-transfers`, based on main `a3e8085`.
+
+The captured SP-API response independently reports 427 available + 3,004 FC
+transfers = 3,431 on hand. It is preserved without changing quantities to match a
+separately timed Seller Central screen. The old pipeline dropped the transfer
+field entirely. A captured-response regression reproduced that omission before
+the fix and now verifies the client, mirror mapping, supplier reorder supply,
+Amazon-side coverage and transfer recommendation together.
+
+Implemented: nullable synced `fc_transfer_quantity` (migration 0024), consistent
+on-hand totals and expandable available/transfer breakdowns in planning and
+catalog, the same inventory breakdown in Analytics, and transfer-aware coverage.
+Do not add the raw API reserved total: it already includes FC transfers. Remaining
+reservations, researching and unfulfillable stock are excluded from usable supply.
+Missing transfer evidence stays unknown and blocks recommendations until refreshed.
+Historical sales/stockout eligibility and giveaway exclusion rules are unchanged.
+
+Verification: full 555-test suite, TypeScript, lint, instruction-policy check,
+whitespace check and production build passed. Migration applied twice in an
+isolated local PostgreSQL database; existing NULLs, valid values and rejection of
+negative transfer quantities passed. Browser checks on a temporary local preview
+used the real shared components to expand supplier, replenishment and catalog
+breakdowns simultaneously. The preview route/server/tab were removed afterward.
+Required read-only review passed after table-specific accessible detail IDs were
+added for repeated SKUs. No production data or app deployment was changed.
+
+Release pending: Brian applies `0024_fba_fc_transfer_inventory.sql`, explicitly
+authorizes merge/deploy, then the new deployment runs Catalog & Inventory > Sync
+now or the full scheduled sync. Applying SQL alone cannot populate the field, and
+the old deployment will not write it. Verify the live SKU against a fresh Amazon
+snapshot after the first new-code FBA sync. The prior AGENTS inventory description
+still describes fulfillable-only stock; these task notes and CONTEXT.md record
+the approved change without rewriting protected agent instructions.

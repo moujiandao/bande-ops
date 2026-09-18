@@ -1,5 +1,16 @@
 # Changelog
 
+## [2026-09-18] FBA on-hand inventory (unreleased)
+
+### Added
+- Retain Amazon FC-transfer quantities with migration 0024 and a captured live-response regression.
+
+### Changed
+- Show FBA on-hand as available units plus buyable FC transfers across catalog, planning and analytics.
+- Count FC transfers once toward supplier reorder and Amazon-side replenishment coverage, excluding other reservations and unusable stock.
+- Expand planning and catalog inventory cells into an available/transfer breakdown and keep unsynced transfer quantities unknown.
+- Refresh affected planning and analytics pages after a catalog/inventory sync.
+
 ## [2026-09-17] Giveaway evidence integration (unreleased)
 
 ### Added

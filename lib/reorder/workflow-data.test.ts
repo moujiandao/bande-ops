@@ -16,6 +16,7 @@ function row(
     isLegacy: false,
     sources: { fba: 10, awd: 0, svd: 120, fbaInbound: 0, amazonSideCounted: 10 },
     fbaBreakdown: {
+      fcTransfer: 0,
       available: 10,
       reserved: 0,
       inboundWorking: 0,

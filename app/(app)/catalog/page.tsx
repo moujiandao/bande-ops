@@ -1,3 +1,4 @@
+import { fbaOnHand } from '@/lib/inventory/on-hand';
 import { createClient } from '@/lib/supabase/server';
 import { syncCatalogAction } from './actions';
 import { CatalogTable, type CatalogTableRow } from './catalog-table';
@@ -29,7 +30,8 @@ type CatalogItemRow = {
 type InventoryRow = {
   marketplace_id: string;
   sku: string;
-  total_quantity: number | null;
+  fulfillable_quantity: number | null;
+  fc_transfer_quantity: number | null;
 };
 
 type NoteRow = {
@@ -72,7 +74,7 @@ export default async function CatalogPage() {
       .order('sku', { ascending: true }),
     supabase
       .from('inventory_levels')
-      .select('marketplace_id, sku, total_quantity'),
+      .select('marketplace_id, sku, fulfillable_quantity, fc_transfer_quantity'),
     supabase.from('sku_notes').select('marketplace_id, sku, note'),
     supabase.from('archived_skus').select('marketplace_id, sku'),
   ]);
@@ -85,10 +87,10 @@ export default async function CatalogPage() {
 
   // Lookup of inventory level by composite key. A SKU with no entry here falls
   // through to the UNKNOWN state in formatInventoryLevel — never 0.
-  const inventoryByKey = new Map<string, number | null>(
+  const inventoryByKey = new Map<string, InventoryRow>(
     ((inventoryRes.data ?? []) as InventoryRow[]).map((r) => [
       rowKey(r),
-      r.total_quantity,
+      r,
     ]),
   );
 
@@ -116,15 +118,19 @@ export default async function CatalogPage() {
     )
     .map((row) => {
       const key = rowKey(row);
+      const inventory = inventoryByKey.get(key);
       return {
         marketplace_id: row.marketplace_id,
         sku: row.sku,
         asin: row.asin,
         title: row.title,
         image_url: row.image_url,
-        // get() returns undefined for a missing key; formatInventoryLevel treats
-        // undefined the same as null (UNKNOWN), so coalesce to null here.
-        total_quantity: inventoryByKey.get(key) ?? null,
+        fba_on_hand: fbaOnHand(
+          inventory?.fulfillable_quantity,
+          inventory?.fc_transfer_quantity,
+        ),
+        fba_available: inventory?.fulfillable_quantity ?? null,
+        fba_fc_transfer: inventory?.fc_transfer_quantity ?? null,
         note: noteByKey.get(key) ?? '',
       };
     });

@@ -54,6 +54,7 @@ export class FakeAmazonClient implements AmazonClient {
         totalQuantity: 42,
         fnSku: 'X000111AAA',
         fulfillableQuantity: 42,
+        fcTransferQuantity: 0,
         inboundShippedQuantity: 10,
         inboundReceivingQuantity: 5,
         inboundWorkingQuantity: 0,

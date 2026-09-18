@@ -14,6 +14,7 @@ import { recommend, type Recommendation } from './recommend';
 import { resolveSourceMapping } from './mappings';
 import { calculateUsableSupply, toUnits, type UsableSupplyResult } from './supply';
 import { classifyLegacy } from './legacy';
+import { fbaOnHand } from '@/lib/inventory/on-hand';
 
 type ReorderReader = Pick<SupabaseClient, 'from'>;
 
@@ -53,7 +54,7 @@ export interface RecommendationRow {
    * inventory may retain a canonical supply total for historical analytics.
    */
   sources: {
-    /** Fulfillable (available) units at FBA. */
+    /** On-hand FBA units: available + FC transfers. Null if either is unknown. */
     fba: number | null;
     awd: number | null;
     /** UNITS, converted from SVD's boxes. Null when the units are unknowable. */
@@ -67,7 +68,7 @@ export interface RecommendationRow {
     fbaInbound: number | null;
     /**
      * The single amazon-side figure the replenish math consumes: FBA
-     * fulfillable + policy-counted FBA inbound + policy-counted AWD. Computed
+     * on-hand + policy-counted FBA inbound + policy-counted AWD. Computed
      * here, where the policy lives, so consumers cannot reassemble it and
      * double-count. In particular AWD `replenishment_quantity` (units in transit
      * AWD→FBA) is included ONLY when `countAwdReplenishment` is on — otherwise
@@ -77,12 +78,15 @@ export interface RecommendationRow {
     amazonSideCounted: number;
   };
   /**
-   * The full FBA picture for display, each bucket null-preserving (UNKNOWN is
-   * never folded to 0 here). Available + Reserved + Incoming + Other. Populated
+   * The FBA buckets for display, each null-preserving (UNKNOWN is never
+   * folded to 0 here). API reserved includes FC transfers, so the UI removes
+   * transfers from that bucket when showing disjoint categories. Populated
    * regardless of recommendation status, like `sources`.
    */
   fbaBreakdown: {
     available: number | null;
+    fcTransfer: number | null;
+    /** Raw API reserved total, INCLUDING FC transfers. */
     reserved: number | null;
     inboundWorking: number | null;
     inboundShipped: number | null;
@@ -138,6 +142,7 @@ type FbaRow = {
   sku: string;
   fn_sku: string | null;
   fulfillable_quantity: number | null;
+  fc_transfer_quantity: number | null;
   inbound_working_quantity: number | null;
   inbound_shipped_quantity: number | null;
   inbound_receiving_quantity: number | null;
@@ -276,7 +281,7 @@ export async function assembleRecommendations(
     deps.supabase
       .from('inventory_levels')
       .select(
-        'marketplace_id, sku, fn_sku, fulfillable_quantity, inbound_working_quantity, inbound_shipped_quantity, inbound_receiving_quantity, reserved_quantity, researching_quantity, unfulfillable_quantity',
+        'marketplace_id, sku, fn_sku, fulfillable_quantity, fc_transfer_quantity, inbound_working_quantity, inbound_shipped_quantity, inbound_receiving_quantity, reserved_quantity, researching_quantity, unfulfillable_quantity',
       )
       .eq('marketplace_id', marketplace.id),
     deps.supabase
@@ -435,13 +440,14 @@ export async function assembleRecommendations(
     const awdCountedReplenishment = policy.countAwdReplenishment
       ? (awd?.replenishment_quantity ?? 0)
       : 0;
+    const onHand = fbaOnHand(fba?.fulfillable_quantity, fba?.fc_transfer_quantity);
     const amazonSideCounted =
-      (fba?.fulfillable_quantity ?? 0) +
+      (onHand ?? 0) +
       (fbaInbound ?? 0) +
       awdCountedAvailable +
       awdCountedReplenishment;
     const sources = {
-      fba: fba?.fulfillable_quantity ?? null,
+      fba: onHand,
       // Absence means "not stored at AWD", which is 0 — matching the supply
       // math. Only a row with unreadable quantities is UNKNOWN. This is the
       // DISPLAY figure (everything AWD holds); the counted figure is separate.
@@ -458,9 +464,10 @@ export async function assembleRecommendations(
       amazonSideCounted,
     };
     // Full FBA picture for display; each bucket keeps UNKNOWN as null.
-    // `available` is the same fulfillable value as `sources.fba`, derived once.
+    // Available and FC transfers are shown separately from their on-hand sum.
     const fbaBreakdown = {
-      available: sources.fba,
+      available: fba?.fulfillable_quantity ?? null,
+      fcTransfer: fba?.fc_transfer_quantity ?? null,
       reserved: fba?.reserved_quantity ?? null,
       inboundWorking: fba?.inbound_working_quantity ?? null,
       inboundShipped: fba?.inbound_shipped_quantity ?? null,
@@ -513,6 +520,7 @@ export async function assembleRecommendations(
             fba: fba
               ? {
                   fulfillableQuantity: fba.fulfillable_quantity,
+                  fcTransferQuantity: fba.fc_transfer_quantity,
                   inboundWorkingQuantity: fba.inbound_working_quantity,
                   inboundShippedQuantity: fba.inbound_shipped_quantity,
                   inboundReceivingQuantity: fba.inbound_receiving_quantity,

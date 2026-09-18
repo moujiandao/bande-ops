@@ -75,3 +75,21 @@ backfill is performed by applying the SQL alone.
 publication on an isolated local database with Supabase-like roles. It rolls back
 its test data. Local validation is not a substitute for the hosted migration and
 authenticated application check.
+
+
+## FBA on-hand inventory migration
+
+Apply `0024_fba_fc_transfer_inventory.sql` before deploying the on-hand fix.
+It adds one nullable synced-mirror column and leaves RLS/privileges unchanged.
+Existing rows deliberately remain NULL, not zero, because we have never retained
+their FC-transfer quantities. After deploying, run **Catalog & Inventory → Sync
+now** once (or the full scheduled sync) to populate the field from Amazon. The
+old deployment does not write this column, so refreshing it before deployment
+will not populate the new data. Until populated, on-hand and recommendations
+remain unknown/Needs review instead of silently ignoring transferring units.
+
+On-hand = immediately fulfillable + FC transfer. Both count once toward supplier
+reorder and Amazon-side replenishment coverage. Other reservations, researching
+and unfulfillable units remain excluded. Historical ledger/velocity rules do not
+change. This is an FBA refresh; Refresh SVD and shipment-evidence backfills are
+unrelated.

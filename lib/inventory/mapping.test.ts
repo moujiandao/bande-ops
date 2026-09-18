@@ -29,6 +29,7 @@ describe('mapInventorySummaryToRow', () => {
       total_quantity: 42,
       fn_sku: 'X000111AAA',
       fulfillable_quantity: null,
+      fc_transfer_quantity: null,
       inbound_working_quantity: null,
       inbound_shipped_quantity: null,
       inbound_receiving_quantity: null,

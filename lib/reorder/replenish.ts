@@ -18,14 +18,14 @@ export type SvdShipmentBoxCounts = Record<string, number | ''>;
  * Days of cover from stock at or heading to Amazon.
  *
  * The amazon-side figure (`sources.amazonSideCounted`) is assembled in
- * `service.ts`, where the policy lives: FBA fulfillable + policy-counted FBA
+ * `service.ts`, where the policy lives: FBA on-hand (available + FC transfers) + policy-counted FBA
  * incoming + policy-counted AWD. It must NOT be reassembled here — doing so from
  * `sources.awd` (which shows ALL AWD, including in-transit units FBA inbound
  * already reports) would double-count.
  *
  * SVD is excluded deliberately: it cannot fulfil a customer order, so it reduces
- * future reorder need without extending current cover. Reserved and
- * unfulfillable FBA stock are likewise excluded, though the breakdown shows them.
+ * future reorder need without extending Amazon cover. Customer-order and
+ * processing reservations, researching and unfulfillable stock remain excluded.
  */
 export function amazonSideCover(row: RecommendationRow): number | null {
   if (row.dailyDemand === null || row.dailyDemand <= 0) return null;

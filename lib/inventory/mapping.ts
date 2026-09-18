@@ -19,6 +19,7 @@ export interface InventoryLevelRow {
   total_quantity: number | null;
   fn_sku: string | null;
   fulfillable_quantity: number | null;
+  fc_transfer_quantity: number | null;
   inbound_working_quantity: number | null;
   inbound_shipped_quantity: number | null;
   inbound_receiving_quantity: number | null;
@@ -63,6 +64,7 @@ export function mapInventorySummaryToRow(
     total_quantity: summary.totalQuantity,
     fn_sku: summary.fnSku ?? null,
     fulfillable_quantity: summary.fulfillableQuantity ?? null,
+    fc_transfer_quantity: summary.fcTransferQuantity ?? null,
     inbound_working_quantity: summary.inboundWorkingQuantity ?? null,
     inbound_shipped_quantity: summary.inboundShippedQuantity ?? null,
     inbound_receiving_quantity: summary.inboundReceivingQuantity ?? null,

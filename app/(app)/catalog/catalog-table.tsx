@@ -28,7 +28,9 @@ export type CatalogTableRow = {
   asin: string;
   title: string;
   image_url: string | null;
-  total_quantity: number | null;
+  fba_on_hand: number | null;
+  fba_available: number | null;
+  fba_fc_transfer: number | null;
   note: string;
 };
 
@@ -78,7 +80,7 @@ export function CatalogTable({ rows }: { rows: CatalogTableRow[] }) {
               <th className="px-4 py-3 font-medium">SKU</th>
               <th className="px-4 py-3 font-medium">ASIN</th>
               <th className="px-4 py-3 font-medium">Title</th>
-              <th className="px-4 py-3 text-right font-medium">Inventory</th>
+              <th className="px-4 py-3 text-right font-medium">FBA on-hand</th>
               <th className="px-4 py-3 font-medium">Notes</th>
             </tr>
           </thead>
@@ -95,7 +97,7 @@ export function CatalogTable({ rows }: { rows: CatalogTableRow[] }) {
             ) : (
               visibleRows.map((row) => {
                 // null OR a missing inventory row -> UNKNOWN (distinct from 0).
-                const level = formatInventoryLevel(row.total_quantity);
+                const level = formatInventoryLevel(row.fba_on_hand);
                 return (
                   <tr
                     key={`${row.marketplace_id}:${row.sku}`}
@@ -126,17 +128,32 @@ export function CatalogTable({ rows }: { rows: CatalogTableRow[] }) {
                     </td>
                     <td className="px-4 py-3 text-foreground">{row.title}</td>
                     <td className="px-4 py-3 text-right">
-                      {level.isUnknown ? (
-                        // UNKNOWN (null / no row): a muted badge, visually
-                        // distinct from a numeric 0. Never rendered as "0".
-                        <span title="Amazon did not report a quantity - flagged for review">
-                          <Badge variant="soon">{level.label}</Badge>
-                        </span>
-                      ) : (
-                        <span className="font-mono text-xs tabular-nums text-foreground">
-                          {level.label}
-                        </span>
-                      )}
+                      <details>
+                        <summary
+                          className="cursor-pointer whitespace-nowrap"
+                          aria-label={`FBA on-hand for ${row.sku}: ${level.label}. Show breakdown`}
+                        >
+                          {level.isUnknown ? (
+                            <span title="Available or FC-transfer inventory is unknown; refresh FBA inventory">
+                              <Badge variant="soon">{level.label}</Badge>
+                            </span>
+                          ) : (
+                            <span className="font-mono text-xs tabular-nums text-foreground">
+                              {level.label}
+                            </span>
+                          )}
+                        </summary>
+                        <dl className="mt-2 space-y-1 whitespace-nowrap text-xs text-muted">
+                          <div>
+                            <dt className="inline">Available now: </dt>
+                            <dd className="inline">{formatInventoryLevel(row.fba_available).label}</dd>
+                          </div>
+                          <div>
+                            <dt className="inline">FC transfer (buyable): </dt>
+                            <dd className="inline">{formatInventoryLevel(row.fba_fc_transfer).label}</dd>
+                          </div>
+                        </dl>
+                      </details>
                     </td>
                     <td className="px-4 py-3">
                       <NoteCell

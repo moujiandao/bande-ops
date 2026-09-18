@@ -82,6 +82,7 @@ function recommendation(): RecommendationRow {
       amazonSideCounted: 60,
     },
     fbaBreakdown: {
+      fcTransfer: 0,
       available: 20,
       reserved: 0,
       inboundWorking: 0,

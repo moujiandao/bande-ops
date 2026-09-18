@@ -47,6 +47,7 @@ function row(overrides: RowOverrides = {}): RecommendationRow {
     sourceMapping: { status: 'mapped', svdItemId: 'svd-1', mappingSource: 'sku' },
     isLegacy: false,
     fbaBreakdown: {
+      fcTransfer: 0,
       available: 10,
       reserved: 0,
       inboundWorking: 0,

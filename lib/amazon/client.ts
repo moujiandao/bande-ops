@@ -487,7 +487,7 @@ interface RawInventorySummary {
     inboundWorkingQuantity?: unknown;
     inboundShippedQuantity?: unknown;
     inboundReceivingQuantity?: unknown;
-    reservedQuantity?: { totalReservedQuantity?: unknown };
+    reservedQuantity?: { totalReservedQuantity?: unknown; pendingTransshipmentQuantity?: unknown };
     researchingQuantity?: { totalResearchingQuantity?: unknown };
     unfulfillableQuantity?: { totalUnfulfillableQuantity?: unknown };
   };
@@ -542,6 +542,7 @@ function mapInventorySummary(
     totalQuantity: toQuantity(raw.totalQuantity),
     ...(raw.fnSku ? { fnSku: raw.fnSku } : {}),
     fulfillableQuantity: toQuantity(details?.fulfillableQuantity),
+    fcTransferQuantity: toQuantity(details?.reservedQuantity?.pendingTransshipmentQuantity),
     inboundWorkingQuantity: toQuantity(details?.inboundWorkingQuantity),
     inboundShippedQuantity: toQuantity(details?.inboundShippedQuantity),
     inboundReceivingQuantity: toQuantity(details?.inboundReceivingQuantity),
