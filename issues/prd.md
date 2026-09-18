@@ -1,7 +1,7 @@
 # PRD: Exclude Vine and fully discounted giveaways from sales momentum
 
 Date: 2026-09-17
-Status: Implemented on `feat/vine-sales-momentum`; verification and release gates below.
+Status: Merged to `main` and deployed to `https://ops.medicalbasics.com` after Brian authorized release.
 
 ## Problem and outcome
 
@@ -207,7 +207,7 @@ The required read-only review passed after fixes for outage date coverage,
 coverage-date freshness, and forward progress through unavailable intervals.
 Regression tests cover these cases, mixed promotions, and explicit source
 timezones. The reviewer made no file or memory writes. Authenticated end-to-end
-UI verification of the feature branch is still unavailable in this session.
+Signed-in production UI verification subsequently passed, as recorded below.
 
 Hosted verification after Brian applied migrations 0022/0023:
 - Confirm the saved preference is false and both new mirror tables/view are present.
@@ -217,12 +217,26 @@ Hosted verification after Brian applied migrations 0022/0023:
   missing subtotals, non-USD currency, shipment/ledger differences or ambiguous
   item matches. This interval has zero confirmed giveaway exclusions; that does
   not classify the unknown records as paid or prove that no giveaways occurred.
-- Queue July 29–August 18 as the next historical interval. It needs a later sync
-  to collect, and the deployed cron does not yet contain this feature branch.
+- Queue July 29–August 18 as the next historical interval. The post-deployment
+  UI refresh collected it successfully and queued July 8–28.
 - Verify anonymous reads of the setting, batches and adjustment view are denied
   with PostgreSQL privilege code 42501. No saved preference was changed.
 
-Implementation commit: `ded9a18`. No merge or deployment has occurred. Remaining:
-obtain explicit merge/deployment authorization, release this commit plus handoff
-notes, verify the signed-in Settings/Analytics UI, and continue the queued
-historical reports through the new daily sync or authenticated refresh.
+Release completed after Brian explicitly authorized merge and deployment:
+- Rebase onto current `origin/main` (already up to date), fast-forward merge, and
+  push release `7ab3c52`. Remove the merged feature branch; no separate feature
+  worktree existed to remove. Preserve the unrelated analytics worktree.
+- Pass all 538 tests, lint, type checks, instruction policy and production build.
+  GitHub CI run `35316584407` and Vercel production deployment both succeeded.
+- Verify live Settings as a signed-in staff user. Save exclusion on, confirm
+  the selected basis on Analytics, Supplier Reorder and FBA Replenishment, then
+  save it off and confirm the all-shipment basis is restored after navigation.
+- Trigger Refresh shipment evidence through the deployed server action. It
+  publishes 1,097 additional product-day records and queues the next historical
+  interval. Pending feedback and successful completion are visible in the UI.
+
+The feature is live at `https://ops.medicalbasics.com/settings#analytics`.
+The saved preference remains off. Historical coverage is still being built;
+unknown/ambiguous days remain explicit, and the known March launch is outside
+current published history. The existing daily cron now contains the resumable
+shipment sync, and authenticated manual refresh can advance it sooner.

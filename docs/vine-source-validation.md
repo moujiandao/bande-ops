@@ -89,7 +89,13 @@ No confirmed giveaway units were excluded in this interval; the known March
 launch is still outside this initial historical coverage. July 29–August 18 is
 queued for a later sync. The shared toggle remains off.
 
-Merge/deployment authorization and signed-in feature UI verification remain.
-The deployed app's daily cron does not contain this feature yet, so queued jobs
-will continue automatically only after deployment (or another authorized local
-sync).
+Brian authorized merge/deployment. Release `7ab3c52` reached production with
+successful GitHub CI and Vercel checks. Signed-in staff UI verification passed:
+save on, read the same basis on all three affected pages, save off, and confirm
+the all-shipment basis returns. The live refresh action published 1,097 additional
+product-day records for July 29–August 18 and queued July 8–28.
+
+The shared preference remains off. The deployed daily cron now advances future
+and historical report jobs; the Settings refresh action can advance them sooner.
+Historical coverage and ambiguous rows remain visible limitations, not release
+failures or proof of zero giveaway activity.
