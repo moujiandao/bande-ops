@@ -36,7 +36,7 @@ export function AppShell({
   user?: AppShellUser;
 }) {
   return (
-    <div className="min-h-screen bg-surface text-foreground">
+    <div id="app-shell" className="min-h-screen bg-surface text-foreground">
       {/* Sidebar — fixed, constant ink chrome. Hidden on small screens. */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col bg-ink text-ink-foreground md:flex">
         <div className="flex h-14 items-center border-b border-ink-border px-4">
