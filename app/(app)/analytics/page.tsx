@@ -15,20 +15,26 @@ import {
   ANALYTICS_HISTORY_OPTIONS,
   ANALYTICS_WINDOW_OPTIONS,
   type ClassifiedSalesDay,
-  type TrendKind,
+  type InStockRun,
+  type InStockTrendKind,
   type VelocityPeriod,
-} from '@/lib/analytics/sales-momentum';
-import { assembleRecommendations } from '@/lib/reorder/service';
-import { createClient } from '@/lib/supabase/server';
+} from '@/lib/analytics/in-stock-trend';
 import {
   buildAnalyticsViewModel,
   parseAnalyticsViewQuery,
   type AnalyticsSearchParams,
   type AnalyticsViewQuery,
 } from '@/lib/analytics/view';
+import { assembleRecommendations } from '@/lib/reorder/service';
+import { createClient } from '@/lib/supabase/server';
 
 function formatRate(value: number | null | undefined): string {
   return value === null || value === undefined ? 'Unknown' : value.toFixed(1);
+}
+
+function formatSlope(value: number | null | undefined): string {
+  if (value === null || value === undefined) return 'Unknown';
+  return `${value >= 0 ? '+' : ''}${value.toFixed(2)} units/day per in-stock day`;
 }
 
 function formatUnits(value: number | null): string {
@@ -39,22 +45,18 @@ function formatCover(value: number | null): string {
   return value === null ? 'Unknown' : `${value} days`;
 }
 
-function formatDateRange(period: VelocityPeriod | null): string {
+function formatDateRange(
+  period: Pick<VelocityPeriod | InStockRun, 'startDate' | 'endDate'> | null,
+): string {
   if (!period) return 'No qualifying period';
   return `${period.startDate} to ${period.endDate}`;
 }
 
-function percentChange(product: SalesAnalyticsProduct): string {
-  const change = product.momentum.percentageChange;
-  if (change === null) return 'Unknown';
-  return `${change >= 0 ? '+' : ''}${Math.round(change)}%`;
-}
-
-function trendTone(kind: TrendKind): string {
-  if (kind === 'trending-up' || kind === 'sustained-growth') {
+function trendTone(kind: InStockTrendKind): string {
+  if (kind === 'growing') {
     return 'border-accent-soft bg-accent-soft text-accent-strong';
   }
-  if (kind === 'trending-down') {
+  if (kind === 'declining' || kind === 'quick-sellout') {
     return 'border-border-strong bg-panel-muted text-foreground';
   }
   return 'border-border bg-panel-muted text-muted';
@@ -84,13 +86,13 @@ function analyticsHref(
 function evidenceLabel(day: ClassifiedSalesDay): string {
   switch (day.classification) {
     case 'eligible-stocked':
-      return 'Stocked';
+      return 'Stock confirmed';
     case 'eligible-possible-sellout':
-      return 'Possible sellout';
+      return 'Confirmed sellout';
     case 'eligible-restock':
       return 'Restock day';
-    case 'eligible-shipment-evidence':
-      return 'Shipment evidence';
+    case 'shipment-only-evidence':
+      return 'Shipment only';
     case 'out-of-stock':
       return 'Out of stock';
     case 'unknown':
@@ -98,43 +100,9 @@ function evidenceLabel(day: ClassifiedSalesDay): string {
   }
 }
 
-function PeriodCard({
-  label,
-  period,
-  supporting,
-}: {
-  label: string;
-  period: VelocityPeriod | null;
-  supporting?: string;
-}) {
-  return (
-    <div className="rounded-panel border border-border bg-panel p-4">
-      <p className="text-[11px] font-medium uppercase tracking-wide text-faint">
-        {label}
-      </p>
-      <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">
-        {period ? `${period.dailyVelocity.toFixed(1)} / day` : 'Unknown'}
-      </p>
-      <p className="mt-1 text-xs text-muted">{formatDateRange(period)}</p>
-      {period ? (
-        <p className="mt-2 text-[11px] text-faint">
-          {period.unitsShipped} units across {period.eligibleDays} eligible days
-          {period.possibleSelloutDays > 0
-            ? ` · ${period.possibleSelloutDays} possible sellout`
-            : ''}
-          {period.excludedStockoutDays > 0
-            ? ` · ${period.excludedStockoutDays} stockout days skipped`
-            : ''}
-        </p>
-      ) : supporting ? (
-        <p className="mt-2 text-[11px] text-faint">{supporting}</p>
-      ) : null}
-    </div>
-  );
-}
-
 function ProductDetail({ product }: { product: SalesAnalyticsProduct }) {
-  const recent = product.momentum.recent ?? product.momentum.early;
+  const run = product.trend.latestRun;
+  const best = product.trend.best;
   return (
     <section className="flex flex-col gap-4 rounded-panel border border-border bg-panel p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -144,26 +112,64 @@ function ProductDetail({ product }: { product: SalesAnalyticsProduct }) {
           </p>
           <p className="mt-1 text-sm text-muted">{product.title}</p>
         </div>
-        <Badge className={trendTone(product.momentum.trend)}>
-          {trendLabel(product.momentum)}
+        <Badge className={trendTone(product.trend.trend)}>
+          {trendLabel(product.trend)}
         </Badge>
       </div>
 
       <div className="grid gap-3 md:grid-cols-3">
-        <PeriodCard
-          label={
-            product.currentEvidenceAvailable
-              ? 'Recent observed'
-              : 'Latest historical'
-          }
-          period={recent}
-        />
-        <PeriodCard label="Previous observed" period={product.momentum.previous} />
-        <PeriodCard
-          label="Best observed"
-          period={product.momentum.best}
-          supporting="A complete rolling window is required."
-        />
+        <div className="rounded-panel border border-border bg-panel p-4">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-faint">
+            Latest in-stock average
+          </p>
+          <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">
+            {run ? `${run.averageVelocity.toFixed(1)} / day` : 'Unknown'}
+          </p>
+          <p className="mt-1 text-xs text-muted">{formatDateRange(run)}</p>
+          {run ? (
+            <p className="mt-2 text-[11px] text-faint">
+              {run.unitsShipped} units across {run.eligibleDays} confirmed in-stock days
+              {run.endedInSellout ? ' · ended in sellout' : ''}
+            </p>
+          ) : null}
+        </div>
+        <div className="rounded-panel border border-border bg-panel p-4">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-faint">
+            In-stock trend
+          </p>
+          <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">
+            {formatSlope(run?.slopePerDay)}
+          </p>
+          <p className="mt-1 text-xs text-muted">
+            {run
+              ? `${run.startVelocity.toFixed(1)} → ${run.endVelocity.toFixed(1)} units/day`
+              : 'No qualifying run'}
+          </p>
+          <p className="mt-2 text-[11px] capitalize text-faint">
+            {product.trend.confidence} confidence
+            {product.trend.qualifyingRuns > 0
+              ? ` · Growing in ${product.trend.growingRuns} of ${product.trend.qualifyingRuns} qualifying runs`
+              : ''}
+          </p>
+        </div>
+        <div className="rounded-panel border border-border bg-panel p-4">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-faint">
+            Best sustained velocity
+          </p>
+          <p className="mt-2 text-xl font-semibold tabular-nums text-foreground">
+            {best ? `${best.dailyVelocity.toFixed(1)} / day` : 'Unknown'}
+          </p>
+          <p className="mt-1 text-xs text-muted">{formatDateRange(best)}</p>
+          {best ? (
+            <p className="mt-2 text-[11px] text-faint">
+              {best.unitsShipped} units across {best.eligibleDays} continuous in-stock days
+            </p>
+          ) : (
+            <p className="mt-2 text-[11px] text-faint">
+              A complete selected-window run is required.
+            </p>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
@@ -191,13 +197,8 @@ function ProductDetail({ product }: { product: SalesAnalyticsProduct }) {
           <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
             {[
               ['Configured forecast', product.coverDays.configured],
-              [
-                product.currentEvidenceAvailable
-                  ? 'Recent observed'
-                  : 'Latest historical',
-                product.coverDays.recent,
-              ],
-              ['Best observed', product.coverDays.best],
+              ['Latest in-stock average', product.coverDays.recent],
+              ['Best sustained', product.coverDays.best],
             ].map(([label, value]) => (
               <div key={String(label)} className="contents">
                 <dt className="text-muted">{label}</dt>
@@ -217,8 +218,8 @@ function ProductDetail({ product }: { product: SalesAnalyticsProduct }) {
       <div>
         <h3 className="text-sm font-semibold text-foreground">Daily evidence</h3>
         <p className="mt-1 text-xs text-muted">
-          Observed velocity uses only eligible selling days. Unknown evidence
-          interrupts a qualifying window.
+          Trend calculations use continuous stock-confirmed days. Stockouts,
+          shipment-only evidence, unknown data, and missing dates split runs.
         </p>
         <div className="mt-3 max-h-[32rem] overflow-auto rounded-panel border border-border">
           <table className="w-full min-w-[720px] text-xs">
@@ -229,19 +230,19 @@ function ProductDetail({ product }: { product: SalesAnalyticsProduct }) {
                 <th className="px-3 py-2 text-right font-medium">Start</th>
                 <th className="px-3 py-2 text-right font-medium">End</th>
                 <th className="px-3 py-2 text-left font-medium">Evidence</th>
-                <th className="px-3 py-2 text-left font-medium">Velocity</th>
+                <th className="px-3 py-2 text-left font-medium">Trend run</th>
               </tr>
             </thead>
             <tbody>
-              {product.momentum.days.map((day) => (
+              {product.trend.days.map((day) => (
                 <tr key={day.activityDate} className="border-b border-border/50">
                   <td className="px-3 py-2 tabular-nums text-foreground">
                     {day.activityDate}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-foreground">
-                    {day.customerShipmentsValid === false
-                      ? 'Unknown'
-                      : day.customerShipments}
+                    {day.customerShipmentsValid === true
+                      ? day.customerShipments
+                      : 'Unknown'}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-muted">
                     {day.startingBalanceValid === true
@@ -261,7 +262,7 @@ function ProductDetail({ product }: { product: SalesAnalyticsProduct }) {
                   </td>
                 </tr>
               ))}
-              {product.momentum.days.length === 0 ? (
+              {product.trend.days.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-3 py-8 text-center text-muted">
                     No ledger evidence in the selected history.
@@ -283,14 +284,7 @@ export default async function AnalyticsPage({
 }) {
   const params = await searchParams;
   const viewQuery = parseAnalyticsViewQuery(params);
-  const {
-    windowDays,
-    historyDays,
-    filter,
-    sort,
-    query,
-    selectedSku,
-  } = viewQuery;
+  const { windowDays, historyDays, filter, sort, query, selectedSku } = viewQuery;
 
   const supabase = await createClient();
   const [recommendations, history] = await Promise.all([
@@ -320,16 +314,16 @@ export default async function AnalyticsPage({
             Advanced Analytics
           </h1>
           <p className="mt-1 max-w-3xl text-sm text-muted">
-            Sales momentum and dated demand evidence alongside current usable
-            inventory. Velocity counts eligible FBA selling days, including a
-            shipment day that ends with zero inventory.
+            In-stock sales trends and dated demand evidence alongside current
+            usable inventory. Each trend stays inside one continuous,
+            stock-confirmed run.
           </p>
         </div>
         <div className="text-right text-xs text-muted">
-          <p>Sales momentum</p>
+          <p>In-stock sales trend</p>
           <p className="mt-1 text-faint">
             {!history.error && history.dataThroughDate
-              ? `${sourceIssue ? 'Historical data' : 'Data'} through ${history.dataThroughDate}`
+              ? `Analysis cutoff ${history.dataThroughDate}`
               : 'Current ledger evidence unavailable'}
           </p>
         </div>
@@ -337,10 +331,9 @@ export default async function AnalyticsPage({
 
       {history.error || sourceIssue ? (
         <div className="rounded-panel border border-border bg-panel-muted p-4 text-xs text-foreground">
-          Current analytics evidence is unavailable ({history.error ?? sourceIssue}).
-          Apply migration 0020 if needed, then run the FBA ledger sync so current
-          trend claims can be trusted. Existing dated history remains visible and
-          is labeled historical; a history read failure leaves observed metrics unknown.
+          Current in-stock evidence is unavailable ({history.error ?? sourceIssue}).
+          Refresh the FBA ledger so current trend claims can be trusted. Existing
+          dated runs remain visible and are labeled historical.
         </div>
       ) : null}
       {Object.values(recommendations.errors).some(Boolean) ? (
@@ -352,9 +345,9 @@ export default async function AnalyticsPage({
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {([
-          ['trending', 'Trending up', summary.trending],
-          ['early', 'Early launch', summary.early],
-          ['constrained', 'Stock constrained (<30d)', summary.constrained],
+          ['growing', 'Growing in stock', summary.growing],
+          ['constrained', 'Stockout constrained', summary.constrained],
+          ['declining', 'Declining in stock', summary.declining],
           ['insufficient', 'Insufficient evidence', summary.insufficient],
         ] as const).map(([key, label, count]) => (
           <Link
@@ -390,7 +383,7 @@ export default async function AnalyticsPage({
           />
         </label>
         <label className="flex flex-col gap-1.5">
-          <span className="text-xs font-medium text-muted">Eligible-day window</span>
+          <span className="text-xs font-medium text-muted">In-stock trend window</span>
           <select
             name="window"
             defaultValue={windowDays}
@@ -434,10 +427,10 @@ export default async function AnalyticsPage({
             defaultValue={sort}
             className="rounded-md border border-border bg-panel px-3 py-2 text-sm text-foreground focus:border-accent focus:outline-none"
           >
-            <option value="change">Largest increase</option>
-            <option value="recent">Recent velocity</option>
-            <option value="best">Best velocity</option>
-            <option value="cover">Lowest recent cover</option>
+            <option value="slope">Steepest growth</option>
+            <option value="latest">Latest in-stock velocity</option>
+            <option value="best">Best sustained velocity</option>
+            <option value="cover">Lowest latest cover</option>
             <option value="sku">SKU</option>
           </select>
         </label>
@@ -462,7 +455,8 @@ export default async function AnalyticsPage({
           <div>
             <h2 className="text-sm font-semibold text-foreground">Products</h2>
             <p className="mt-1 text-xs text-muted">
-              Recent, previous, and best rates are units per eligible selling day.
+              Trend per day shows the robust change in daily sales for each
+              successive stock-confirmed day.
             </p>
           </div>
           <Badge className="border-border bg-panel-muted text-muted">
@@ -470,33 +464,35 @@ export default async function AnalyticsPage({
           </Badge>
         </div>
         <div className="overflow-x-auto rounded-panel border border-border bg-panel">
-          <table className="w-full min-w-[1180px] whitespace-nowrap text-xs">
+          <table className="w-full min-w-[1480px] whitespace-nowrap text-xs">
             <thead className="border-b border-border text-faint">
               <tr className="border-b border-border/60 bg-panel-muted/40">
                 <th colSpan={2} className="px-3 py-2 text-left font-semibold">Product</th>
                 <th colSpan={4} className="px-3 py-2 text-center font-semibold">Inventory now</th>
-                <th colSpan={4} className="px-3 py-2 text-center font-semibold">Observed velocity</th>
-                <th colSpan={2} className="px-3 py-2 text-left font-semibold">Evidence</th>
+                <th colSpan={5} className="px-3 py-2 text-center font-semibold">In-stock trend</th>
+                <th colSpan={4} className="px-3 py-2 text-left font-semibold">Evidence</th>
               </tr>
               <tr>
                 <th className="px-3 py-2 text-left font-medium">SKU</th>
                 <th className="px-3 py-2 text-left font-medium">Product</th>
                 <th className="px-3 py-2 text-right font-medium">Usable</th>
                 <th className="px-3 py-2 text-right font-medium">Configured cover</th>
-                <th className="px-3 py-2 text-right font-medium">Recent cover</th>
+                <th className="px-3 py-2 text-right font-medium">Latest cover</th>
                 <th className="px-3 py-2 text-right font-medium">Best cover</th>
-                <th className="px-3 py-2 text-right font-medium">Recent</th>
-                <th className="px-3 py-2 text-right font-medium">Previous</th>
-                <th className="px-3 py-2 text-right font-medium">Change</th>
+                <th className="px-3 py-2 text-right font-medium">Latest avg</th>
+                <th className="px-3 py-2 text-right font-medium">Start</th>
+                <th className="px-3 py-2 text-right font-medium">End</th>
+                <th className="px-3 py-2 text-right font-medium">Velocity change</th>
                 <th className="px-3 py-2 text-right font-medium">Best</th>
                 <th className="px-3 py-2 text-left font-medium">Signal</th>
-                <th className="px-3 py-2 text-left font-medium">Best dates</th>
+                <th className="px-3 py-2 text-left font-medium">Confidence</th>
+                <th className="px-3 py-2 text-right font-medium">Growing runs</th>
+                <th className="px-3 py-2 text-left font-medium">Latest run</th>
               </tr>
             </thead>
             <tbody>
               {visible.map((product) => {
-                const recent =
-                  product.momentum.recent ?? product.momentum.early;
+                const run = product.trend.latestRun;
                 return (
                   <tr key={product.sku} className="border-b border-border/50 last:border-0">
                     <td className="px-3 py-2 font-mono text-foreground">
@@ -523,43 +519,45 @@ export default async function AnalyticsPage({
                       {formatCover(product.coverDays.best)}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums text-foreground">
-                      {formatRate(recent?.dailyVelocity)}
+                      {formatRate(run?.averageVelocity)}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums text-muted">
-                      {formatRate(product.momentum.previous?.dailyVelocity)}
+                      {formatRate(run?.startVelocity)}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-muted">
+                      {formatRate(run?.endVelocity)}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums text-foreground">
-                      {product.momentum.absoluteChange === null ? (
-                        'Unknown'
-                      ) : (
-                        <>
-                          <span>
-                            {product.momentum.absoluteChange >= 0 ? '+' : ''}
-                            {product.momentum.absoluteChange.toFixed(1)} / day
-                          </span>
-                          <span className="ml-1 text-[10px] text-faint">
-                            ({percentChange(product)})
-                          </span>
-                        </>
-                      )}
+                      {formatSlope(run?.slopePerDay)}
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-muted">
-                      {formatRate(product.momentum.best?.dailyVelocity)}
+                    <td
+                      className="px-3 py-2 text-right tabular-nums text-muted"
+                      title={formatDateRange(product.trend.best)}
+                    >
+                      {formatRate(product.trend.best?.dailyVelocity)}
                     </td>
                     <td className="px-3 py-2">
-                      <Badge className={trendTone(product.momentum.trend)}>
-                        {trendLabel(product.momentum)}
+                      <Badge className={trendTone(product.trend.trend)}>
+                        {trendLabel(product.trend)}
                       </Badge>
                     </td>
+                    <td className="px-3 py-2 capitalize text-muted">
+                      {product.trend.confidence}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-muted">
+                      {product.trend.qualifyingRuns > 0
+                        ? `${product.trend.growingRuns} / ${product.trend.qualifyingRuns}`
+                        : '—'}
+                    </td>
                     <td className="px-3 py-2 tabular-nums text-muted">
-                      {formatDateRange(product.momentum.best)}
+                      {formatDateRange(run)}
                     </td>
                   </tr>
                 );
               })}
               {visible.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="px-3 py-10 text-center text-muted">
+                  <td colSpan={15} className="px-3 py-10 text-center text-muted">
                     No products match these controls.
                   </td>
                 </tr>

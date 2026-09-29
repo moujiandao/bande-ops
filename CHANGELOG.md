@@ -1,5 +1,14 @@
 # Changelog
 
+## [2026-09-17] In-stock sales trend
+
+### Added
+- Add continuous in-stock run analysis with start and end velocity, a robust daily sales slope, confidence, repeated-run consistency, quick-sellout detection, and exact run dates.
+
+### Changed
+- Replace the window-over-window Momentum percentage on Analytics and Reorder with an In-stock trend signal that excludes out-of-stock gaps and uses confirmed sellout days as the end of a run.
+- Keep best sustained velocity as separate historical evidence and leave reorder recommendation math unchanged.
+
 ## [2026-09-17] Advanced sales analytics
 
 ### Added

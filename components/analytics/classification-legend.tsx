@@ -8,34 +8,34 @@ export const ANALYTICS_CLASSIFICATION_OPTIONS = [
       'Every non-legacy product, including stable, declining, and historical products.',
   },
   {
-    value: 'trending',
-    label: 'Trending up',
+    value: 'growing',
+    label: 'Growing in stock',
     description:
-      'Recent velocity is at least 15% and 0.1 unit per day above the previous complete window, with enough sales volume. Sustained growth is included.',
-  },
-  {
-    value: 'early',
-    label: 'Early launch',
-    description:
-      'At least 3 eligible selling days are available, but not enough to fill the selected window for a full comparison.',
+      'Within the latest continuous stocked run, sales gained at least 0.1 unit per day with each successive day and the ending rate is at least 15% higher.',
   },
   {
     value: 'constrained',
     label: 'Stock constrained',
     description:
-      'Current usable inventory provides fewer than 30 days of cover at the recent observed velocity.',
+      'Current usable inventory provides fewer than 30 days of cover, or recent stocked runs ended in confirmed sellouts.',
+  },
+  {
+    value: 'declining',
+    label: 'Declining in stock',
+    description:
+      'Within the latest continuous stocked run, sales lost at least 0.1 unit per day with each successive day and the ending rate is at least 15% lower.',
   },
   {
     value: 'insufficient',
     label: 'Insufficient evidence',
     description:
-      'Evidence cannot form an early-launch period or two complete comparable windows, the two windows have very low sales volume, or neither window has observed shipments. New activity after a zero-sales window is kept separate.',
+      'There are fewer than 5 continuous stock-confirmed days, no observed sales, or the daily evidence cannot support a direction. Short runs ending in sellout appear under Stock constrained.',
   },
   {
     value: 'historical',
     label: 'Historical',
     description:
-      'The listing is at least 365 days old and either has never sold or has had no sale for about 550 days, or its latest qualifying evidence is more than 14 days old. Products with prior history also appear here when current source evidence is unavailable.',
+      'The listing is legacy, the latest in-stock run ended more than 14 days ago, or current ledger health cannot support a current claim.',
   },
 ] as const satisfies ReadonlyArray<{
   value: AnalyticsFilter;

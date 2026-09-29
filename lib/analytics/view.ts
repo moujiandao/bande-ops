@@ -3,7 +3,7 @@ import {
   ANALYTICS_WINDOW_OPTIONS,
   type AnalyticsHistoryDays,
   type AnalyticsWindowDays,
-} from './sales-momentum';
+} from './in-stock-trend';
 import type { SalesAnalyticsProduct } from './service';
 
 export type AnalyticsSearchParams = Record<
@@ -12,12 +12,12 @@ export type AnalyticsSearchParams = Record<
 >;
 export type AnalyticsFilter =
   | 'all'
-  | 'trending'
-  | 'early'
+  | 'growing'
   | 'constrained'
+  | 'declining'
   | 'insufficient'
   | 'historical';
-export type AnalyticsSort = 'change' | 'recent' | 'best' | 'cover' | 'sku';
+export type AnalyticsSort = 'slope' | 'latest' | 'best' | 'cover' | 'sku';
 
 export interface AnalyticsViewQuery {
   windowDays: AnalyticsWindowDays;
@@ -32,22 +32,22 @@ export interface AnalyticsViewModel {
   visible: SalesAnalyticsProduct[];
   selected: SalesAnalyticsProduct | null;
   summary: {
-    trending: number;
-    early: number;
+    growing: number;
     constrained: number;
+    declining: number;
     insufficient: number;
   };
 }
 
 const FILTERS = [
   'all',
-  'trending',
-  'early',
+  'growing',
   'constrained',
+  'declining',
   'insufficient',
   'historical',
 ] as const;
-const SORTS = ['change', 'recent', 'best', 'cover', 'sku'] as const;
+const SORTS = ['slope', 'latest', 'best', 'cover', 'sku'] as const;
 
 function one(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
@@ -77,7 +77,7 @@ export function parseAnalyticsViewQuery(
     windowDays: numericOption(one(params.window), ANALYTICS_WINDOW_OPTIONS, 7),
     historyDays: numericOption(one(params.history), ANALYTICS_HISTORY_OPTIONS, 365),
     filter: textOption(one(params.filter), FILTERS, 'all'),
-    sort: textOption(one(params.sort), SORTS, 'change'),
+    sort: textOption(one(params.sort), SORTS, 'slope'),
     query: (one(params.q) ?? '').trim(),
     selectedSku: one(params.sku) ?? null,
   };
@@ -90,24 +90,20 @@ function matchesFilter(
   switch (filter) {
     case 'all':
       return !product.isLegacy;
-    case 'trending':
-      return (
-        product.momentum.trend === 'trending-up' ||
-        product.momentum.trend === 'sustained-growth'
-      );
-    case 'early':
-      return product.momentum.trend === 'early-launch';
+    case 'growing':
+      return !product.isLegacy && product.trend.trend === 'growing';
     case 'constrained':
       return product.stockConstrained && !product.isLegacy;
+    case 'declining':
+      return !product.isLegacy && product.trend.trend === 'declining';
     case 'insufficient':
       return (
         !product.isLegacy &&
-        (product.momentum.trend === 'insufficient-data' ||
-          product.momentum.trend === 'limited-volume' ||
-          product.momentum.trend === 'no-observed-shipments')
+        (product.trend.trend === 'insufficient-data' ||
+          product.trend.trend === 'no-observed-sales')
       );
     case 'historical':
-      return product.isLegacy || product.momentum.trend === 'historical-only';
+      return product.isLegacy || product.trend.trend === 'historical-only';
   }
 }
 
@@ -119,16 +115,12 @@ function sortProducts(
     if (sort === 'sku') return left.sku.localeCompare(right.sku);
     const metric = (product: SalesAnalyticsProduct): number | null => {
       switch (sort) {
-        case 'change':
-          return product.momentum.absoluteChange;
-        case 'recent':
-          return (
-            product.momentum.recent?.dailyVelocity ??
-            product.momentum.early?.dailyVelocity ??
-            null
-          );
+        case 'slope':
+          return product.trend.latestRun?.slopePerDay ?? null;
+        case 'latest':
+          return product.trend.latestRun?.averageVelocity ?? null;
         case 'best':
-          return product.momentum.best?.dailyVelocity ?? null;
+          return product.trend.best?.dailyVelocity ?? null;
         case 'cover':
           return product.coverDays.recent;
       }
@@ -165,20 +157,14 @@ export function buildAnalyticsViewModel(
       ? products.find((product) => product.sku === query.selectedSku) ?? null
       : null,
     summary: {
-      trending: active.filter(
-        (product) =>
-          product.momentum.trend === 'trending-up' ||
-          product.momentum.trend === 'sustained-growth',
-      ).length,
-      early: active.filter(
-        (product) => product.momentum.trend === 'early-launch',
-      ).length,
+      growing: active.filter((product) => product.trend.trend === 'growing').length,
       constrained: active.filter((product) => product.stockConstrained).length,
+      declining: active.filter((product) => product.trend.trend === 'declining')
+        .length,
       insufficient: active.filter(
         (product) =>
-          product.momentum.trend === 'insufficient-data' ||
-          product.momentum.trend === 'limited-volume' ||
-          product.momentum.trend === 'no-observed-shipments',
+          product.trend.trend === 'insufficient-data' ||
+          product.trend.trend === 'no-observed-sales',
       ).length,
     },
   };

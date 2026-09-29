@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { InStockTrendKind } from './in-stock-trend';
 import type { SalesAnalyticsProduct } from './service';
 import {
   buildAnalyticsViewModel,
@@ -7,15 +8,16 @@ import {
 
 function product(
   sku: string,
-  trend: SalesAnalyticsProduct['momentum']['trend'],
+  kind: InStockTrendKind,
   options: {
-    change?: number | null;
-    recent?: number | null;
+    slope?: number | null;
+    latest?: number | null;
     constrained?: boolean;
     legacy?: boolean;
   } = {},
 ): SalesAnalyticsProduct {
-  const recent = options.recent ?? null;
+  const latest = options.latest ?? null;
+  const slope = options.slope ?? null;
   return {
     marketplaceId: 'ATVPDKIKX0DER',
     sku,
@@ -27,30 +29,37 @@ function product(
     awd: 0,
     svd: 0,
     configuredVelocity: 1,
-    momentum: {
+    trend: {
       days: [],
-      recent:
-        recent === null
+      runs: [],
+      latestRun:
+        latest === null
           ? null
           : {
               startDate: '2026-09-10',
               endDate: '2026-09-16',
+              fullRunDays: 7,
               eligibleDays: 7,
-              calendarDays: 7,
-              unitsShipped: recent * 7,
-              dailyVelocity: recent,
-              possibleSelloutDays: 0,
-              restockDays: 0,
-              shipmentEvidenceOnlyDays: 0,
-              excludedStockoutDays: 0,
+              unitsShipped: latest * 7,
+              averageVelocity: latest,
+              startVelocity: latest - (slope ?? 0) * 3,
+              endVelocity: latest + (slope ?? 0) * 3,
+              slopePerDay: slope,
+              growthPercent: null,
+              direction:
+                kind === 'growing'
+                  ? 'growing'
+                  : kind === 'declining'
+                    ? 'declining'
+                    : 'stable',
+              endedInSellout: kind === 'quick-sellout',
             },
-      previous: null,
-      older: null,
-      early: null,
       best: null,
-      absoluteChange: options.change ?? null,
-      percentageChange: null,
-      trend,
+      trend: kind,
+      confidence: latest === null ? 'none' : 'medium',
+      growingRuns: kind === 'growing' ? 1 : 0,
+      qualifyingRuns: latest === null ? 0 : 1,
+      stockoutConstrained: kind === 'quick-sellout',
       dataThroughDate: '2026-09-16',
     },
     coverDays: { configured: 10, recent: 10, best: null },
@@ -65,16 +74,16 @@ describe('parseAnalyticsViewQuery', () => {
       parseAnalyticsViewQuery({
         window: '14',
         history: '180',
-        filter: 'trending',
-        sort: 'recent',
+        filter: 'growing',
+        sort: 'latest',
         q: '  widget ',
         sku: 'SKU-2',
       }),
     ).toEqual({
       windowDays: 14,
       historyDays: 180,
-      filter: 'trending',
-      sort: 'recent',
+      filter: 'growing',
+      sort: 'latest',
       query: 'widget',
       selectedSku: 'SKU-2',
     });
@@ -92,23 +101,24 @@ describe('parseAnalyticsViewQuery', () => {
       windowDays: 7,
       historyDays: 365,
       filter: 'all',
-      sort: 'change',
+      sort: 'slope',
     });
   });
 });
 
 describe('buildAnalyticsViewModel', () => {
   const products = [
-    product('SKU-B', 'trending-up', { change: 2, recent: 4 }),
-    product('SKU-A', 'early-launch', { recent: 3, constrained: true }),
-    product('SKU-C', 'no-observed-shipments', { recent: 0 }),
+    product('SKU-B', 'growing', { slope: 0.5, latest: 4 }),
+    product('SKU-A', 'quick-sellout', { latest: 3, constrained: true }),
+    product('SKU-C', 'insufficient-data'),
+    product('SKU-D', 'declining', { slope: -0.4, latest: 2 }),
     product('OLD', 'historical-only', { legacy: true }),
   ];
 
   it('filters, searches, sorts, and selects independently', () => {
     const query = parseAnalyticsViewQuery({
-      filter: 'trending',
-      sort: 'change',
+      filter: 'growing',
+      sort: 'slope',
       q: 'sku',
       sku: 'SKU-A',
     });
@@ -117,9 +127,9 @@ describe('buildAnalyticsViewModel', () => {
     expect(view.visible.map((row) => row.sku)).toEqual(['SKU-B']);
     expect(view.selected?.sku).toBe('SKU-A');
     expect(view.summary).toEqual({
-      trending: 1,
-      early: 1,
+      growing: 1,
       constrained: 1,
+      declining: 1,
       insufficient: 1,
     });
   });
@@ -138,12 +148,13 @@ describe('buildAnalyticsViewModel', () => {
   it('sorts unknown values after real values', () => {
     const view = buildAnalyticsViewModel(
       products,
-      parseAnalyticsViewQuery({ sort: 'recent' }),
+      parseAnalyticsViewQuery({ sort: 'latest' }),
     );
 
     expect(view.visible.map((row) => row.sku)).toEqual([
       'SKU-B',
       'SKU-A',
+      'SKU-D',
       'SKU-C',
     ]);
   });

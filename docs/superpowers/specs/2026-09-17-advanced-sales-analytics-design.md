@@ -2,7 +2,9 @@
 
 Date: 2026-09-17
 
-Status: Approved for implementation by Brian on 2026-09-17.
+Status: Superseded on 2026-09-17 by `issues/prd.md` for the user-facing trend
+metric. The ledger evidence model and Analytics placement in this document remain
+applicable.
 
 Implementation details and acceptance cases are expanded in
 `docs/superpowers/plans/2026-09-17-advanced-sales-analytics.md`.

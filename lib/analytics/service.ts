@@ -5,13 +5,14 @@ import type {
   SourceHealthRow,
 } from '@/lib/reorder/service';
 import {
-  calculateSalesMomentum,
+  calculateInStockTrend,
   type AnalyticsHistoryDays,
   type AnalyticsWindowDays,
+  type InStockTrendKind,
+  type InStockTrendResult,
   type SalesLedgerDay,
-  type SalesMomentumResult,
-  type TrendKind,
-} from './sales-momentum';
+  type TrendConfidence,
+} from './in-stock-trend';
 
 const HISTORY_PAGE_SIZE = 1_000;
 const MS_PER_DAY = 86_400_000;
@@ -91,23 +92,25 @@ export interface SalesAnalyticsProduct {
   awd: number | null;
   svd: number | null;
   configuredVelocity: number | null;
-  momentum: SalesMomentumResult;
+  trend: InStockTrendResult;
   coverDays: InventoryCoverScenarios;
   currentEvidenceAvailable: boolean;
   stockConstrained: boolean;
 }
 
-export interface MomentumSignal {
-  kind: TrendKind;
+export interface InStockTrendSignal {
+  kind: InStockTrendKind;
   label: string;
-  absoluteChange: number | null;
-  percentageChange: number | null;
-  recentVelocity: number | null;
-  previousVelocity: number | null;
-  recentStartDate: string | null;
-  recentEndDate: string | null;
-  previousStartDate: string | null;
-  previousEndDate: string | null;
+  slopePerDay: number | null;
+  averageVelocity: number | null;
+  startVelocity: number | null;
+  endVelocity: number | null;
+  startDate: string | null;
+  endDate: string | null;
+  confidence: TrendConfidence;
+  growingRuns: number;
+  qualifyingRuns: number;
+  endedInSellout: boolean;
 }
 
 export interface BuildSalesAnalyticsInput {
@@ -120,7 +123,7 @@ export interface BuildSalesAnalyticsInput {
   currentEvidenceAvailable?: boolean;
 }
 
-/** Block current momentum labels when the daily ledger mirror is unhealthy. */
+/** Block current trend labels when the daily ledger mirror is unhealthy. */
 export function analyticsSourceIssue(
   sources: SourceHealthRow[],
   now: Date = new Date(),
@@ -160,28 +163,23 @@ function coverDays(supply: number | null, velocity: number | null): number | nul
   return Math.floor(supply / velocity);
 }
 
-export function trendLabel(momentum: SalesMomentumResult): string {
-  const percent =
-    momentum.percentageChange === null
+export function trendLabel(trend: InStockTrendResult): string {
+  const slope = trend.latestRun?.slopePerDay;
+  const change =
+    slope === null || slope === undefined
       ? ''
-      : ` ${momentum.percentageChange >= 0 ? '+' : ''}${Math.round(momentum.percentageChange)}%`;
-  switch (momentum.trend) {
-    case 'sustained-growth':
-      return `Sustained growth${percent}`;
-    case 'trending-up':
-      return `Trending up${percent}`;
-    case 'trending-down':
-      return `Trending down${percent}`;
+      : ` ${slope >= 0 ? '+' : ''}${slope.toFixed(2)}/day`;
+  switch (trend.trend) {
+    case 'growing':
+      return `Growing${change}`;
+    case 'declining':
+      return `Declining${change}`;
     case 'stable':
       return 'Stable';
-    case 'new-activity':
-      return 'New activity';
-    case 'no-observed-shipments':
-      return 'No observed shipments';
-    case 'limited-volume':
-      return `Limited volume${percent}`;
-    case 'early-launch':
-      return `Early ${momentum.early?.eligibleDays ?? 0}d`;
+    case 'quick-sellout':
+      return 'Quick sellout';
+    case 'no-observed-sales':
+      return 'No observed sales';
     case 'historical-only':
       return 'Historical only';
     case 'insufficient-data':
@@ -189,18 +187,23 @@ export function trendLabel(momentum: SalesMomentumResult): string {
   }
 }
 
-export function momentumSignal(momentum: SalesMomentumResult): MomentumSignal {
+export function inStockTrendSignal(
+  trend: InStockTrendResult,
+): InStockTrendSignal {
+  const run = trend.latestRun;
   return {
-    kind: momentum.trend,
-    label: trendLabel(momentum),
-    absoluteChange: momentum.absoluteChange,
-    percentageChange: momentum.percentageChange,
-    recentVelocity: momentum.recent?.dailyVelocity ?? momentum.early?.dailyVelocity ?? null,
-    previousVelocity: momentum.previous?.dailyVelocity ?? null,
-    recentStartDate: momentum.recent?.startDate ?? momentum.early?.startDate ?? null,
-    recentEndDate: momentum.recent?.endDate ?? momentum.early?.endDate ?? null,
-    previousStartDate: momentum.previous?.startDate ?? null,
-    previousEndDate: momentum.previous?.endDate ?? null,
+    kind: trend.trend,
+    label: trendLabel(trend),
+    slopePerDay: run?.slopePerDay ?? null,
+    averageVelocity: run?.averageVelocity ?? null,
+    startVelocity: run?.startVelocity ?? null,
+    endVelocity: run?.endVelocity ?? null,
+    startDate: run?.startDate ?? null,
+    endDate: run?.endDate ?? null,
+    confidence: trend.confidence,
+    growingRuns: trend.growingRuns,
+    qualifyingRuns: trend.qualifyingRuns,
+    endedInSellout: run?.endedInSellout ?? false,
   };
 }
 
@@ -244,8 +247,9 @@ export async function readAnalyticsHistory(
 
   return {
     rows,
-    dataThroughDate:
-      rows.map((row) => row.activity_date).sort().at(-1) ?? null,
+    // The analysis clock advances even when the ledger has no recent activity.
+    // Using the latest row would make an old selling run look current.
+    dataThroughDate: endDate,
   };
 }
 
@@ -261,7 +265,7 @@ export function buildSalesAnalytics(
   }
 
   return input.products.map((product) => {
-    const calculatedMomentum = calculateSalesMomentum(
+    const calculatedTrend = calculateInStockTrend(
       (ledgerBySku.get(product.sku) ?? []).map(ledgerDay),
       {
         windowDays: input.windowDays,
@@ -272,19 +276,23 @@ export function buildSalesAnalytics(
       },
     );
     const hasObservedHistory =
-      calculatedMomentum.recent !== null ||
-      calculatedMomentum.early !== null ||
-      calculatedMomentum.best !== null;
-    const momentum =
+      calculatedTrend.latestRun !== null || calculatedTrend.best !== null;
+    const trend =
       input.currentEvidenceAvailable === false && hasObservedHistory
-        ? { ...calculatedMomentum, trend: 'historical-only' as const }
-        : calculatedMomentum;
+        ? {
+            ...calculatedTrend,
+            trend: 'historical-only' as const,
+            confidence: 'none' as const,
+          }
+        : calculatedTrend;
     const observedVelocity =
-      momentum.recent?.dailyVelocity ?? momentum.early?.dailyVelocity ?? null;
+      trend.latestRun && trend.latestRun.slopePerDay !== null
+        ? trend.latestRun.averageVelocity
+        : null;
     const scenarios = {
       configured: coverDays(product.usableSupply, product.dailyDemand),
       recent: coverDays(product.usableSupply, observedVelocity),
-      best: coverDays(product.usableSupply, momentum.best?.dailyVelocity ?? null),
+      best: coverDays(product.usableSupply, trend.best?.dailyVelocity ?? null),
     };
 
     return {
@@ -298,21 +306,21 @@ export function buildSalesAnalytics(
       awd: product.sources.awd,
       svd: product.sources.svd,
       configuredVelocity: product.dailyDemand,
-      momentum,
+      trend,
       coverDays: scenarios,
       currentEvidenceAvailable: input.currentEvidenceAvailable !== false,
       stockConstrained:
         input.currentEvidenceAvailable !== false &&
-        scenarios.recent !== null &&
-        scenarios.recent < 30,
+        ((scenarios.recent !== null && scenarios.recent < 30) ||
+          trend.stockoutConstrained),
     };
   });
 }
 
-export function momentumSignalsBySku(
+export function inStockTrendSignalsBySku(
   products: SalesAnalyticsProduct[],
-): Record<string, MomentumSignal> {
+): Record<string, InStockTrendSignal> {
   return Object.fromEntries(
-    products.map((product) => [product.sku, momentumSignal(product.momentum)]),
+    products.map((product) => [product.sku, inStockTrendSignal(product.trend)]),
   );
 }

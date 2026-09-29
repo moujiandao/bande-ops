@@ -2,9 +2,9 @@
 
 Date: 2026-09-17
 
-Status: proposed implementation plan. Planning is complete; application code,
-database migrations, and production data are unchanged. Numerical thresholds
-below are proposed product defaults, not validated statistical confidence levels.
+Status: Superseded on 2026-09-17 by `issues/prd.md` for the user-facing trend
+metric. This file records the original implementation plan and should not be used
+as the current acceptance criteria.
 
 ## Outcome
 

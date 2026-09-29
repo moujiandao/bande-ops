@@ -100,6 +100,50 @@ function recommendation(): RecommendationRow {
 }
 
 describe('readAnalyticsHistory', () => {
+  it('uses the last completed day to judge whether old activity is historical', async () => {
+    const rows = Array.from({ length: 7 }, (_, index) => ({
+      marketplace_id: 'ATVPDKIKX0DER',
+      sku: 'SKU-1',
+      activity_date: new Date(
+        Date.parse('2026-09-04T00:00:00.000Z') + index * 86_400_000,
+      )
+        .toISOString()
+        .slice(0, 10),
+      customer_shipments: index + 1,
+      customer_shipments_valid: true,
+      sellable_starting_balance: 100,
+      starting_balance_valid: true,
+      sellable_ending_balance: 90,
+      ending_balance_valid: true,
+    }));
+    const range = vi.fn().mockResolvedValue({ data: rows, error: null });
+    const orderSku = vi.fn().mockReturnValue({ range });
+    const orderDate = vi.fn().mockReturnValue({ order: orderSku });
+    const lte = vi.fn().mockReturnValue({ order: orderDate });
+    const gte = vi.fn().mockReturnValue({ lte });
+    const eq = vi.fn().mockReturnValue({ gte });
+    const select = vi.fn().mockReturnValue({ eq });
+    const supabase = {
+      from: vi.fn().mockReturnValue({ select }),
+    } as unknown as ReadAnalyticsHistoryDeps['supabase'];
+
+    const history = await readAnalyticsHistory({
+      supabase,
+      historyDays: 90,
+      now: new Date('2026-09-29T12:00:00.000Z'),
+    });
+    const [analytics] = buildSalesAnalytics({
+      products: [recommendation()],
+      ledgerRows: history.rows,
+      windowDays: 7,
+      historyDays: 90,
+      dataThroughDate: history.dataThroughDate,
+    });
+
+    expect(history.dataThroughDate).toBe('2026-09-28');
+    expect(analytics.trend.trend).toBe('historical-only');
+  });
+
   it('paginates beyond the Supabase default result limit', async () => {
     const firstPage = Array.from({ length: 1_000 }, (_, index) => ({
       marketplace_id: 'ATVPDKIKX0DER',
@@ -155,7 +199,7 @@ describe('buildSalesAnalytics', () => {
       marketplace_id: 'ATVPDKIKX0DER',
       sku: 'SKU-1',
       activity_date,
-      customer_shipments: index < 7 ? 2 : 5,
+      customer_shipments: index < 7 ? 2 : index - 6,
       customer_shipments_valid: true,
       sellable_starting_balance: 100,
       starting_balance_valid: true,
@@ -171,11 +215,17 @@ describe('buildSalesAnalytics', () => {
       dataThroughDate: '2026-09-17',
     });
 
-    expect(result.momentum.trend).toBe('trending-up');
+    expect(result.trend.trend).toBe('growing');
+    expect(result.trend.latestRun).toMatchObject({
+      averageVelocity: 4,
+      slopePerDay: 1,
+      startVelocity: 2,
+      endVelocity: 6,
+    });
     expect(result.coverDays).toEqual({
       configured: 35,
-      recent: 14,
-      best: 14,
+      recent: 17,
+      best: 17,
     });
     expect(result.stockConstrained).toBe(true);
   });
@@ -189,7 +239,7 @@ describe('buildSalesAnalytics', () => {
       )
         .toISOString()
         .slice(0, 10),
-      customer_shipments: index < 7 ? 2 : 5,
+      customer_shipments: index < 7 ? 2 : index - 6,
       customer_shipments_valid: true,
       sellable_starting_balance: 100,
       starting_balance_valid: true,
@@ -206,15 +256,17 @@ describe('buildSalesAnalytics', () => {
       currentEvidenceAvailable: false,
     });
 
-    expect(result.momentum.trend).toBe('historical-only');
-    expect(result.momentum.recent?.dailyVelocity).toBe(5);
-    expect(result.momentum.previous?.dailyVelocity).toBe(2);
-    expect(result.momentum.best).toMatchObject({
+    expect(result.trend.trend).toBe('historical-only');
+    expect(result.trend.latestRun).toMatchObject({
+      averageVelocity: 4,
+      slopePerDay: 1,
+    });
+    expect(result.trend.best).toMatchObject({
       startDate: '2026-09-10',
       endDate: '2026-09-16',
-      dailyVelocity: 5,
+      dailyVelocity: 4,
     });
-    expect(result.momentum.days).toHaveLength(14);
+    expect(result.trend.days).toHaveLength(14);
     expect(result.currentEvidenceAvailable).toBe(false);
     expect(result.stockConstrained).toBe(false);
   });

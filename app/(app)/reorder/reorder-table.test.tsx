@@ -76,27 +76,33 @@ describe('ReorderTable coverage selector', () => {
         rows={[orderRow()]}
         trailingHeader="Order"
         variant="order"
-        momentumBySku={{
+        trendBySku={{
           'SKU-1': {
-            kind: 'trending-up',
-            label: 'Trending up +50%',
-            absoluteChange: 1,
-            percentageChange: 50,
-            recentVelocity: 3,
-            previousVelocity: 2,
-            recentStartDate: '2026-09-11',
-            recentEndDate: '2026-09-17',
-            previousStartDate: '2026-09-04',
-            previousEndDate: '2026-09-10',
+            kind: 'growing',
+            label: 'Growing +0.35/day',
+            slopePerDay: 0.35,
+            averageVelocity: 3,
+            startVelocity: 2,
+            endVelocity: 4,
+            startDate: '2026-09-11',
+            endDate: '2026-09-17',
+            confidence: 'medium',
+            growingRuns: 2,
+            qualifyingRuns: 3,
+            endedInSellout: true,
           },
         }}
       />,
     );
 
-    expect(html).toContain('>Momentum<');
+    expect(html).toContain('>In-stock trend<');
     expect(html).toContain('href="/analytics?sku=SKU-1"');
-    expect(html).toContain('Trending up +50%');
-    expect(html).toContain('Recent 2026-09-11 to 2026-09-17');
+    expect(html).toContain('Growing +0.35/day');
+    expect(html).toContain(
+      'Velocity changed +0.35 units/day per in-stock day',
+    );
+    expect(html).toContain('In-stock run 2026-09-11 to 2026-09-17');
+    expect(html).toContain('Run ended in a sellout');
   });
 
   it('offers the legacy coverage presets on the order list only', () => {

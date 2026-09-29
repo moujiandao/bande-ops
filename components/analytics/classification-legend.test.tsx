@@ -13,9 +13,9 @@ describe('ClassificationLegend', () => {
     expect(markup).toContain('Classification legend');
     expect(ANALYTICS_CLASSIFICATION_OPTIONS.map((item) => item.value)).toEqual([
       'all',
-      'trending',
-      'early',
+      'growing',
       'constrained',
+      'declining',
       'insufficient',
       'historical',
     ]);

@@ -9,7 +9,7 @@ import {
   type DragEvent,
 } from 'react';
 import type { RecommendationRow } from '@/lib/reorder/service';
-import type { MomentumSignal } from '@/lib/analytics/service';
+import type { InStockTrendSignal } from '@/lib/analytics/service';
 import { recommend } from '@/lib/reorder/recommend';
 import {
   applySvdShipmentBoxCount,
@@ -38,7 +38,7 @@ type SortKey =
   | 'total'
   | 'perDay'
   | 'cover'
-  | 'momentum'
+  | 'trend'
   | 'trailing';
 
 export type ReorderTableVariant = 'order' | 'status' | 'legacy' | 'replenish';
@@ -256,7 +256,7 @@ function sortValue(
   variant: ReorderTableVariant,
   svdToFbaTargetDays: number,
   coverageDays: number | null,
-  momentumBySku: Record<string, MomentumSignal> | undefined,
+  trendBySku: Record<string, InStockTrendSignal> | undefined,
 ): string | number | null {
   switch (key) {
     case 'sku':
@@ -277,9 +277,9 @@ function sortValue(
       return row.dailyDemand;
     case 'cover':
       return coverDays(row.usableSupply, row.dailyDemand);
-    case 'momentum': {
-      const signal = momentumBySku?.[row.sku];
-      return signal?.absoluteChange ?? null;
+    case 'trend': {
+      const signal = trendBySku?.[row.sku];
+      return signal?.slopePerDay ?? null;
     }
     case 'trailing':
       if (variant === 'order') return orderQuantityForCoverage(row, coverageDays);
@@ -316,14 +316,14 @@ export function ReorderTable({
   variant,
   svdToFbaTargetDays,
   shipmentMonthYear,
-  momentumBySku,
+  trendBySku,
 }: {
   rows: RecommendationRow[];
   trailingHeader: string;
   variant: ReorderTableVariant;
   svdToFbaTargetDays?: number;
   shipmentMonthYear?: string;
-  momentumBySku?: Record<string, MomentumSignal>;
+  trendBySku?: Record<string, InStockTrendSignal>;
 }) {
   if (variant === 'replenish' && svdToFbaTargetDays === undefined) {
     throw new Error('Replenish tables require an SVD-to-FBA target.');
@@ -352,9 +352,9 @@ export function ReorderTable({
   const showBoxName = variant === 'replenish';
   const showNotes = variant === 'replenish';
   const showBoxesToSend = variant === 'replenish';
-  const showMomentum =
+  const showTrend =
     (variant === 'order' || variant === 'replenish') &&
-    momentumBySku !== undefined;
+    trendBySku !== undefined;
   const visibleColumns = showBoxName
     ? [COLUMNS[0], BOX_COLUMN, ...COLUMNS.slice(1)]
     : COLUMNS;
@@ -380,7 +380,7 @@ export function ReorderTable({
   // Fixed (non-Notes) columns: data + trailing + boxes-to-send when replenishing.
   const fixedColumnCount =
     visibleColumns.length +
-    (showMomentum ? 1 : 0) +
+    (showTrend ? 1 : 0) +
     1 +
     (showBoxesToSend ? 1 : 0);
   // Where the draggable Notes column sits among the fixed columns (insert-before
@@ -401,7 +401,7 @@ export function ReorderTable({
         variant,
         replenishTargetDays,
         coverageDays,
-        momentumBySku,
+        trendBySku,
       );
       const bv = sortValue(
         b,
@@ -409,7 +409,7 @@ export function ReorderTable({
         variant,
         replenishTargetDays,
         coverageDays,
-        momentumBySku,
+        trendBySku,
       );
       // Unknown values always sink, so sorting never buries real data under
       // a wall of em dashes.
@@ -429,7 +429,7 @@ export function ReorderTable({
     variant,
     replenishTargetDays,
     coverageDays,
-    momentumBySku,
+    trendBySku,
   ]);
 
   function toggle(key: SortKey) {
@@ -561,19 +561,19 @@ export function ReorderTable({
                 const cells = visibleColumns.map((c, i) =>
                   header(c.key, c.label, c.title, c.numeric, i),
                 );
-                if (showMomentum) {
+                if (showTrend) {
                   cells.push(
                     header(
-                      'momentum',
-                      'Momentum',
-                      'Observed recent velocity trend; opens dated evidence',
+                      'trend',
+                      'In-stock trend',
+                      'Daily sales direction inside the latest continuous stocked run; opens dated evidence',
                       false,
                       visibleColumns.length,
                     ),
                   );
                 }
                 const trailingIndex =
-                  visibleColumns.length + (showMomentum ? 1 : 0);
+                  visibleColumns.length + (showTrend ? 1 : 0);
                 cells.push(
                   header(
                     'trailing',
@@ -717,24 +717,32 @@ export function ReorderTable({
                     )}
                   </td>,
                 ];
-                if (showMomentum) {
-                  const signal = momentumBySku?.[row.sku];
+                if (showTrend) {
+                  const signal = trendBySku?.[row.sku];
                   const title = signal
                     ? [
-                        signal.recentStartDate && signal.recentEndDate
-                          ? `Recent ${signal.recentStartDate} to ${signal.recentEndDate}`
+                        signal.startDate && signal.endDate
+                          ? `In-stock run ${signal.startDate} to ${signal.endDate}`
                           : null,
-                        signal.previousStartDate && signal.previousEndDate
-                          ? `Previous ${signal.previousStartDate} to ${signal.previousEndDate}`
+                        signal.startVelocity !== null && signal.endVelocity !== null
+                          ? `${signal.startVelocity.toFixed(1)} to ${signal.endVelocity.toFixed(1)} units/day`
                           : null,
+                        signal.slopePerDay !== null
+                          ? `Velocity changed ${signal.slopePerDay >= 0 ? '+' : ''}${signal.slopePerDay.toFixed(2)} units/day per in-stock day`
+                          : null,
+                        `Confidence: ${signal.confidence}`,
+                        signal.qualifyingRuns > 0
+                          ? `Growing in ${signal.growingRuns} of ${signal.qualifyingRuns} qualifying runs`
+                          : null,
+                        signal.endedInSellout ? 'Run ended in a sellout' : null,
                       ]
                         .filter(Boolean)
                         .join('. ')
-                    : 'No observed momentum evidence yet';
+                    : 'No in-stock trend evidence yet';
                   cells.splice(
                     cells.length - 1,
                     0,
-                    <td key="momentum" className="px-3 py-2">
+                    <td key="trend" className="px-3 py-2">
                       <Link
                         href={`/analytics?sku=${encodeURIComponent(row.sku)}`}
                         title={title}
