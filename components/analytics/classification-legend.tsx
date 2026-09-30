@@ -14,6 +14,21 @@ export const ANALYTICS_CLASSIFICATION_OPTIONS = [
       'Recent velocity is at least 15% and 0.1 unit per day above the previous complete window, with enough sales volume. Sustained growth is included.',
   },
   {
+    value: 'growing',
+    label: 'Growing in stock',
+    description: 'Daily observed demand rises during a continuous, confirmed in-stock run. Giveaway-adjusted units are used when enabled.',
+  },
+  {
+    value: 'declining',
+    label: 'Declining in stock',
+    description: 'Daily observed demand falls during a continuous, confirmed in-stock run.',
+  },
+  {
+    value: 'quick-sellout',
+    label: 'Stockout constrained',
+    description: 'A recent confirmed in-stock run ends with a possible sellout, so observed sales may understate demand. Includes longer runs, not only the Quick sellout signal.',
+  },
+  {
     value: 'early',
     label: 'Early launch',
     description:
@@ -35,7 +50,7 @@ export const ANALYTICS_CLASSIFICATION_OPTIONS = [
     value: 'historical',
     label: 'Historical',
     description:
-      'The listing is at least 365 days old and either has never sold or has had no sale for about 550 days, or its latest qualifying evidence is more than 14 days old. Products with prior history also appear here when current source evidence is unavailable.',
+      'The listing is at least 365 days old and either has never sold or has had no sale for about 550 days, or Momentum or in-stock trend evidence is stale. Products with prior history also appear here when current source evidence is unavailable.',
   },
 ] as const satisfies ReadonlyArray<{
   value: AnalyticsFilter;

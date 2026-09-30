@@ -214,6 +214,26 @@ describe('RecommendationTable coverage selector', () => {
     expect(replenishHtml).not.toContain('aria-label="Months of coverage"');
   });
 
+  it('shows an additive in-stock trend link without replacing the momentum signal', () => {
+    const html = renderToStaticMarkup(
+      <RecommendationTable
+        rows={[orderRow()]}
+        trailingHeader="Order"
+        variant="order"
+        trendBySku={{ 'SKU-1': {
+          kind: 'growing', label: 'Growing', slopePerDay: 0.5,
+          averageVelocity: 3, startVelocity: 2, endVelocity: 4,
+          startDate: '2026-09-10', endDate: '2026-09-16',
+          confidence: 'medium', growingRuns: 1, qualifyingRuns: 1,
+          endedInSellout: false,
+        } }}
+      />,
+    );
+    expect(html).toContain('In-stock trend');
+    expect(html).toContain('>Growing</a>');
+    expect(html).toContain('href="/analytics?sku=SKU-1"');
+  });
+
   it('recalculates quantity from the selected coverage without changing the trigger', () => {
     const row = orderRow();
 

@@ -14,6 +14,9 @@ describe('ClassificationLegend', () => {
     expect(ANALYTICS_CLASSIFICATION_OPTIONS.map((item) => item.value)).toEqual([
       'all',
       'trending',
+      'growing',
+      'declining',
+      'quick-sellout',
       'early',
       'constrained',
       'insufficient',

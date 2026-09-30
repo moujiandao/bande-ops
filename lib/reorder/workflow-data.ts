@@ -2,6 +2,7 @@ import { archivedSkuKeys, isSkuArchived } from '@/lib/archive/skus';
 import {
   analyticsSourceIssue,
   buildSalesAnalytics,
+  inStockTrendSignalsBySku,
   momentumSignalsBySku,
   readAnalyticsHistory,
 } from '@/lib/analytics/service';
@@ -75,6 +76,9 @@ export async function loadReorderWorkflowData() {
   const momentumBySku = analyticsHistory.error || analyticsIssue
     ? undefined
     : momentumSignalsBySku(analytics);
+  const trendBySku = analyticsHistory.error || analyticsIssue
+    ? undefined
+    : inStockTrendSignalsBySku(analytics);
   const active = rows.filter((row) => !row.isLegacy);
   const legacy = rows.filter((row) => row.isLegacy);
   const svdToFbaTargetDays = policy.svdToFbaTargetDays;
@@ -92,6 +96,7 @@ export async function loadReorderWorkflowData() {
     analyticsError: analyticsHistory.error ?? analyticsIssue ?? null,
     analyticsSettings,
     momentumBySku,
+    trendBySku,
     policy,
     active,
     legacy,
@@ -105,5 +110,6 @@ export async function loadReorderWorkflowData() {
       const kind = momentumBySku?.[row.sku]?.kind;
       return kind === 'trending-up' || kind === 'sustained-growth';
     }).length,
+    growingCount: toReorder.filter((row) => trendBySku?.[row.sku]?.kind === 'growing').length,
   };
 }

@@ -13,6 +13,9 @@ function product(
     recent?: number | null;
     constrained?: boolean;
     legacy?: boolean;
+    inStockTrend?: SalesAnalyticsProduct['trend']['trend'];
+    slope?: number;
+    stockoutConstrained?: boolean;
   } = {},
 ): SalesAnalyticsProduct {
   const recent = options.recent ?? null;
@@ -57,8 +60,26 @@ function product(
       trend,
       dataThroughDate: '2026-09-16',
     },
+    trend: {
+      days: [],
+      runs: [],
+      latestRun: options.slope === undefined ? null : {
+        startDate: '2026-09-10', endDate: '2026-09-16', fullRunDays: 7,
+        eligibleDays: 7, unitsShipped: 21, averageVelocity: 3,
+        startVelocity: 2, endVelocity: 4, slopePerDay: options.slope,
+        growthPercent: 100, direction: 'growing', endedInSellout: false,
+      },
+      best: null,
+      trend: options.inStockTrend ?? 'insufficient-data',
+      confidence: 'none',
+      growingRuns: 0,
+      qualifyingRuns: 0,
+      stockoutConstrained: options.stockoutConstrained ?? false,
+      dataThroughDate: '2026-09-16',
+    },
     coverDays: { configured: 10, recent: 10, best: null },
     currentEvidenceAvailable: true,
+    currentTrendEvidenceAvailable: true,
     stockConstrained: options.constrained ?? false,
   };
 }
@@ -103,7 +124,7 @@ describe('parseAnalyticsViewQuery', () => {
 
 describe('buildAnalyticsViewModel', () => {
   const products = [
-    product('SKU-B', 'trending-up', { change: 2, recent: 4 }),
+    product('SKU-B', 'trending-up', { change: 2, recent: 4, inStockTrend: 'growing', slope: 0.5 }),
     product('SKU-A', 'early-launch', { recent: 3, constrained: true }),
     product('SKU-C', 'no-observed-shipments', { recent: 0 }),
     product('OLD', 'historical-only', { legacy: true }),
@@ -125,6 +146,9 @@ describe('buildAnalyticsViewModel', () => {
       early: 1,
       constrained: 1,
       insufficient: 1,
+      growing: 1,
+      declining: 0,
+      quickSellout: 0,
     });
   });
 
@@ -150,5 +174,32 @@ describe('buildAnalyticsViewModel', () => {
       'SKU-A',
       'SKU-C',
     ]);
+  });
+
+  it('filters and sorts the separate in-stock signal without changing momentum classification', () => {
+    const growing = buildAnalyticsViewModel(products, parseAnalyticsViewQuery({ filter: 'growing' }));
+    expect(growing.visible.map((row) => row.sku)).toEqual(['SKU-B']);
+    const sorted = buildAnalyticsViewModel(products, parseAnalyticsViewQuery({ sort: 'trend' }));
+    expect(sorted.visible[0].sku).toBe('SKU-B');
+  });
+
+  it('includes long runs ending in sellout in the stockout-constrained filter', () => {
+    const constrained = product('SELL', 'stable', {
+      inStockTrend: 'growing', slope: 0.4, stockoutConstrained: true,
+    });
+    const view = buildAnalyticsViewModel([...products, constrained], parseAnalyticsViewQuery({ filter: 'quick-sellout' }));
+    expect(view.visible.map((row) => row.sku)).toEqual(['SELL']);
+    expect(view.summary.quickSellout).toBe(1);
+  });
+
+  it('does not present historical sellouts as current stockout constraints', () => {
+    const stale = product('STALE', 'historical-only', {
+      inStockTrend: 'historical-only', stockoutConstrained: true,
+    });
+    const view = buildAnalyticsViewModel([stale], parseAnalyticsViewQuery({ filter: 'quick-sellout' }));
+    expect(view.visible).toEqual([]);
+    expect(view.summary.quickSellout).toBe(0);
+    const historical = buildAnalyticsViewModel([stale], parseAnalyticsViewQuery({ filter: 'historical' }));
+    expect(historical.visible.map((row) => row.sku)).toEqual(['STALE']);
   });
 });

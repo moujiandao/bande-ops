@@ -16,8 +16,11 @@ export type AnalyticsFilter =
   | 'early'
   | 'constrained'
   | 'insufficient'
-  | 'historical';
-export type AnalyticsSort = 'change' | 'recent' | 'best' | 'cover' | 'sku';
+  | 'historical'
+  | 'growing'
+  | 'declining'
+  | 'quick-sellout';
+export type AnalyticsSort = 'change' | 'recent' | 'best' | 'cover' | 'trend' | 'sku';
 
 export interface AnalyticsViewQuery {
   windowDays: AnalyticsWindowDays;
@@ -36,6 +39,9 @@ export interface AnalyticsViewModel {
     early: number;
     constrained: number;
     insufficient: number;
+    growing: number;
+    declining: number;
+    quickSellout: number;
   };
 }
 
@@ -46,8 +52,11 @@ const FILTERS = [
   'constrained',
   'insufficient',
   'historical',
+  'growing',
+  'declining',
+  'quick-sellout',
 ] as const;
-const SORTS = ['change', 'recent', 'best', 'cover', 'sku'] as const;
+const SORTS = ['change', 'recent', 'best', 'cover', 'trend', 'sku'] as const;
 
 function one(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
@@ -107,7 +116,13 @@ function matchesFilter(
           product.momentum.trend === 'no-observed-shipments')
       );
     case 'historical':
-      return product.isLegacy || product.momentum.trend === 'historical-only';
+      return product.isLegacy || product.momentum.trend === 'historical-only' || product.trend.trend === 'historical-only';
+    case 'growing':
+      return !product.isLegacy && product.trend.trend === 'growing';
+    case 'declining':
+      return !product.isLegacy && product.trend.trend === 'declining';
+    case 'quick-sellout':
+      return !product.isLegacy && product.trend.trend !== 'historical-only' && product.trend.stockoutConstrained;
   }
 }
 
@@ -131,6 +146,8 @@ function sortProducts(
           return product.momentum.best?.dailyVelocity ?? null;
         case 'cover':
           return product.coverDays.recent;
+        case 'trend':
+          return product.trend.latestRun?.slopePerDay ?? null;
       }
     };
     const a = metric(left);
@@ -180,6 +197,9 @@ export function buildAnalyticsViewModel(
           product.momentum.trend === 'limited-volume' ||
           product.momentum.trend === 'no-observed-shipments',
       ).length,
+      growing: active.filter((product) => product.trend.trend === 'growing').length,
+      declining: active.filter((product) => product.trend.trend === 'declining').length,
+      quickSellout: active.filter((product) => product.trend.trend !== 'historical-only' && product.trend.stockoutConstrained).length,
     },
   };
 }

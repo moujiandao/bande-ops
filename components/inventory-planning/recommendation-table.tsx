@@ -15,7 +15,7 @@ import { useFormStatus } from 'react-dom';
 import { archiveSkuAction } from '@/lib/archive/actions';
 import { reservedExcludingFcTransfers } from '@/lib/inventory/on-hand';
 import type { RecommendationRow } from '@/lib/reorder/service';
-import type { MomentumSignal } from '@/lib/analytics/service';
+import type { InStockTrendSignal, MomentumSignal } from '@/lib/analytics/service';
 import { recommend } from '@/lib/reorder/recommend';
 import {
   applySvdShipmentBoxCount,
@@ -48,6 +48,7 @@ type SortKey =
   | 'cover'
   | 'best'
   | 'momentum'
+  | 'inStockTrend'
   | 'bestDates'
   | 'trailing';
 
@@ -299,6 +300,7 @@ function sortValue(
   svdToFbaTargetDays: number,
   coverageDays: number | null,
   momentumBySku: Record<string, MomentumSignal> | undefined,
+  trendBySku: Record<string, InStockTrendSignal> | undefined,
   additionalMiscUnits: AdditionalMiscUnits,
 ): string | number | null {
   const misc = additionalMiscUnits[svdShipmentRowKey(row)] ?? '';
@@ -330,6 +332,8 @@ function sortValue(
       const signal = momentumBySku?.[row.sku];
       return signal?.absoluteChange ?? null;
     }
+    case 'inStockTrend':
+      return trendBySku?.[row.sku]?.slopePerDay ?? null;
     case 'bestDates':
       return momentumBySku?.[row.sku]?.bestEndDate ?? null;
     case 'trailing':
@@ -399,6 +403,7 @@ export function RecommendationTable({
   svdToFbaTargetDays,
   shipmentMonthYear,
   momentumBySku,
+  trendBySku,
   userId,
 }: {
   rows: RecommendationRow[];
@@ -407,6 +412,7 @@ export function RecommendationTable({
   svdToFbaTargetDays?: number;
   shipmentMonthYear?: string;
   momentumBySku?: Record<string, MomentumSignal>;
+  trendBySku?: Record<string, InStockTrendSignal>;
   /** The current user scopes browser-only transfer-session drafts. */
   userId?: string;
 }) {
@@ -443,11 +449,14 @@ export function RecommendationTable({
   const showMomentum =
     (variant === 'order' || variant === 'replenish') &&
     momentumBySku !== undefined;
-  const analyticsEvidenceColumnCount = showMomentum
+  const showTrend =
+    (variant === 'order' || variant === 'replenish') &&
+    trendBySku !== undefined;
+  const analyticsEvidenceColumnCount = (showMomentum
     ? variant === 'order'
       ? 3
       : 1
-    : 0;
+    : 0) + (showTrend ? 1 : 0);
   const visibleColumns =
     variant === 'replenish'
       ? REPLENISH_COLUMNS
@@ -537,6 +546,7 @@ export function RecommendationTable({
         replenishTargetDays,
         coverageDays,
         momentumBySku,
+        trendBySku,
         additionalMiscUnits,
       );
       const bv = sortValue(
@@ -546,6 +556,7 @@ export function RecommendationTable({
         replenishTargetDays,
         coverageDays,
         momentumBySku,
+        trendBySku,
         additionalMiscUnits,
       );
       // Unknown values always sink, so sorting never buries real data under
@@ -567,6 +578,7 @@ export function RecommendationTable({
     replenishTargetDays,
     coverageDays,
     momentumBySku,
+    trendBySku,
     additionalMiscUnits,
   ]);
 
@@ -724,6 +736,15 @@ export function RecommendationTable({
                   cells.push(
                     header('momentum', 'Momentum', 'Observed recent velocity trend; opens dated evidence', false, visibleColumns.length),
                   );
+                }
+                if (showTrend) {
+                  cells.push(header(
+                    'inStockTrend',
+                    'In-stock trend',
+                    'Change in observed units per successive stock-confirmed day; opens dated evidence',
+                    false,
+                    visibleColumns.length + (showMomentum ? (variant === 'order' ? 3 : 1) : 0),
+                  ));
                 }
                 const trailingIndex =
                   visibleColumns.length + analyticsEvidenceColumnCount;
@@ -974,6 +995,22 @@ export function RecommendationTable({
                       ]
                     : [signalCell];
                   cells.splice(cells.length - 1, 0, ...evidenceCells);
+                }
+                if (showTrend) {
+                  const signal = trendBySku?.[row.sku];
+                  cells.splice(cells.length - 1, 0,
+                    <td key="in-stock-trend" className="px-3 py-2">
+                      <Link
+                        href={`/analytics?sku=${encodeURIComponent(row.sku)}`}
+                        title={signal?.startDate && signal.endDate
+                          ? `${signal.startDate} to ${signal.endDate}; ${signal.confidence} confidence`
+                          : 'No qualifying in-stock run yet'}
+                        className="whitespace-nowrap text-[11px] font-medium text-accent underline-offset-2 hover:text-accent-strong hover:underline"
+                      >
+                        {signal?.label ?? 'Needs evidence'}
+                      </Link>
+                    </td>,
+                  );
                 }
                 if (showBoxesToSend) {
                   cells.push(

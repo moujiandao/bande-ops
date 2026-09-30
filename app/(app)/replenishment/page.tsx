@@ -31,7 +31,7 @@ export default async function ReplenishmentPage() {
       <AnalyticsBasisNote settings={data.analyticsSettings} />
       {data.analyticsError ? (
         <p className="rounded-panel border border-border bg-panel-muted p-3 text-xs text-foreground">
-          Sales momentum is unavailable ({data.analyticsError}). Transfer quantities are unchanged.
+          Sales evidence is unavailable ({data.analyticsError}). Transfer quantities are unchanged.
         </p>
       ) : null}
 
@@ -75,6 +75,7 @@ export default async function ReplenishmentPage() {
               svdToFbaTargetDays={data.policy.svdToFbaTargetDays}
               shipmentMonthYear={shipmentMonthYear}
               momentumBySku={data.momentumBySku}
+              trendBySku={data.trendBySku}
               userId={user.id}
             />
           )}

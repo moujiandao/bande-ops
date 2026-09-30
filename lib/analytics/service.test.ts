@@ -103,6 +103,29 @@ function recommendation(): RecommendationRow {
 }
 
 describe('readAnalyticsHistory', () => {
+  it('uses the completed-day cutoff when all returned activity is old', async () => {
+    const range = vi.fn().mockResolvedValue({ data: [{
+      marketplace_id: 'ATVPDKIKX0DER', sku: 'SKU-1', activity_date: '2026-09-10',
+      customer_shipments: 2, customer_shipments_valid: true,
+      sellable_starting_balance: 10, starting_balance_valid: true,
+      sellable_ending_balance: 8, ending_balance_valid: true,
+    }], error: null });
+    const orderSku = vi.fn().mockReturnValue({ range });
+    const orderDate = vi.fn().mockReturnValue({ order: orderSku });
+    const lte = vi.fn().mockReturnValue({ order: orderDate });
+    const gte = vi.fn().mockReturnValue({ lte });
+    const eq = vi.fn().mockReturnValue({ gte });
+    const select = vi.fn().mockReturnValue({ eq });
+    const supabase = { from: vi.fn().mockReturnValue({ select }) } as unknown as ReadAnalyticsHistoryDeps['supabase'];
+
+    const result = await readAnalyticsHistory({
+      supabase, historyDays: 90, now: new Date('2026-09-29T12:00:00.000Z'),
+    });
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.dataThroughDate).toBe('2026-09-28');
+  });
+
   it('paginates beyond the Supabase default result limit', async () => {
     const firstPage = Array.from({ length: 1_000 }, (_, index) => ({
       marketplace_id: 'ATVPDKIKX0DER',
@@ -164,6 +187,7 @@ describe('buildSalesAnalytics', () => {
     expect(adjusted.momentum.recent?.dailyVelocity).toBe(4);
     expect(adjusted.momentum.best?.dailyVelocity).toBe(4);
     expect(adjusted.momentum.trend).toBe('trending-up');
+    expect(adjusted.trend.latestRun?.averageVelocity).toBe(4);
     expect(adjusted.coverDays.configured).toBe(35);
     const [all] = buildSalesAnalytics({ ...common, excludeVine: false });
     expect(all.momentum.recent?.dailyVelocity).toBe(10);
@@ -172,6 +196,7 @@ describe('buildSalesAnalytics', () => {
       ledgerRows: ledgerRows.map((r, i) => i === 13 ? { ...r, customer_shipments: 11 } : r) });
     expect(corrected.momentum.days.at(-1)?.adjustmentIssue).toBe('unavailable');
     expect(corrected.momentum.trend).toBe('historical-only');
+    expect(corrected.trend.trend).toBe('historical-only');
     expect(corrected.stockConstrained).toBe(false);
   });
 
@@ -193,6 +218,7 @@ describe('buildSalesAnalytics', () => {
     expect(adjusted.momentum.recent).toBeNull();
     expect(adjusted.momentum.best).toBeNull();
     expect(adjusted.momentum.trend).toBe('insufficient-data');
+    expect(adjusted.trend.trend).toBe('insufficient-data');
     expect(adjusted.coverDays).toEqual({ configured: 35, recent: null, best: null });
     expect(adjusted.usableSupply).toBe(70);
     expect(adjusted.configuredVelocity).toBe(2);
@@ -269,6 +295,7 @@ describe('buildSalesAnalytics', () => {
     });
 
     expect(result.momentum.trend).toBe('historical-only');
+    expect(result.trend.trend).toBe('historical-only');
     expect(result.momentum.recent?.dailyVelocity).toBe(5);
     expect(result.momentum.previous?.dailyVelocity).toBe(2);
     expect(result.momentum.best).toMatchObject({
@@ -279,5 +306,30 @@ describe('buildSalesAnalytics', () => {
     expect(result.momentum.days).toHaveLength(14);
     expect(result.currentEvidenceAvailable).toBe(false);
     expect(result.stockConstrained).toBe(false);
+  });
+
+  it('derives trend from reconciled observed units without changing reorder demand', () => {
+    const ledgerRows = Array.from({ length: 7 }, (_, index) => ({
+      marketplace_id: 'ATVPDKIKX0DER', sku: 'SKU-1',
+      activity_date: `2026-09-${String(index + 10).padStart(2, '0')}`,
+      customer_shipments: 10, customer_shipments_valid: true,
+      sellable_starting_balance: 100, starting_balance_valid: true,
+      sellable_ending_balance: 90, ending_balance_valid: true,
+    }));
+    const adjustmentRows = ledgerRows.map((row, index) => ({ ...row,
+      ledger_units: 10, shipment_units: 10, excluded_units: 9 - index,
+      vine_units: 0, status: 'complete' as const, issue: null, classification_version: 1,
+    }));
+    const [result] = buildSalesAnalytics({
+      products: [recommendation()], ledgerRows, adjustmentRows,
+      windowDays: 7, historyDays: 90, dataThroughDate: '2026-09-16',
+      adjustmentThroughDate: '2026-09-16', excludeVine: true,
+    });
+
+    expect(result.trend).toMatchObject({
+      trend: 'growing', latestRun: { unitsShipped: 28, slopePerDay: 1 },
+    });
+    expect(result.configuredVelocity).toBe(2);
+    expect(result.coverDays.configured).toBe(35);
   });
 });

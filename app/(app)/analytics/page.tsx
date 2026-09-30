@@ -11,6 +11,7 @@ import {
   analyticsSourceIssue,
   buildSalesAnalytics,
   readAnalyticsHistory,
+  inStockTrendLabel,
   trendLabel,
   type SalesAnalyticsProduct,
 } from '@/lib/analytics/service';
@@ -173,6 +174,34 @@ function ProductDetail({ product }: { product: SalesAnalyticsProduct }) {
         />
       </div>
 
+      <div className="rounded-panel border border-border bg-panel-muted p-4">
+        <h3 className="text-sm font-semibold text-foreground">In-stock trend</h3>
+        <p className="mt-1 text-xs text-muted">
+          Continuous days with confirmed FBA stock, using observed units after configured giveaway exclusions. This signal is separate from momentum and does not change reorder quantities.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-foreground">
+          <Badge className={product.trend.trend === 'growing' ? 'border-accent-soft bg-accent-soft text-accent-strong' : 'border-border bg-panel text-muted'}>
+            {inStockTrendLabel(product.trend)}
+          </Badge>
+          <span>Confidence: {product.trend.confidence}</span>
+          <span>Growing runs: {product.trend.growingRuns} / {product.trend.qualifyingRuns}</span>
+          {product.trend.latestRun ? (
+            <>
+              <span>Latest: {product.trend.latestRun.startDate} to {product.trend.latestRun.endDate}</span>
+              <span>Average: {formatRate(product.trend.latestRun.averageVelocity)} / day</span>
+              <span>Start: {formatRate(product.trend.latestRun.startVelocity)} / day</span>
+              <span>End: {formatRate(product.trend.latestRun.endVelocity)} / day</span>
+              <span>{product.trend.latestRun.eligibleDays} stocked days, {product.trend.latestRun.unitsShipped} observed units</span>
+              {product.trend.latestRun.endedInSellout ? <span>Ended in a possible sellout; observed sales may understate demand.</span> : null}
+              <span>Slope: {product.trend.latestRun.slopePerDay === null ? 'Unknown' : `${product.trend.latestRun.slopePerDay >= 0 ? '+' : ''}${product.trend.latestRun.slopePerDay.toFixed(2)} / day²`}</span>
+            </>
+          ) : null}
+          {product.trend.best ? (
+            <span>Best uninterrupted {product.trend.best.eligibleDays}-day rate: {formatRate(product.trend.best.dailyVelocity)} / day ({product.trend.best.startDate} to {product.trend.best.endDate})</span>
+          ) : null}
+        </div>
+      </div>
+
       <div className="grid gap-3 lg:grid-cols-2">
         <div className="rounded-panel border border-border bg-panel-muted p-4">
           <h3 className="text-sm font-semibold text-foreground">Inventory now</h3>
@@ -241,6 +270,7 @@ function ProductDetail({ product }: { product: SalesAnalyticsProduct }) {
                 <th className="px-3 py-2 text-right font-medium">End</th>
                 <th className="px-3 py-2 text-left font-medium">Evidence</th>
                 <th className="px-3 py-2 text-left font-medium">Velocity</th>
+                <th className="px-3 py-2 text-left font-medium">In-stock trend</th>
               </tr>
             </thead>
             <tbody>
@@ -277,11 +307,14 @@ function ProductDetail({ product }: { product: SalesAnalyticsProduct }) {
                       {day.eligible ? 'Included' : 'Excluded'}
                     </span>
                   </td>
+                  <td className="px-3 py-2 text-muted">
+                    {product.trend.runs.some((run) => day.activityDate >= run.startDate && day.activityDate <= run.endDate) ? 'Analyzed' : 'Not analyzed'}
+                  </td>
                 </tr>
               ))}
               {product.momentum.days.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-3 py-8 text-center text-muted">
+                  <td colSpan={9} className="px-3 py-8 text-center text-muted">
                     No ledger evidence in the selected history.
                   </td>
                 </tr>
@@ -346,16 +379,14 @@ export default async function AnalyticsPage({
             Advanced Analytics
           </h1>
           <p className="mt-1 max-w-3xl text-sm text-muted">
-            Sales momentum and dated demand evidence alongside current usable
-            inventory. Velocity counts eligible FBA selling days, including a
-            shipment day that ends with zero inventory.
+            Sales momentum and in-stock demand trends alongside current usable inventory. Momentum counts eligible FBA selling days, including a shipment day that ends with zero inventory; the in-stock trend requires confirmed stock.
           </p>
         </div>
         <div className="text-right text-xs text-muted">
-          <p>Sales momentum</p>
+          <p>Sales evidence</p>
           <p className="mt-1 text-faint">
             {!history.error && history.dataThroughDate
-              ? `${sourceIssue ? 'Historical data' : 'Data'} through ${history.dataThroughDate}`
+              ? `${sourceIssue ? 'Historical analysis cutoff' : 'Analysis cutoff'} ${history.dataThroughDate}`
               : 'Current ledger evidence unavailable'}
           </p>
         </div>
@@ -391,12 +422,15 @@ export default async function AnalyticsPage({
         </div>
       ) : null}
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {([
           ['trending', 'Trending up', summary.trending],
           ['early', 'Early launch', summary.early],
           ['constrained', 'Stock constrained (<30d)', summary.constrained],
           ['insufficient', 'Insufficient evidence', summary.insufficient],
+          ['growing', 'Growing in stock', summary.growing],
+          ['declining', 'Declining in stock', summary.declining],
+          ['quick-sellout', 'Stockout constrained', summary.quickSellout],
         ] as const).map(([key, label, count]) => (
           <Link
             key={key}
@@ -479,6 +513,7 @@ export default async function AnalyticsPage({
             <option value="recent">Recent velocity</option>
             <option value="best">Best velocity</option>
             <option value="cover">Lowest recent cover</option>
+            <option value="trend">Fastest in-stock growth</option>
             <option value="sku">SKU</option>
           </select>
         </label>
@@ -503,7 +538,7 @@ export default async function AnalyticsPage({
           <div>
             <h2 className="text-sm font-semibold text-foreground">Products</h2>
             <p className="mt-1 text-xs text-muted">
-              Recent, previous, and best rates are units per eligible selling day.
+              Recent, previous, and best rates are units per eligible selling day. In-stock trend is a separate daily run signal.
             </p>
           </div>
           <Badge className="border-border bg-panel-muted text-muted">
@@ -517,7 +552,7 @@ export default async function AnalyticsPage({
                 <th colSpan={2} className="px-3 py-2 text-left font-semibold">Product</th>
                 <th colSpan={4} className="px-3 py-2 text-center font-semibold">Inventory now</th>
                 <th colSpan={4} className="px-3 py-2 text-center font-semibold">Observed velocity</th>
-                <th colSpan={2} className="px-3 py-2 text-left font-semibold">Evidence</th>
+                <th colSpan={3} className="px-3 py-2 text-left font-semibold">Evidence</th>
               </tr>
               <tr>
                 <th className="px-3 py-2 text-left font-medium">SKU</th>
@@ -531,6 +566,7 @@ export default async function AnalyticsPage({
                 <th className="px-3 py-2 text-right font-medium">Change</th>
                 <th className="px-3 py-2 text-right font-medium">Best</th>
                 <th className="px-3 py-2 text-left font-medium">Signal</th>
+                <th className="px-3 py-2 text-left font-medium">In-stock trend</th>
                 <th className="px-3 py-2 text-left font-medium">Best dates</th>
               </tr>
             </thead>
@@ -592,6 +628,11 @@ export default async function AnalyticsPage({
                         {trendLabel(product.momentum)}
                       </Badge>
                     </td>
+                    <td className="px-3 py-2">
+                      <Badge className={product.trend.trend === 'growing' ? 'border-accent-soft bg-accent-soft text-accent-strong' : 'border-border bg-panel-muted text-muted'}>
+                        {inStockTrendLabel(product.trend)}
+                      </Badge>
+                    </td>
                     <td className="px-3 py-2 tabular-nums text-muted">
                       {formatDateRange(product.momentum.best)}
                     </td>
@@ -600,7 +641,7 @@ export default async function AnalyticsPage({
               })}
               {visible.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="px-3 py-10 text-center text-muted">
+                  <td colSpan={13} className="px-3 py-10 text-center text-muted">
                     No products match these controls.
                   </td>
                 </tr>

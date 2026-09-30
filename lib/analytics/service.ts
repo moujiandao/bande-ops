@@ -13,6 +13,12 @@ import {
   type SalesMomentumResult,
   type TrendKind,
 } from './sales-momentum';
+import {
+  calculateInStockTrend,
+  type InStockTrendKind,
+  type InStockTrendResult,
+  type TrendConfidence,
+} from './in-stock-trend';
 
 const HISTORY_PAGE_SIZE = 1_000;
 const MS_PER_DAY = 86_400_000;
@@ -96,8 +102,10 @@ export interface SalesAnalyticsProduct {
   svd: number | null;
   configuredVelocity: number | null;
   momentum: SalesMomentumResult;
+  trend: InStockTrendResult;
   coverDays: InventoryCoverScenarios;
   currentEvidenceAvailable: boolean;
+  currentTrendEvidenceAvailable: boolean;
   stockConstrained: boolean;
 }
 
@@ -115,6 +123,21 @@ export interface MomentumSignal {
   bestVelocity: number | null;
   bestStartDate: string | null;
   bestEndDate: string | null;
+}
+
+export interface InStockTrendSignal {
+  kind: InStockTrendKind;
+  label: string;
+  slopePerDay: number | null;
+  averageVelocity: number | null;
+  startVelocity: number | null;
+  endVelocity: number | null;
+  startDate: string | null;
+  endDate: string | null;
+  confidence: TrendConfidence;
+  growingRuns: number;
+  qualifyingRuns: number;
+  endedInSellout: boolean;
 }
 
 export interface BuildSalesAnalyticsInput {
@@ -217,6 +240,43 @@ export function momentumSignal(momentum: SalesMomentumResult): MomentumSignal {
   };
 }
 
+export function inStockTrendLabel(trend: InStockTrendResult): string {
+  switch (trend.trend) {
+    case 'growing':
+      return 'Growing';
+    case 'declining':
+      return 'Declining';
+    case 'stable':
+      return 'Stable';
+    case 'quick-sellout':
+      return 'Quick sellout';
+    case 'no-observed-sales':
+      return 'No observed sales';
+    case 'historical-only':
+      return 'Historical only';
+    case 'insufficient-data':
+      return 'Needs evidence';
+  }
+}
+
+export function inStockTrendSignal(trend: InStockTrendResult): InStockTrendSignal {
+  const run = trend.latestRun;
+  return {
+    kind: trend.trend,
+    label: inStockTrendLabel(trend),
+    slopePerDay: run?.slopePerDay ?? null,
+    averageVelocity: run?.averageVelocity ?? null,
+    startVelocity: run?.startVelocity ?? null,
+    endVelocity: run?.endVelocity ?? null,
+    startDate: run?.startDate ?? null,
+    endDate: run?.endDate ?? null,
+    confidence: trend.confidence,
+    growingRuns: trend.growingRuns,
+    qualifyingRuns: trend.qualifyingRuns,
+    endedInSellout: run?.endedInSellout ?? false,
+  };
+}
+
 /**
  * Read a store-wide ledger history without relying on PostgREST's default row
  * limit. Ordering by the natural-key columns makes page boundaries stable.
@@ -257,8 +317,9 @@ export async function readAnalyticsHistory(
 
   return {
     rows,
-    dataThroughDate:
-      rows.map((row) => row.activity_date).sort().at(-1) ?? null,
+    // Use the completed-day cutoff, not the latest row. An idle SKU's last
+    // activity must not make a weeks-old trend look current.
+    dataThroughDate: endDate,
   };
 }
 
@@ -275,11 +336,15 @@ export function buildSalesAnalytics(
   }
 
   return input.products.map((product) => {
+    const ledgerDays = (ledgerBySku.get(product.sku) ?? []).map(row => ({
+      ...ledgerDay(row),
+      confirmedExcludedUnits: reconciledExcludedUnits(
+        row,
+        adjustments.get(JSON.stringify([row.marketplace_id, row.sku, row.activity_date])),
+      ),
+    }));
     const calculatedMomentum = calculateSalesMomentum(
-      (ledgerBySku.get(product.sku) ?? []).map(row => ({
-        ...ledgerDay(row),
-        confirmedExcludedUnits: reconciledExcludedUnits(row, adjustments.get(JSON.stringify([row.marketplace_id, row.sku, row.activity_date]))),
-      })),
+      ledgerDays,
       {
         windowDays: input.windowDays,
         historyDays: input.historyDays,
@@ -289,6 +354,12 @@ export function buildSalesAnalytics(
           : {}),
       },
     );
+    const calculatedTrend = calculateInStockTrend(ledgerDays, {
+      windowDays: input.windowDays,
+      historyDays: input.historyDays,
+      excludeVine: input.excludeVine,
+      ...(input.dataThroughDate ? { analysisDate: input.dataThroughDate } : {}),
+    });
     const hasObservedHistory =
       calculatedMomentum.recent !== null ||
       calculatedMomentum.early !== null ||
@@ -303,6 +374,16 @@ export function buildSalesAnalytics(
       !currentEvidenceAvailable && hasObservedHistory
         ? { ...calculatedMomentum, trend: 'historical-only' as const }
         : calculatedMomentum;
+    const trendRunEnd = calculatedTrend.latestRun?.endDate;
+    const unresolvedAfterTrend = input.excludeVine && trendRunEnd && calculatedTrend.days.some(day =>
+      day.activityDate > trendRunEnd &&
+      day.activityDate <= (input.adjustmentThroughDate ?? input.dataThroughDate ?? '') &&
+      day.classification === 'unknown');
+    const currentTrendEvidenceAvailable = input.currentEvidenceAvailable !== false && !unresolvedAfterTrend;
+    const trendHasHistory = calculatedTrend.latestRun !== null || calculatedTrend.best !== null;
+    const trend = !currentTrendEvidenceAvailable && trendHasHistory
+      ? { ...calculatedTrend, trend: 'historical-only' as const, confidence: 'none' as const }
+      : calculatedTrend;
     const observedVelocity =
       momentum.recent?.dailyVelocity ?? momentum.early?.dailyVelocity ?? null;
     const scenarios = {
@@ -325,8 +406,10 @@ export function buildSalesAnalytics(
       svd: product.sources.svd,
       configuredVelocity: product.dailyDemand,
       momentum,
+      trend,
       coverDays: scenarios,
       currentEvidenceAvailable,
+      currentTrendEvidenceAvailable,
       stockConstrained:
         currentEvidenceAvailable &&
         scenarios.recent !== null &&
@@ -340,5 +423,13 @@ export function momentumSignalsBySku(
 ): Record<string, MomentumSignal> {
   return Object.fromEntries(
     products.map((product) => [product.sku, momentumSignal(product.momentum)]),
+  );
+}
+
+export function inStockTrendSignalsBySku(
+  products: SalesAnalyticsProduct[],
+): Record<string, InStockTrendSignal> {
+  return Object.fromEntries(
+    products.map((product) => [product.sku, inStockTrendSignal(product.trend)]),
   );
 }

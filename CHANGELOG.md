@@ -1,5 +1,14 @@
 # Changelog
 
+## [2026-09-29] In-stock sales trend (unreleased)
+
+### Added
+- Show giveaway-adjusted in-stock trend runs alongside existing Momentum in Analytics, Supplier Reorder, and FBA Replenishment.
+- Filter and sort Analytics by confirmed in-stock growth and quick sellouts without changing reorder quantities.
+
+### Changed
+- Use the completed-day analysis cutoff so an idle SKU's historical activity cannot appear current.
+
 ## [2026-09-29] Navigation loading feedback (unreleased)
 
 ### Added

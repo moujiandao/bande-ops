@@ -37,7 +37,7 @@ export default async function ReorderPage() {
 
       {data.analyticsError ? (
         <div className="rounded-panel border border-border bg-panel-muted p-3 text-xs text-foreground">
-          Sales momentum is unavailable ({data.analyticsError}). Reorder math is unchanged.
+          Sales evidence is unavailable ({data.analyticsError}). Reorder math is unchanged.
         </div>
       ) : data.trendingCount > 0 ? (
         <Link
@@ -45,6 +45,11 @@ export default async function ReorderPage() {
           className="self-start text-xs font-medium text-accent underline underline-offset-2 hover:text-accent-strong"
         >
           {data.trendingCount} reorder {data.trendingCount === 1 ? 'candidate is' : 'candidates are'} trending up. Review the evidence in Analytics.
+        </Link>
+      ) : null}
+      {!data.analyticsError && data.growingCount > 0 ? (
+        <Link href="/analytics?filter=growing" className="self-start text-xs font-medium text-accent underline underline-offset-2 hover:text-accent-strong">
+          {data.growingCount} reorder {data.growingCount === 1 ? 'candidate shows' : 'candidates show'} in-stock growth. Review the dated evidence in Analytics.
         </Link>
       ) : null}
 
@@ -76,7 +81,7 @@ export default async function ReorderPage() {
                 No SKUs are at or below their reorder point.
               </p>
             ) : (
-              <RecommendationTable rows={data.toReorder} trailingHeader="Suggested order (units)" variant="order" momentumBySku={data.momentumBySku} />
+              <RecommendationTable rows={data.toReorder} trailingHeader="Suggested order (units)" variant="order" momentumBySku={data.momentumBySku} trendBySku={data.trendBySku} />
             )}
           </section>
 
