@@ -1,5 +1,10 @@
 # Changelog
 
+## [2026-09-29] SKU copy button
+
+### Added
+- Copy a row's full SKU from the SKU column in inventory planning tables.
+
 ## [2026-09-29] In-stock sales trend (unreleased)
 
 ### Added

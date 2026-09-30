@@ -521,6 +521,15 @@ export function RecommendationTable({
     }
   }, [boxesToSend, draftHtml, notes, shipmentStorageKey]);
   const [copyStatus, setCopyStatus] = useState('');
+  const [skuCopyStatus, setSkuCopyStatus] = useState<{
+    rowKey: string;
+    result: 'copied' | 'failed';
+  } | null>(null);
+  useEffect(() => {
+    if (!skuCopyStatus) return;
+    const timeout = window.setTimeout(() => setSkuCopyStatus(null), 2000);
+    return () => window.clearTimeout(timeout);
+  }, [skuCopyStatus]);
   // Fixed (non-Notes) columns: data + trailing + boxes-to-send when replenishing.
   const fixedColumnCount =
     visibleColumns.length +
@@ -640,6 +649,15 @@ export function RecommendationTable({
       setCopyStatus(result === 'rich' ? 'Copied' : 'Copied as plain text');
     } catch {
       setCopyStatus('Copy failed');
+    }
+  }
+
+  async function copySku(rowKey: string, sku: string) {
+    try {
+      await navigator.clipboard.writeText(sku);
+      setSkuCopyStatus({ rowKey, result: 'copied' });
+    } catch {
+      setSkuCopyStatus({ rowKey, result: 'failed' });
     }
   }
 
@@ -839,6 +857,30 @@ export function RecommendationTable({
                         )
                       ) : null}
                       <span className="truncate font-mono">{row.sku}</span>
+                      <button
+                        type="button"
+                        aria-label={`Copy SKU ${row.sku}`}
+                        title={skuCopyStatus?.rowKey === rowKey
+                          ? skuCopyStatus.result === 'copied' ? 'Copied' : 'Copy failed'
+                          : 'Copy SKU'}
+                        onClick={() => void copySku(rowKey, row.sku)}
+                        className="relative inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-faint transition-colors hover:bg-panel-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-accent"
+                      >
+                        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                          <rect x="8" y="8" width="11" height="12" rx="2" />
+                          <path d="M16 8V6a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h1" />
+                        </svg>
+                        {skuCopyStatus?.rowKey === rowKey ? (
+                          <span aria-hidden="true" className={`absolute -right-1 -top-1 rounded-full bg-panel px-0.5 text-[10px] leading-none ${skuCopyStatus.result === 'copied' ? 'text-accent-strong' : 'text-red-600'}`}>
+                            {skuCopyStatus.result === 'copied' ? '✓' : '!'}
+                          </span>
+                        ) : null}
+                      </button>
+                      {skuCopyStatus?.rowKey === rowKey ? (
+                        <span className="sr-only" role="status">
+                          {skuCopyStatus.result === 'copied' ? `Copied SKU ${row.sku}` : `Could not copy SKU ${row.sku}`}
+                        </span>
+                      ) : null}
                     </div>
                   </td>,
                   ...(showBoxName
