@@ -30,6 +30,8 @@ describe('RouteLoadingVeil', () => {
     expect(html).toContain('aria-live="polite"');
     expect(html).toContain('Loading next page…');
     expect(html).toContain('fixed inset-0');
+    expect(html.match(/data-loading-dot/g)).toHaveLength(3);
+    expect(html).not.toContain('animate-spin');
   });
 });
 

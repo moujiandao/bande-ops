@@ -1,5 +1,10 @@
 # Changelog
 
+## [2026-09-29] Navigation loading feedback (unreleased)
+
+### Added
+- Show a dimmed loading veil with three animated dots during primary navigation.
+
 ## [2026-09-18] Supplier reorder thumbnails (unreleased)
 
 ### Added

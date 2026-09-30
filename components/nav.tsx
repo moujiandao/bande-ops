@@ -132,7 +132,16 @@ export function RouteLoadingVeil({ pending }: { pending: boolean }) {
       tabIndex={-1}
     >
       <div aria-live="polite" className="flex items-center gap-3 rounded-lg border border-border bg-panel px-5 py-4 shadow-xl" role="status">
-        <span aria-hidden="true" className="h-5 w-5 animate-spin rounded-full border-2 border-border-strong border-t-accent" />
+        <span aria-hidden="true" className="flex items-center gap-1.5">
+          {[0, 1, 2].map((index) => (
+            <span
+              data-loading-dot
+              key={index}
+              className="h-2 w-2 rounded-full bg-accent motion-safe:animate-bounce motion-reduce:animate-none"
+              style={{ animationDelay: `${index * 150}ms` }}
+            />
+          ))}
+        </span>
         <span className="text-sm font-medium text-foreground">Loading next page…</span>
       </div>
     </div>
