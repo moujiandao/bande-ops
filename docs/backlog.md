@@ -1,28 +1,32 @@
 # Backlog
 
-Canonical to-do list for bande-ops (per project rules). Active Module work is tracked in
-GitHub Issues; deferred items live here as tickets and get promoted to issues when picked up.
+Roadmap for bande-ops. Active Module work is tracked in GitHub Issues; deferred
+items live here until picked up.
 
-## In progress
+## Shipped
 
 ### Module 1 — Catalog & Inventory
-The first Module: synced mirror of catalog + inventory plus the operational layer
-(replenishment settings, reorder recommendations, notes). PII-free, read + recommend only.
-Tracked in GitHub issues **#1** and **#2** — not duplicated here.
-
-## Deferred
+Catalog, inventory, replenishment, and their operational settings are live. The
+original Module 1 scope is tracked in closed issues **#1** and **#2**.
 
 ### Module 2 — Ads (Advertising API)
-Build campaign/ad reporting and management on the Amazon Advertising API as a second Module.
-Synced mirror of ad entities; operational layer for our own tuning decisions.
+The Ads UI and decision support are shipped. Live campaign metrics and writes
+remain gated in the API client; the guarded write UI exists but cannot publish
+real changes yet. The original scope is tracked in closed issues **#17–#22**;
+write-path hardening remains open in **#33**.
 
-### Module 3 — Product Launch (titles / descriptions)
-Authoring and update flows for listing content (titles, bullets, descriptions) once the
-SP-API write path is in scope.
+## Next
 
 ### Module 4 — Product Research / competitor landscape
 Competitor and market research surface (competitor listings, pricing, opportunity signals)
 to inform launches and replenishment.
+
+## Deferred
+
+### Module 3 — Product Launch (titles / descriptions)
+Authoring and update flows for listing content (titles, bullets, descriptions).
+Deferred at Brian's direction. The proposed first slice is recorded in closed **#35**;
+the existing Amazon write boundary must be updated before publishing listings.
 
 ### Multi-marketplace (CA / EU) enablement
 Exercise the `marketplace_id` dimension beyond US. Schema already carries it; this turns on
