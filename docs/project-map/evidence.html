@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Code-linked map of bande-ops at commit 8786127, inspected 2026-10-05.">
+<title>What the code proves. What it does not. | bande-ops project map</title>
+<style>
+:root{color-scheme:light dark;--bg:#f7f6f1;--panel:#fffefa;--ink:#23342f;--muted:#59675f;--line:#d2d8cf;--accent:#28624e;--pink:#f7e2e8;--green:#e1eee1;--gray:#e5e6e8;--warn:#f7ebcf;--shadow:0 5px 22px #23342f08}
+*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:90px}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a{color:var(--accent);text-underline-offset:3px}a:hover{text-decoration-thickness:2px}a:focus-visible,[tabindex]:focus-visible{outline:3px solid #bd6e85;outline-offset:4px}p{margin:.6rem 0 0}h1,h2,h3{line-height:1.15;margin:0}h1{font-size:clamp(2.3rem,5vw,4.4rem);letter-spacing:-.045em;max-width:950px;font-weight:650}h2{font-size:clamp(1.5rem,3vw,2.1rem);letter-spacing:-.025em}h3{font-size:1.1rem}code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.84em;overflow-wrap:anywhere}.top{border-bottom:1px solid var(--line);background:var(--panel)}.bar{max-width:1440px;margin:auto;padding:20px 36px;display:flex;align-items:center;justify-content:space-between;gap:20px}.brand{font-weight:750;letter-spacing:-.03em;color:var(--ink);text-decoration:none}.brand small{font-weight:450;color:var(--muted);margin-left:8px}nav{display:flex;gap:6px;flex-wrap:wrap}nav a{font-size:.86rem;padding:8px 12px;text-decoration:none;border-radius:7px;color:var(--muted)}nav a[aria-current]{background:var(--green);color:var(--ink);font-weight:650}.skip{position:absolute;left:10px;top:-60px}.skip:focus{top:10px;background:var(--panel);padding:8px;z-index:5}main{max-width:1440px;margin:auto;padding:42px 36px 64px}.eyebrow{display:block;font-size:.72rem;font-weight:750;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin-bottom:12px}.hero{padding:6px 0 25px}.lede{max-width:870px;color:var(--muted);font-size:1.12rem;margin-top:20px}.stamp{display:flex;flex-wrap:wrap;gap:8px 20px;font-size:.75rem;color:var(--muted);border-top:1px solid var(--line);padding-top:17px;margin-top:26px}.dirty{font-size:.74rem;color:var(--muted);margin-top:7px;max-width:1050px}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:26px 0}.metric{padding:22px;background:var(--panel);border:1px solid var(--line);border-radius:12px}.metric b{display:block;font-size:2rem;letter-spacing:-.04em;font-weight:650}.metric span{font-size:.84rem;color:var(--muted)}section{margin-top:42px}.section-head{margin-bottom:20px}.section-head .eyebrow{margin-bottom:7px}.flow-scroll{overflow-x:auto;padding:6px 4px 16px}.flow{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:30px;min-width:700px;align-items:stretch}.node{position:relative;border:1px solid var(--line);border-radius:12px;padding:18px 16px;background:var(--green);box-shadow:var(--shadow);min-width:0}.node:not(:last-child):after{content:'→';position:absolute;right:-26px;top:42px;font-size:25px;font-weight:650;color:var(--ink)}.node.human{background:var(--pink)}.node.model{background:var(--gray)}.node.output{background:var(--panel);border-radius:12px 0 12px 12px;border-top:4px solid var(--accent)}.node.unavailable{background:var(--warn);border:1px dashed var(--ink)}.node p{font-size:.86rem;line-height:1.5;margin:12px 0}.tag{display:inline-block;font-size:.62rem;letter-spacing:.075em;font-weight:750;text-transform:uppercase;margin-bottom:13px;line-height:1.4}.ref{display:block;margin-top:10px;font-size:.84rem;line-height:1.4;text-decoration:none}.ref:hover{text-decoration:underline}.branches,.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-top:17px}.branches .node:after,.cards .node:after{display:none}.branches .node{border-style:dashed;box-shadow:none}.cards>article{padding:24px;background:var(--panel);border:1px solid var(--line);border-radius:12px}.cards>article p{color:var(--muted);font-size:.9rem}.cards>article>a:first-child{display:block;font-size:1.15rem;font-weight:700}.note{border-left:4px solid var(--accent);background:var(--panel);padding:18px 22px;margin-top:22px}.note p{font-size:.93rem;max-width:1100px}.tools{border:1px dashed var(--muted);border-radius:12px;padding:20px;margin-top:18px}.tools h3{font-size:.94rem}.tool-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px}.tool-grid>div{padding:12px;background:var(--panel);border-radius:7px;font-size:.86rem}.caption{font-size:.8rem;color:var(--muted);margin-top:10px}.legend{display:flex;gap:18px;flex-wrap:wrap;margin:16px 0;font-size:.76rem;color:var(--muted)}.legend span:before{content:'';display:inline-block;width:12px;height:12px;vertical-align:-1px;background:var(--green);border:1px solid var(--line);margin-right:6px;border-radius:3px}.legend .human:before{background:var(--pink)}.legend .output:before{background:var(--panel)}.legend .unavailable:before{background:var(--warn);border-style:dashed}.jump{display:flex;gap:10px 18px;flex-wrap:wrap;font-size:.85rem;margin:22px 0}.table-scroll{overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--panel)}table{width:100%;border-collapse:collapse;text-align:left;font-size:.88rem;min-width:640px}th{background:var(--green);font-weight:650;font-size:.76rem;text-transform:uppercase;letter-spacing:.06em}th,td{padding:17px 20px;vertical-align:top;border-bottom:1px solid var(--line)}tr:last-child td{border-bottom:0}td:first-child{width:21%;font-weight:650}td .ref{font-weight:400}.status{font-size:.69rem;text-transform:uppercase;letter-spacing:.045em;font-weight:750;display:inline-block;border:1px solid var(--line);padding:3px 7px;border-radius:4px;margin-bottom:7px;background:var(--green)}.status.gap{background:var(--warn)}.boundary{border:1px dashed var(--muted);padding:22px;border-radius:12px;margin-top:20px}.boundary .cards{margin-top:16px}.boundary>p{font-size:.89rem;color:var(--muted)}.equation{padding:18px 20px;background:var(--green);border-radius:8px;font-family:ui-monospace,monospace;font-size:.87rem;line-height:1.8}footer{max-width:1368px;margin:0 auto;padding:24px 0 40px;border-top:1px solid var(--line);font-size:.78rem;color:var(--muted)}footer a{margin-right:20px}ul{padding-left:20px}li{margin:8px 0}.quiet{color:var(--muted)}
+@media(prefers-color-scheme:dark){:root{--bg:#161d1a;--panel:#1d2722;--ink:#e6eee7;--muted:#b0c0b5;--line:#405348;--accent:#a1d3b8;--pink:#462f3b;--green:#243c30;--gray:#393e42;--warn:#423c26;--shadow:none}}
+@media(max-width:760px){.bar{padding:17px 20px;align-items:flex-start;flex-direction:column;gap:13px}.brand small{font-size:.78rem}nav{gap:2px}nav a{padding:7px 9px}main{padding:28px 20px 45px}.hero{padding-top:0}.lede{font-size:1rem}.metrics{gap:9px}.metric{padding:14px 10px}.metric b{font-size:1.6rem}.metric span{font-size:.7rem}.branches,.cards,.tool-grid{grid-template-columns:1fr}.flow{grid-auto-columns:245px;min-width:0;width:max-content}.flow-scroll{margin-right:-12px;padding-right:20px}.node{padding:18px}.node p{font-size:.9rem}.boundary{padding:16px}.stamp{gap:6px 14px}.note{padding:16px}section{margin-top:32px}footer{margin:0 20px}th,td{padding:14px}.caption{font-size:.75rem}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}@media print{.top{position:static}.flow-scroll,.table-scroll{overflow:visible}.flow{min-width:0;gap:20px}.ref{font-size:.65rem}main{padding:20px}section{break-inside:avoid}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+<div class="bar">
+<a class="brand" href="index.html">bande-ops <small>Project map / 01</small>
+</a>
+<nav aria-label="Project map">
+<a href="index.html">Overview</a>
+<a href="execution-flow.html">Execution flow</a>
+<a href="system-map.html">System map</a>
+<a href="evidence.html" aria-current="page">Evidence</a>
+</nav>
+</div>
+</header>
+<main id="main">
+<header class="hero">
+<span class="eyebrow">Verification / limits / next step</span>
+<h1>What the code proves. What it does not.</h1>
+<p class="lede">A dated record of the inspected implementation, local checks, historical evidence, and missing execution paths. Green tests do not make a skeleton a live integration.</p>
+<div class="stamp">
+<span>Inspected 05 Oct 2026 (UTC)</span>
+<span>
+<code>feat/reorder-thumbnails</code>
+</span>
+<span>Commit <code>878612786fa5288377c921ec207f102fb933f090</code>
+</span>
+</div>
+<p class="dirty">Checkout scope: this working tree only. Initial untracked files: <code>docs/product-research-methods.md</code> and <code>project_state.md</code>. This map adds documentation and updates project state; application source is unchanged. No remote/deployment reconciliation.</p>
+</header>
+<aside class="note">
+<strong>Verified locally, not certified live.</strong>
+<p>On 2026-10-05: <strong>73 test files / 576 tests passed</strong>; <code>npm run lint</code> and <code>tsc --noEmit --incremental false</code> passed. No production data, live API calls, deployed credentials, database policies, or authenticated app workflow were exercised. No LLM call or eval exists in this checkout.</p>
+</aside>
+<section id="status">
+<div class="section-head">
+<span class="eyebrow">
+</span>
+<h2>Implementation status</h2>
+</div>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th scope="col">Capability</th>
+<th scope="col">Status and limit</th>
+<th scope="col">Inspected source</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Inventory planning</td>
+<td>
+<span class="status">Implemented</span>
+<br>Saved snapshots feed deterministic supply/reorder/transfer calculations, review states, archives, and browser draft/scenario outputs.</td>
+<td>
+<a class="ref" href="../../lib/reorder/workflow-data.ts">
+<code>lib/reorder/workflow-data.ts::loadReorderWorkflowData</code>
+</a>
+</td>
+</tr>
+<tr>
+<td>Catalog / stock / ledger sync</td>
+<td>
+<span class="status">Implemented; live unverified here</span>
+<br>Real request and report paths exist. Passing fakes and mocked fetch tests do not establish current Amazon compatibility.</td>
+<td>
+<a class="ref" href="../../lib/amazon/client.ts">
+<code>lib/amazon/client.ts::SpApiClient</code>
+</a>
+</td>
+</tr>
+<tr>
+<td>SVD manual refresh</td>
+<td>
+<span class="status">Implemented</span>
+<br>Authenticated action, database lease, HTML parse, snapshot replacement, and failure record. No automated refresh and no fake switch on this action.</td>
+<td>
+<a class="ref" href="../../lib/svd/actions.ts">
+<code>lib/svd/actions.ts::refreshSvdInventoryAction</code>
+</a>
+</td>
+</tr>
+<tr>
+<td>Analytics giveaway adjustment</td>
+<td>
+<span class="status">Optional; implemented</span>
+<br>Saved setting enables reconciled shipment aggregates. Pending, stale, or mismatched evidence cannot support current adjusted momentum.</td>
+<td>
+<a class="ref" href="../../lib/analytics/settings.ts">
+<code>lib/analytics/settings.ts::vineAdjustmentIssue</code>
+</a>
+<a class="ref" href="../../lib/shipments/read.ts">
+<code>lib/shipments/read.ts::reconciledExcludedUnits</code>
+</a>
+</td>
+</tr>
+<tr>
+<td>Real Ads campaign listing</td>
+<td>
+<span class="status">Implemented; sandbox TODO</span>
+<br>v3 list request and pagination exist; source retains a sandbox verification TODO.</td>
+<td>
+<a class="ref" href="../../lib/ads/client.ts">
+<code>lib/ads/client.ts::AdsApiClient.listCampaigns</code>
+</a>
+</td>
+</tr>
+<tr>
+<td>Real Ads metrics / write</td>
+<td>
+<span class="status gap">Unavailable</span>
+<br>Both methods unconditionally throw not implemented. The request shapes in comments/void expressions are not live execution.</td>
+<td>
+<a class="ref" href="../../lib/ads/client.ts">
+<code>lib/ads/client.ts::AdsApiClient.getCampaignMetrics</code>
+</a>
+<a class="ref" href="../../lib/ads/client.ts">
+<code>lib/ads/client.ts::AdsApiClient.updateCampaign</code>
+</a>
+</td>
+</tr>
+<tr>
+<td>Merchant listings sync</td>
+<td>
+<span class="status gap">Implemented but unwired</span>
+<br>syncMerchantListings exists and is tested. No non-test caller was found in app/lib/scripts; cron and catalog refresh do not invoke it.</td>
+<td>
+<a class="ref" href="../../lib/listings/sync.ts">
+<code>lib/listings/sync.ts::syncMerchantListings</code>
+</a>
+</td>
+</tr>
+<tr>
+<td>Research / Launch / agents</td>
+<td>
+<span class="status gap">Unavailable in this checkout</span>
+<br>Navigation marks both Modules Soon. Research work is recorded in a separate worktree. No experimental or optional model path was found here.</td>
+<td>
+<a class="ref" href="../../components/nav.tsx">
+<code>components/nav.tsx::modules</code>
+</a>
+<a href="../../project_state.md">Separate-worktree status</a>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="checks">
+<div class="section-head">
+<span class="eyebrow">
+</span>
+<h2>Verification ledger</h2>
+</div>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th scope="col">Check / date</th>
+<th scope="col">Observed result</th>
+<th scope="col">Scope / evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Full local suite<br>2026-10-05</td>
+<td>PASS: 73 files, 576 tests, Vitest 4.1.9, 3.21 seconds. Command: npm test.</td>
+<td>Unit/component tests with fakes, mocks, and repository fixtures. <a href="../../vitest.config.ts">Vitest configuration</a>
+</td>
+</tr>
+<tr>
+<td>Lint + type check<br>2026-10-05</td>
+<td>PASS: npm run lint. PASS: ./node_modules/.bin/tsc --noEmit --incremental false.</td>
+<td>Actual exit code 0 for both. No application files changed; no Next production build run for this documentation task.</td>
+</tr>
+<tr>
+<td>Map verification<br>2026-10-05</td>
+<td>Static HTML, anchors, repository-relative file links, and referenced symbols checked. Local browser preview recorded below.</td>
+<td>This validates the documentation artifact, not authenticated application behavior.</td>
+</tr>
+<tr>
+<td>CI / pre-commit configuration</td>
+<td>CI defines instruction policy, TypeScript, ESLint, and Vitest. Pre-commit defines instruction policy, lint-staged, TypeScript, and Vitest.</td>
+<td>Configuration inspected; hook installation and remote CI results not verified. Neither configuration includes next build. <a href="../../.github/workflows/ci.yml">CI workflow</a>
+<a href="../../.husky/pre-commit">Pre-commit hook</a>
+</td>
+</tr>
+<tr>
+<td>Captured source fixtures<br>2026-09-18</td>
+<td>Repository records redacted shipment/promotion samples, positive giveaway samples, and an FBA FC-transfer capture.</td>
+<td>Historical fixture provenance, not a new live validation. Raw packets and sample values are not reproduced in this map. <a href="../../lib/amazon/__fixtures__/README.md">Capture provenance</a>
+</td>
+</tr>
+<tr>
+<td>Research integration<br>2026-10-02 source</td>
+<td>project_state.md reports 681 tests and authenticated local Research verification in another worktree.</td>
+<td>Historical, external to mapped checkout; not rerun or counted in the 576-test baseline. <a href="../../project_state.md">Recorded Research work</a>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="tests">
+<div class="section-head">
+<span class="eyebrow">
+</span>
+<h2>Behavior protected by the existing suite</h2>
+</div>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th scope="col">Area</th>
+<th scope="col">What the test source checks</th>
+<th scope="col">Test file</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Planning safety</td>
+<td>Unknown demand/stock, missing pack sizes, absent source state, mapping, FC-transfer accounting, and preserving healthy stock context when only demand fails.</td>
+<td>
+<a href="../../lib/reorder/service.test.ts">Recommendation assembly tests</a>
+<a href="../../lib/reorder/supply.test.ts"> Supply tests</a>
+</td>
+</tr>
+<tr>
+<td>Sync sequencing</td>
+<td>Sequential ordering and stop-on-thrown-error, independently caught manual catalog failures, SVD locking, and failed-source records.</td>
+<td>
+<a href="../../lib/cron/sync-all.test.ts">Cron tests</a>
+<a href="../../app/%28app%29/catalog/actions.test.ts"> Catalog action tests</a>
+<a href="../../lib/sync/refresh-lock.test.ts"> Lease tests</a>
+</td>
+</tr>
+<tr>
+<td>Ads write boundary</td>
+<td>Authorize before read, insert audit before client call, reject invalid budgets, and stop on audit failure.</td>
+<td>
+<a href="../../lib/ads/write.test.ts">Write orchestration tests</a>
+</td>
+</tr>
+<tr>
+<td>Source transport</td>
+<td>Mocked request headers, pagination, transient retries/exhaustion, and downloads. No live request implied.</td>
+<td>
+<a href="../../lib/amazon/client.test.ts">SP-API client tests</a>
+<a href="../../lib/ads/client.test.ts"> Ads client tests</a>
+</td>
+</tr>
+<tr>
+<td>Analytics & shipment evidence</td>
+<td>Eligible-day windows, reconciliation, pending jobs, failed reports, and publication without retained order identifiers.</td>
+<td>
+<a href="../../lib/analytics/sales-momentum.test.ts">Momentum tests</a>
+<a href="../../lib/shipments/sync.test.ts"> Shipment sync tests</a>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="gaps">
+<div class="section-head">
+<span class="eyebrow">
+</span>
+<h2>Gaps that change how to read the map</h2>
+</div>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th scope="col">Finding</th>
+<th scope="col">Evidence and consequence</th>
+<th scope="col">Next investigation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ads stops short of the real API</td>
+<td>Metrics and write methods throw. If reached with real clients, runFullSync cannot return a fully successful result. Earlier mirror writes can already be committed. <a class="ref" href="../../lib/ads/client.ts">
+<code>lib/ads/client.ts::AdsApiClient.getCampaignMetrics</code>
+</a>
+</td>
+<td>Treat real metrics/write implementation and sandbox verification as future work, not a configuration-only switch.</td>
+</tr>
+<tr>
+<td>Freshness is inconsistent across workflows</td>
+<td>Reorder blockingSource checks required status values without timestamp age. Analytics analyticsSourceIssue rejects ledger evidence older than 48 hours. <a class="ref" href="../../lib/reorder/service.ts">
+<code>lib/reorder/service.ts::blockingSource</code>
+</a>
+<a class="ref" href="../../lib/analytics/service.ts">
+<code>lib/analytics/service.ts::analyticsSourceIssue</code>
+</a>
+</td>
+<td>Add a regression probe using successful source states with old timestamps; use it to decide a consistent age policy before changing behavior.</td>
+</tr>
+<tr>
+<td>Empty ledger can appear successful</td>
+<td>normalizeLedgerRows has an explicit empty-input → [] test. syncFbaLedgerVelocity has no zero-row guard before upserts and recordSyncSuccess. A permissive writer can record success with zero rows. <a class="ref" href="../../lib/velocity/sync.ts">
+<code>lib/velocity/sync.ts::syncFbaLedgerVelocity</code>
+</a>
+<a href="../../lib/velocity/ledger-mapping.test.ts">Empty parser test</a>
+</td>
+<td>Probe header-only/empty captured reports through the sync seam and verify how real database empty-upsert behavior affects source status. No fix made here.</td>
+</tr>
+<tr>
+<td>Listings metadata has no wired refresh</td>
+<td>The implemented listing report path supplies open_date, but no application caller was found. Legacy classification depends on listing age and safely refuses unknown dates. <a class="ref" href="../../lib/listings/sync.ts">
+<code>lib/listings/sync.ts::syncMerchantListings</code>
+</a>
+<a class="ref" href="../../lib/reorder/legacy.ts">
+<code>lib/reorder/legacy.ts::classifyLegacy</code>
+</a>
+</td>
+<td>Trace the intended operational caller before claiming listing metadata refreshes daily.</td>
+</tr>
+<tr>
+<td>Current docs contain mixed eras</td>
+<td>README and readiness sections disagree on deployment mode and historical blockers. The 2026-09-17 readiness section is a dated deployment claim. MAIN thumbnail preference is now implemented, despite an older open item. <a href="../../docs/go-live-readiness.md">Dated readiness audit</a>
+<a class="ref" href="../../lib/amazon/client.ts">
+<code>lib/amazon/client.ts::mapCatalogItem</code>
+</a>
+</td>
+<td>Reconcile status docs against a separately authorized deployment inspection; do not infer deployment health from this checkout.</td>
+</tr>
+<tr>
+<td>Cron authentication assumes platform behavior</td>
+<td>isAuthorizedCronRequest accepts any nonempty x-vercel-cron header OR a matching bearer secret. Source comments assume the hosting platform protects that header. <a class="ref" href="../../lib/cron/auth.ts">
+<code>lib/cron/auth.ts::isAuthorizedCronRequest</code>
+</a>
+</td>
+<td>Verify the actual deployment boundary separately. Local unit tests of header acceptance do not establish anti-spoofing behavior.</td>
+</tr>
+<tr>
+<td>Mode does not prove readiness</td>
+<td>The mode resolver reads flags without validating credentials or checking real method availability. It does not cover SVD. <a class="ref" href="../../lib/env/mode.ts">
+<code>lib/env/mode.ts::getDataSourceMode</code>
+</a>
+</td>
+<td>Read mode as routing configuration, not evidence that the data is live, current, or complete.</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<aside class="note">
+<strong>Next concrete investigation</strong>
+<p>Run a local regression probe for old-but-successful source timestamps through assembleRecommendations and analyticsSourceIssue. This is the smallest evidence gap affecting a purchase recommendation and requires no external account or production access. The unrelated Research provider/data-source decision remains pending in project_state.md.</p>
+</aside>
+<section id="preview">
+<div class="section-head">
+<span class="eyebrow">
+</span>
+<h2>Documentation preview</h2>
+</div>
+<p id="preview-result">All four pages rendered in the Codex in-app browser. DOM checks at observed CSS viewport widths of 1280 and 390 pixels found no page-level horizontal overflow; wide diagrams and tables scroll within their own containers. Every diagram node displayed a source reference. Light appearance was visually previewed; dark appearance is implemented with a system-preference media query but was not visually exercised. Static checks validated balanced HTML elements, unique IDs, all 173 local links and anchors, and the presence of referenced symbols. No external HTML conformance service was used.</p>
+</section>
+</main>
+<footer>Local source inspection. No live service or model calls. <a href="evidence.html">Verification limits</a>
+<p>Source references are repository-relative and link to local files; a viewer may show the file rather than jump to its symbol.</p>
+</footer>
+</body>
+</html>

@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Code-linked map of bande-ops at commit 8786127, inspected 2026-10-05.">
+<title>One app. Three external sources. | bande-ops project map</title>
+<style>
+:root{color-scheme:light dark;--bg:#f7f6f1;--panel:#fffefa;--ink:#23342f;--muted:#59675f;--line:#d2d8cf;--accent:#28624e;--pink:#f7e2e8;--green:#e1eee1;--gray:#e5e6e8;--warn:#f7ebcf;--shadow:0 5px 22px #23342f08}
+*{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:90px}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a{color:var(--accent);text-underline-offset:3px}a:hover{text-decoration-thickness:2px}a:focus-visible,[tabindex]:focus-visible{outline:3px solid #bd6e85;outline-offset:4px}p{margin:.6rem 0 0}h1,h2,h3{line-height:1.15;margin:0}h1{font-size:clamp(2.3rem,5vw,4.4rem);letter-spacing:-.045em;max-width:950px;font-weight:650}h2{font-size:clamp(1.5rem,3vw,2.1rem);letter-spacing:-.025em}h3{font-size:1.1rem}code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.84em;overflow-wrap:anywhere}.top{border-bottom:1px solid var(--line);background:var(--panel)}.bar{max-width:1440px;margin:auto;padding:20px 36px;display:flex;align-items:center;justify-content:space-between;gap:20px}.brand{font-weight:750;letter-spacing:-.03em;color:var(--ink);text-decoration:none}.brand small{font-weight:450;color:var(--muted);margin-left:8px}nav{display:flex;gap:6px;flex-wrap:wrap}nav a{font-size:.86rem;padding:8px 12px;text-decoration:none;border-radius:7px;color:var(--muted)}nav a[aria-current]{background:var(--green);color:var(--ink);font-weight:650}.skip{position:absolute;left:10px;top:-60px}.skip:focus{top:10px;background:var(--panel);padding:8px;z-index:5}main{max-width:1440px;margin:auto;padding:42px 36px 64px}.eyebrow{display:block;font-size:.72rem;font-weight:750;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin-bottom:12px}.hero{padding:6px 0 25px}.lede{max-width:870px;color:var(--muted);font-size:1.12rem;margin-top:20px}.stamp{display:flex;flex-wrap:wrap;gap:8px 20px;font-size:.75rem;color:var(--muted);border-top:1px solid var(--line);padding-top:17px;margin-top:26px}.dirty{font-size:.74rem;color:var(--muted);margin-top:7px;max-width:1050px}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:26px 0}.metric{padding:22px;background:var(--panel);border:1px solid var(--line);border-radius:12px}.metric b{display:block;font-size:2rem;letter-spacing:-.04em;font-weight:650}.metric span{font-size:.84rem;color:var(--muted)}section{margin-top:42px}.section-head{margin-bottom:20px}.section-head .eyebrow{margin-bottom:7px}.flow-scroll{overflow-x:auto;padding:6px 4px 16px}.flow{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:30px;min-width:700px;align-items:stretch}.node{position:relative;border:1px solid var(--line);border-radius:12px;padding:18px 16px;background:var(--green);box-shadow:var(--shadow);min-width:0}.node:not(:last-child):after{content:'→';position:absolute;right:-26px;top:42px;font-size:25px;font-weight:650;color:var(--ink)}.node.human{background:var(--pink)}.node.model{background:var(--gray)}.node.output{background:var(--panel);border-radius:12px 0 12px 12px;border-top:4px solid var(--accent)}.node.unavailable{background:var(--warn);border:1px dashed var(--ink)}.node p{font-size:.86rem;line-height:1.5;margin:12px 0}.tag{display:inline-block;font-size:.62rem;letter-spacing:.075em;font-weight:750;text-transform:uppercase;margin-bottom:13px;line-height:1.4}.ref{display:block;margin-top:10px;font-size:.84rem;line-height:1.4;text-decoration:none}.ref:hover{text-decoration:underline}.branches,.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-top:17px}.branches .node:after,.cards .node:after{display:none}.branches .node{border-style:dashed;box-shadow:none}.cards>article{padding:24px;background:var(--panel);border:1px solid var(--line);border-radius:12px}.cards>article p{color:var(--muted);font-size:.9rem}.cards>article>a:first-child{display:block;font-size:1.15rem;font-weight:700}.note{border-left:4px solid var(--accent);background:var(--panel);padding:18px 22px;margin-top:22px}.note p{font-size:.93rem;max-width:1100px}.tools{border:1px dashed var(--muted);border-radius:12px;padding:20px;margin-top:18px}.tools h3{font-size:.94rem}.tool-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px}.tool-grid>div{padding:12px;background:var(--panel);border-radius:7px;font-size:.86rem}.caption{font-size:.8rem;color:var(--muted);margin-top:10px}.legend{display:flex;gap:18px;flex-wrap:wrap;margin:16px 0;font-size:.76rem;color:var(--muted)}.legend span:before{content:'';display:inline-block;width:12px;height:12px;vertical-align:-1px;background:var(--green);border:1px solid var(--line);margin-right:6px;border-radius:3px}.legend .human:before{background:var(--pink)}.legend .output:before{background:var(--panel)}.legend .unavailable:before{background:var(--warn);border-style:dashed}.jump{display:flex;gap:10px 18px;flex-wrap:wrap;font-size:.85rem;margin:22px 0}.table-scroll{overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--panel)}table{width:100%;border-collapse:collapse;text-align:left;font-size:.88rem;min-width:640px}th{background:var(--green);font-weight:650;font-size:.76rem;text-transform:uppercase;letter-spacing:.06em}th,td{padding:17px 20px;vertical-align:top;border-bottom:1px solid var(--line)}tr:last-child td{border-bottom:0}td:first-child{width:21%;font-weight:650}td .ref{font-weight:400}.status{font-size:.69rem;text-transform:uppercase;letter-spacing:.045em;font-weight:750;display:inline-block;border:1px solid var(--line);padding:3px 7px;border-radius:4px;margin-bottom:7px;background:var(--green)}.status.gap{background:var(--warn)}.boundary{border:1px dashed var(--muted);padding:22px;border-radius:12px;margin-top:20px}.boundary .cards{margin-top:16px}.boundary>p{font-size:.89rem;color:var(--muted)}.equation{padding:18px 20px;background:var(--green);border-radius:8px;font-family:ui-monospace,monospace;font-size:.87rem;line-height:1.8}footer{max-width:1368px;margin:0 auto;padding:24px 0 40px;border-top:1px solid var(--line);font-size:.78rem;color:var(--muted)}footer a{margin-right:20px}ul{padding-left:20px}li{margin:8px 0}.quiet{color:var(--muted)}
+@media(prefers-color-scheme:dark){:root{--bg:#161d1a;--panel:#1d2722;--ink:#e6eee7;--muted:#b0c0b5;--line:#405348;--accent:#a1d3b8;--pink:#462f3b;--green:#243c30;--gray:#393e42;--warn:#423c26;--shadow:none}}
+@media(max-width:760px){.bar{padding:17px 20px;align-items:flex-start;flex-direction:column;gap:13px}.brand small{font-size:.78rem}nav{gap:2px}nav a{padding:7px 9px}main{padding:28px 20px 45px}.hero{padding-top:0}.lede{font-size:1rem}.metrics{gap:9px}.metric{padding:14px 10px}.metric b{font-size:1.6rem}.metric span{font-size:.7rem}.branches,.cards,.tool-grid{grid-template-columns:1fr}.flow{grid-auto-columns:245px;min-width:0;width:max-content}.flow-scroll{margin-right:-12px;padding-right:20px}.node{padding:18px}.node p{font-size:.9rem}.boundary{padding:16px}.stamp{gap:6px 14px}.note{padding:16px}section{margin-top:32px}footer{margin:0 20px}th,td{padding:14px}.caption{font-size:.75rem}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}@media print{.top{position:static}.flow-scroll,.table-scroll{overflow:visible}.flow{min-width:0;gap:20px}.ref{font-size:.65rem}main{padding:20px}section{break-inside:avoid}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+<div class="bar">
+<a class="brand" href="index.html">bande-ops <small>Project map / 01</small>
+</a>
+<nav aria-label="Project map">
+<a href="index.html">Overview</a>
+<a href="execution-flow.html">Execution flow</a>
+<a href="system-map.html" aria-current="page">System map</a>
+<a href="evidence.html">Evidence</a>
+</nav>
+</div>
+</header>
+<main id="main">
+<header class="hero">
+<span class="eyebrow">Components / stores / authority</span>
+<h1>One app. Three external sources.</h1>
+<p class="lede">The shared spine connects authenticated pages to source mirrors and local operating policy. All external tools are invoked by application code, with separate credentials and trust boundaries.</p>
+<div class="stamp">
+<span>Inspected 05 Oct 2026 (UTC)</span>
+<span>
+<code>feat/reorder-thumbnails</code>
+</span>
+<span>Commit <code>878612786fa5288377c921ec207f102fb933f090</code>
+</span>
+</div>
+<p class="dirty">Checkout scope: this working tree only. Initial untracked files: <code>docs/product-research-methods.md</code> and <code>project_state.md</code>. This map adds documentation and updates project state; application source is unchanged. No remote/deployment reconciliation.</p>
+</header>
+<aside class="note">
+<strong>Two forms of authority.</strong>
+<p>Amazon and SVD own external facts. Supabase holds rebuildable mirrors plus locally authoritative operational settings, mappings, notes, and archives. A page reads mirrors; a separate privileged sync changes them. Recommendations are computed at read time in the mapped workflow, not persisted as purchase orders. <a class="ref" href="../../lib/reorder/service.ts">
+<code>lib/reorder/service.ts::assembleRecommendations</code>
+</a>
+</p>
+</aside>
+<section id="boundaries">
+<div class="section-head">
+<span class="eyebrow">
+</span>
+<h2>Trust boundaries and control flow</h2>
+</div>
+<div class="flow-scroll" tabindex="0" aria-label="Execution flow, scroll horizontally on narrow screens">
+<div class="flow">
+<article class="node human">
+<span class="tag">Browser boundary</span>
+<h3>Operator browser</h3>
+<p>Navigation, filters, scenarios, draft editing, and explicit actions. Session-only transfer drafts stay in this browser.</p>
+<a class="ref" href="../../components/inventory-planning/recommendation-table.tsx">
+<code>components/inventory-planning/recommendation-table.tsx::RecommendationTable</code>
+</a>
+</article>
+<article class="node logic">
+<span class="tag">Server boundary</span>
+<h3>Next.js server</h3>
+<p>AppLayout gates page rendering; Server Actions independently require a user or owner. Cron uses a separate request check.</p>
+<a class="ref" href="../../lib/auth/guard.ts">
+<code>lib/auth/guard.ts::requireUser</code>
+</a>
+</article>
+<article class="node logic">
+<span class="tag">User / RLS path</span>
+<h3>Supabase session client</h3>
+<p>The request cookie supplies the authenticated identity for reads and operational writes subject to SQL RLS policies.</p>
+<a class="ref" href="../../lib/supabase/server.ts">
+<code>lib/supabase/server.ts::createClient</code>
+</a>
+</article>
+<article class="node output">
+<span class="tag">Read result</span>
+<h3>Mirrors → page output</h3>
+<p>Server reads assemble source data and return derived views; upstream network activity is not part of the reorder page calculation.</p>
+<a class="ref" href="../../lib/reorder/workflow-data.ts">
+<code>lib/reorder/workflow-data.ts::loadReorderWorkflowData</code>
+</a>
+</article>
+</div>
+</div>
+<div class="boundary">
+<span class="eyebrow">Parallel privileged lane</span>
+<h3>Authorized sync → server-only credentials → mirror writes</h3>
+<div class="cards">
+<article class="node logic">
+<span class="tag">Privileged write boundary</span>
+<h3>Admin database client</h3>
+<p>Service-role access bypasses RLS. The factory is server-only and is used by authorized sync entry points.</p>
+<a class="ref" href="../../lib/supabase/admin.ts">
+<code>lib/supabase/admin.ts::createAdminClient</code>
+</a>
+</article>
+<article class="node logic">
+<span class="tag">External source</span>
+<h3>Amazon SP-API</h3>
+<p>Server client exchanges LWA credentials and reads catalog, FBA/AWD, ledger, listings, and shipment-report endpoints.</p>
+<a class="ref" href="../../lib/amazon/client.ts">
+<code>lib/amazon/client.ts::SpApiClient</code>
+</a>
+</article>
+<article class="node unavailable">
+<span class="tag">External source</span>
+<h3>Advertising API</h3>
+<p>Independent host, credentials, and profile scope. Campaign list is implemented; real metrics and writes are unavailable.</p>
+<a class="ref" href="../../lib/ads/client.ts">
+<code>lib/ads/client.ts::AdsApiClient</code>
+</a>
+</article>
+</div>
+</div>
+<div class="boundary">
+<span class="eyebrow">Separate supplier boundary</span>
+<p>RefreshSvdInventoryAction → lease → HttpSvdClient login/session → inventory HTML → parse → service-role snapshot write. SVD has separate server credentials and no unattended entry point.</p>
+<a class="ref" href="../../lib/svd/actions.ts">
+<code>lib/svd/actions.ts::refreshSvdInventoryAction</code>
+</a>
+<a class="ref" href="../../lib/svd/parse.ts">
+<code>lib/svd/parse.ts::parseSvdInventoryHtml</code>
+</a>
+</div>
+</section>
+<section id="stores">
+<div class="section-head">
+<span class="eyebrow">
+</span>
+<h2>Where the data lives</h2>
+</div>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th scope="col">Store / ownership</th>
+<th scope="col">Data and movement</th>
+<th scope="col">Code boundary</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Catalog + inventory mirrors</td>
+<td>catalog_items; inventory_levels; awd_inventory_levels; svd_inventory_levels. Source clients → normalizers/sync → service-role writes → authenticated page reads.</td>
+<td>
+<a class="ref" href="../../lib/catalog/sync.ts">
+<code>lib/catalog/sync.ts::syncCatalog</code>
+</a>
+<a class="ref" href="../../lib/reorder/service.ts">
+<code>lib/reorder/service.ts::assembleRecommendations</code>
+</a>
+</td>
+</tr>
+<tr>
+<td>Demand mirrors</td>
+<td>fba_daily_velocity_inputs retains dated evidence; sales_velocity stores the baseline demand result. Ledger normalization feeds both.</td>
+<td>
+<a class="ref" href="../../lib/velocity/sync.ts">
+<code>lib/velocity/sync.ts::syncFbaLedgerVelocity</code>
+</a>
+</td>
+</tr>
+<tr>
+<td>Ads mirrors</td>
+<td>ads_campaigns and ads_campaign_metrics are read by /ads. Metrics can be populated by fake-client sync; real metrics fetch is unavailable.</td>
+<td>
+<a class="ref" href="../../lib/ads/sync.ts">
+<code>lib/ads/sync.ts::syncCampaignMetrics</code>
+</a>
+</td>
+</tr>
+<tr>
+<td>Operational layer</td>
+<td>replenishment_settings, replenishment_policy, inventory_source_mappings, sku_notes, archived_skus, ads_rules, analytics_settings. Authenticated user edits remain local.</td>
+<td>
+<a class="ref" href="../../lib/settings/settings-actions.ts">
+<code>lib/settings/settings-actions.ts::saveSkuOverrideAction</code>
+</a>
+<a class="ref" href="../../lib/settings/settings-actions.ts">
+<code>lib/settings/settings-actions.ts::saveSourceMappingAction</code>
+</a>
+</td>
+</tr>
+<tr>
+<td>Sync control & evidence</td>
+<td>source_sync_runs / source_sync_state record stock and velocity source health. SVD uses sync_refresh_locks. Shipment evidence has its own leases and batches.</td>
+<td>
+<a class="ref" href="../../lib/sync/run.ts">
+<code>lib/sync/run.ts::recordSyncAttempt</code>
+</a>
+<a class="ref" href="../../lib/sync/refresh-lock.ts">
+<code>lib/sync/refresh-lock.ts::withRefreshLock</code>
+</a>
+<a class="ref" href="../../lib/shipments/store.ts">
+<code>lib/shipments/store.ts::createEvidenceStore</code>
+</a>
+</td>
+</tr>
+<tr>
+<td>Shipment aggregates</td>
+<td>shipment_evidence_batches + shipment_adjustment_days → current_shipment_adjustments. Only completed generations are published to the reader view; daily aggregates do not retain order/customer identifiers.</td>
+<td>
+<a class="ref" href="../../supabase/migrations/0023_shipment_adjustments.sql">
+<code>supabase/migrations/0023_shipment_adjustments.sql::current_shipment_adjustments</code>
+</a>
+<a class="ref" href="../../lib/shipments/evidence.ts">
+<code>lib/shipments/evidence.ts::reconcileShipmentDays</code>
+</a>
+</td>
+</tr>
+<tr>
+<td>Audit attempts</td>
+<td>ads_write_log stores actor and before/after intent before invoking the external write. It does not establish that the write succeeded.</td>
+<td>
+<a class="ref" href="../../lib/ads/write.ts">
+<code>lib/ads/write.ts::applyCampaignChange</code>
+</a>
+<a class="ref" href="../../supabase/migrations/0009_ads_write_log.sql">
+<code>supabase/migrations/0009_ads_write_log.sql::ads_write_log</code>
+</a>
+</td>
+</tr>
+<tr>
+<td>Browser working state</td>
+<td>Transfer box counts, notes, and sanitized draft HTML live in sessionStorage keyed by user and recommendation inputs. Misc-unit purchasing scenarios are temporary local state.</td>
+<td>
+<a class="ref" href="../../components/inventory-planning/recommendation-table.tsx">
+<code>components/inventory-planning/recommendation-table.tsx::RecommendationTable</code>
+</a>
+<a class="ref" href="../../lib/reorder/replenish.ts">
+<code>lib/reorder/replenish.ts::svdShipmentStorageKey</code>
+</a>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="contracts">
+<div class="section-head">
+<span class="eyebrow">
+</span>
+<h2>The boundaries that shape the answers</h2>
+</div>
+<div class="table-scroll">
+<table>
+<thead>
+<tr>
+<th scope="col">Boundary</th>
+<th scope="col">Consequence</th>
+<th scope="col">Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Unknown vs absent</td>
+<td>Unreadable required quantities block recommendations. An absent AWD row or absent mapped SVD item contributes zero. Unmapped SVD still blocks.</td>
+<td>
+<a class="ref" href="../../lib/reorder/supply.ts">
+<code>lib/reorder/supply.ts::calculateUsableSupply</code>
+</a>
+</td>
+</tr>
+<tr>
+<td>Units vs boxes</td>
+<td>FBA and AWD are units. Only SVD boxes are multiplied by a per-SKU pack size; no global physical-pack default is invented.</td>
+<td>
+<a class="ref" href="../../lib/reorder/supply.ts">
+<code>lib/reorder/supply.ts::toUnits</code>
+</a>
+<a class="ref" href="../../lib/reorder/service.ts">
+<code>lib/reorder/service.ts::assembleRecommendations</code>
+</a>
+</td>
+</tr>
+<tr>
+<td>Identity vs privilege</td>
+<td>loadSessionUser verifies getUser and reads the profile. Missing/unknown roles fall back to staff. Owner is required again for an Ads write.</td>
+<td>
+<a class="ref" href="../../lib/auth/session.ts">
+<code>lib/auth/session.ts::loadSessionUser</code>
+</a>
+<a class="ref" href="../../lib/auth/guard.ts">
+<code>lib/auth/guard.ts::requireOwner</code>
+</a>
+</td>
+</tr>
+<tr>
+<td>Mode vs readiness</td>
+<td>AMAZON_USE_FAKE selects fake SP-API and Ads clients. Sandbox flags control real hosts. The banner reads mode flags, not credential validity, connectivity, or SVD status.</td>
+<td>
+<a class="ref" href="../../lib/env/mode.ts">
+<code>lib/env/mode.ts::getDataSourceMode</code>
+</a>
+</td>
+</tr>
+<tr>
+<td>Read-only vs external mutation</td>
+<td>Planning emits suggestions and drafts. Ads is the only exposed external-write seam, but its real client method throws in this tree.</td>
+<td>
+<a class="ref" href="../../lib/ads/client.ts">
+<code>lib/ads/client.ts::AdsApiClient.updateCampaign</code>
+</a>
+</td>
+</tr>
+<tr>
+<td>Schema vs applied policy</td>
+<td>Migrations define authenticated read policies on mirrors and service-role writer access. This task inspected SQL, not a running database or deployed RLS.</td>
+<td>
+<a class="ref" href="../../supabase/migrations/0010_live_inventory_reorder.sql">
+<code>supabase/migrations/0010_live_inventory_reorder.sql::source_sync_state</code>
+</a>
+<a class="ref" href="../../supabase/migrations/0023_shipment_adjustments.sql">
+<code>supabase/migrations/0023_shipment_adjustments.sql::shipment_evidence_read</code>
+</a>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+</main>
+<footer>Local source inspection. No live service or model calls. <a href="evidence.html">Verification limits</a>
+<p>Source references are repository-relative and link to local files; a viewer may show the file rather than jump to its symbol.</p>
+</footer>
+</body>
+</html>

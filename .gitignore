@@ -43,3 +43,8 @@ next-env.d.ts
 
 # Superpowers brainstorm scratch state (server pids, ports, generated html)
 .superpowers/
+
+# local tool and agent state
+supabase/.temp/
+project_state.md
+.shots/
